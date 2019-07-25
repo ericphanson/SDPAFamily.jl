@@ -11,6 +11,6 @@ The plan is to follow [SDPA.jl](https://github.com/JuliaOpt/SDPA.jl) and use [Cx
 
 Currently, the library is not wrapped, so instead this package (`SDPA_GMP.jl`) just provides a binary installation and shorthand access to it via the Julia function `sdpa_gmp`, e.g.
 ```
-sdpa_gmp(`-o example1.result -dd example1.dat`)
+sdpa_gmp_binary(`-o example1.result -dd example1.dat`)
 ```
 following the example of [FFMPEG.jl](https://github.com/JuliaIO/FFMPEG.jl).

@@ -14,11 +14,11 @@ end
 include(depsjl_path)
 
 """
-    sdpa_gmp(arg)
+    sdpa_gmp_binary(arg)
 Execute the given command literal as an argument to sdpa_gmp.
 
 """
-function sdpa_gmp(arg::Cmd)
+function sdpa_gmp_binary(arg::Cmd)
     withenv(execenv) do
             Base.run(`$sdpa_gmp_path $arg`)
         end
