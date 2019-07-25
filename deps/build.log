@@ -1,9 +1,0 @@
-ERROR: LoadError: Your platform ("x86_64-apple-darwin15.6.0", parsed as "x86_64-apple-darwin14-gcc8-cxx03") is not supported by this package!
-Stacktrace:
- [1] error(::String) at /Applications/Julia-1.1.app/Contents/Resources/julia/lib/julia/sys.dylib:?
- [2] top-level scope at /Users/eh540/Dropbox (Personal)/LinkedFolders/Julia/dev/SDPA_GMP/deps/build.jl:26
- [3] include_relative(::Module, ::String) at /Applications/Julia-1.1.app/Contents/Resources/julia/lib/julia/sys.dylib:?
- [4] include(::Module, ::String) at ./sysimg.jl:29
- [5] include(::String) at ./client.jl:403
- [6] top-level scope at none:0
-in expression starting at /Users/eh540/Dropbox (Personal)/LinkedFolders/Julia/dev/SDPA_GMP/deps/build.jl:22
