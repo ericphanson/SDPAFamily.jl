@@ -1,14 +1,21 @@
 module SDPA_GMP
-export sdpa_gmp_binary
+using Convex
 
-# requires directory with `sdpa_gmp` binary in your PATH variable
-const sdpa_gmp_path = "sdpa_gmp"
+export sdpa_gmp_binary_solve
 
-"""
-    sdpa_gmp_binary(arg)
-Execute the given command literal as an argument to sdpa_gmp.
 
-"""
-sdpa_gmp_binary(arg::Cmd) = run(`$sdpa_gmp_path $arg`) 
+include("write_problem.jl")
+include("binary_call.jl")
+
+function sdpa_gmp_binary_solve(p::Problem{T}, extra_args::Cmd = `-pt 1`) where {T}
+    temp = mktempdir()
+    inputname = "input.dat-s"
+    outputname = "output.dat"
+    full_input_path = joinpath(temp, inputname)
+    full_output_path = joinpath(temp, outputname)
+    write_problem(p, full_input_path)
+    sdpa_gmp_binary(`$full_input_path $full_output_path $extra_args`)
+    println(read(full_output_path, String))
+end
 
 end # module
