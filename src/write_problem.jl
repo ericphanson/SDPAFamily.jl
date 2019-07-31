@@ -7,8 +7,6 @@ const MOIB = MOI.Bridges
 const SDOI = SemidefiniteOptInterface
 
 export write_problem
-export load_problem_mock!
-export write_problem_trycatch
 
 MOIU.@model(MOIModel,
             (MOI.ZeroOne, MOI.Integer),
@@ -42,9 +40,8 @@ MOIU.@model(MOIModel,
 Write the _dual_ problem parameters into the specified file. The file path is returned.
 
 """
-function write_problem(problem::Problem{T}, filepath::String) where {T}
+function write_problem(mock::SDOI.MockSDOptimizer{T}, problem::Problem{T}, filepath::String) where {T}
     # define mock optimizer
-    mock = SDOI.MockSDOptimizer{T}()
     mock_optimizer = SDOI.SDOIOptimizer(mock, T)
 
     # lines borrowed from Convex.solve!() to load problem into mock_optimizer
@@ -62,19 +59,19 @@ function write_problem(problem::Problem{T}, filepath::String) where {T}
     MOI.write(mock_optimizer, filepath)
     # relativepath = joinpath("./", filename)
     # filepath = abspath(relativepath)
-    @info "Problem written to file $filepath"
+    # @info "Problem written to file $filepath"
     return filepath
 end
 
-function write_problem_trycatch(problem::Problem{T}, filename::String) where {T}
-
-    # another hacky way to write the problem...
-
-    mock = SDOI.MockSDOptimizer{T}()
-    mock_optimizer = SDOI.SDOIOptimizer(mock, T)
-    try
-        Convex.solve!(problem, mock_optimizer)
-    catch
-    end
-    MOI.write(mock_optimizer, filename)
-end
+# function write_problem_trycatch(problem::Problem{T}, filename::String) where {T}
+#
+#     # another hacky way to write the problem...
+#
+#     mock = SDOI.MockSDOptimizer{T}()
+#     mock_optimizer = SDOI.SDOIOptimizer(mock, T)
+#     try
+#         Convex.solve!(problem, mock_optimizer)
+#     catch
+#     end
+#     MOI.write(mock_optimizer, filename)
+# end
