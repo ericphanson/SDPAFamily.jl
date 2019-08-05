@@ -1,10 +1,8 @@
-using MathOptInterface
-using SemidefiniteOptInterface
-using Convex
-const MOI = MathOptInterface
+# using MathOptInterface
+# using Convex
+# const MOI = MathOptInterface
 const MOIU = MOI.Utilities
 const MOIB = MOI.Bridges
-const SDOI = SemidefiniteOptInterface
 
 export write_problem
 

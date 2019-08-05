@@ -9,4 +9,9 @@ Execute the given command literal as an argument to sdpa_gmp.
 
 """
 
+# function  sdpa_gmp_binary(arg::Cmd)
+#
+#     run(pipeline(`$sdpa_gmp_path $arg`, stdout = devnull))
+# end
+
 sdpa_gmp_binary(arg::Cmd) = run(`$sdpa_gmp_path $arg`)

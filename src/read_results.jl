@@ -1,7 +1,6 @@
-using MathOptInterface
-using SemidefiniteOptInterface
-const MOI = MathOptInterface
-const SDOI = SemidefiniteOptInterface
+# using MathOptInterface
+# using SemidefiniteOptInterface
+# const MOI = MathOptInterface
 import SemidefiniteOptInterface.block
 # export read_results
 
@@ -18,15 +17,15 @@ function remove_brackets(str)
     return str
 end
 
-function read_results(optimizer, filepath::String)
+function read_results(optimizer::SDPAGMPOptimizer{T}, filepath::String) where T
     endswith(filepath, ".dat") || error("Filename '$filepath' must end with .dat")
 
     phasevalue = "noINFO"
     objValPrimalstring = ""
     objValDualstring = ""
     xVecstring = ""
-    xMatvec = BigFloat[]
-    yMatvec = BigFloat[]
+    xMatvec = T[]
+    yMatvec = T[]
 
     open(filepath, "r") do io
         line = nextline(io)
@@ -60,10 +59,9 @@ function read_results(optimizer, filepath::String)
         while !startswith(line, "}")
             xMatstring = remove_brackets(line)
             if endswith(xMatstring, ",")
-                show(xMatstring[1:end-1])
-                append!(xMatvec, parse.(BigFloat, split(xMatstring[1:end-1], ",")))
+                append!(xMatvec, parse.(T, split(xMatstring[1:end-1], ",")))
             else
-                append!(xMatvec, parse.(BigFloat, split(xMatstring, ",")))
+                append!(xMatvec, parse.(T, split(xMatstring, ",")))
             end
             line = nextline(io)
         end
@@ -73,10 +71,9 @@ function read_results(optimizer, filepath::String)
         while !startswith(line, "}")
             yMatstring = remove_brackets(line)
             if endswith(yMatstring, ",")
-                show(yMatstring[1:end-1])
-                append!(yMatvec, parse.(BigFloat, split(yMatstring[1:end-1], ",")))
+                append!(yMatvec, parse.(T, split(yMatstring[1:end-1], ",")))
             else
-                append!(yMatvec, parse.(BigFloat, split(yMatstring, ",")))
+                append!(yMatvec, parse.(T, split(yMatstring, ",")))
             end
             line = nextline(io)
         end
@@ -84,15 +81,16 @@ function read_results(optimizer, filepath::String)
     # println(stdout, phasevalue)
     xVecstring = remove_brackets(xVecstring)
     xVecstring = split(xVecstring, ",")
-    xVec = parse.(BigFloat, xVecstring)
-    objValPrimal = parse(BigFloat, objValPrimalstring)
-    objValDual = parse(BigFloat, objValDualstring)
+    xVec = parse.(T, xVecstring)
+    objValPrimal = parse(T, objValPrimalstring)
+    objValDual = parse(T, objValDualstring)
 
     # xMatstring = replace(remove_brackets(xMatstring), " " => "")
     # yMatstring = replace(remove_brackets(yMatstring), " " => "")
     #
-    # xMatvec = parse.(BigFloat, split(xMatstring[2:end], ","))
-    # yMatvec = parse.(BigFloat, split(yMatstring[2:end], ","))
+    # xMatvec = parse.(T, split(xMatstring[2:end], ","))
+    # yMatvec = parse.(T, split(yMatstring[2:end], ","))
+    
 
     if phasevalue == "noINFO"
         optimizer.terminationstatus = MOI.OPTIMIZE_NOT_CALLED
@@ -146,37 +144,37 @@ function read_results(optimizer, filepath::String)
         line = nextline(io)
         structurevec = parse.(Int, split(line))
     end
-    xMatbm = SDOI.BlockMatrix{BigFloat}(map(n -> zeros(BigFloat, abs(n), abs(n)), optimizer.blkdims))
-    yMatbm = SDOI.BlockMatrix{BigFloat}(map(n -> zeros(BigFloat, abs(n), abs(n)), optimizer.blkdims))
+    xMatbm = SDOI.BlockMatrix{T}(map(n -> zeros(T, abs(n), abs(n)), optimizer.blkdims))
+    yMatbm = SDOI.BlockMatrix{T}(map(n -> zeros(T, abs(n), abs(n)), optimizer.blkdims))
     for i in 1:length(structurevec)
         dim = structurevec[i]
         if dim < 0
             dim = abs(dim)
-            xblock = xMatvec[end-dim+1:end]
-            deleteat!(xMatvec, length(xblock)-dim+1:length(xblock))
+            xblock = xMatvec[1:dim]
+            deleteat!(xMatvec, 1:dim)
             xblock = Diagonal(xblock)
             xMatbm.blocks[i] = xblock
 
-            yblock = yMatvec[end - dim + 1:end]
-            deleteat!(yMatvec, length(yblock)-dim+1:length(yblock))
+            yblock = yMatvec[1:dim]
+            deleteat!(yMatvec, 1:dim)
             yblock = Diagonal(yblock)
             yMatbm.blocks[i] = yblock
 
 
         elseif dim > 0
-            xblock = xMatvec[end - dim^2 + 1:end]
-            deleteat!(xMatvec, length(xblock) - dim^2 + 1:length(xblock))
+            xblock = xMatvec[1:dim^2]
+            deleteat!(xMatvec, 1:dim^2)
             xblock = reshape(xblock, dim, dim)
             xMatbm.blocks[i] = xblock
 
-            yblock = yMatvec[end - dim^2 + 1:end]
-            deleteat!(yMatvec, length(yblock)-dim^2 +1:length(yblock))
+            yblock = yMatvec[1:dim^2]
+            deleteat!(yMatvec, 1:dim^2)
             yblock = reshape(yblock, dim, dim)
             yMatbm.blocks[i] = yblock
 
         end
     end
-    optimizer.X = xMatbm
-    optimizer.Z = yMatbm
+    optimizer.X = yMatbm
+    optimizer.Z = xMatbm
 
 end
