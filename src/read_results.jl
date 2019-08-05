@@ -1,23 +1,23 @@
 # using MathOptInterface
 # using SemidefiniteOptInterface
 # const MOI = MathOptInterface
-import SemidefiniteOptInterface.block
+# import SemidefiniteOptInterface.block
 # export read_results
 
-nextline(io::IO) = chomp(readline(io))
+getnextline(io::IO) = chomp(readline(io))
 
-function replace_brackets(str::SubString)
+function replace_brackets!(str::SubString)
     str = replace(str, "{" => "[")
     str = replace(str, "}" => "]")
     return str
 end
-function remove_brackets(str)
+function remove_brackets!(str)
     str = replace(str, "{" => "")
     str = replace(str, "}" => "")
     return str
 end
 
-function read_results(optimizer::SDPAGMPOptimizer{T}, filepath::String) where T
+function read_results!(optimizer::SDPAGMPOptimizer{T}, filepath::String) where T
     endswith(filepath, ".dat") || error("Filename '$filepath' must end with .dat")
 
     phasevalue = "noINFO"
@@ -28,58 +28,58 @@ function read_results(optimizer::SDPAGMPOptimizer{T}, filepath::String) where T
     yMatvec = T[]
 
     open(filepath, "r") do io
-        line = nextline(io)
+        line = getnextline(io)
 
         while !startswith(line, "phase.value")
-            line = nextline(io)
+            line = getnextline(io)
         end
         phasevalue = split(line)[3]
 
         while !startswith(line, "objValPrimal")
-            line = nextline(io)
+            line = getnextline(io)
         end
         objValPrimalstring = split(line)[3]
 
         while !startswith(line, "objValDual")
-            line = nextline(io)
+            line = getnextline(io)
         end
         objValDualstring = split(line)[3]
 
         while !startswith(line, "xVec")
-            line = nextline(io)
+            line = getnextline(io)
         end
-        line = nextline(io)
+        line = getnextline(io)
         xVecstring = line
 
         while !startswith(line, "xMat")
-            line = nextline(io)
+            line = getnextline(io)
         end
-        line = nextline(io)
-        line = nextline(io)
+        line = getnextline(io)
+        line = getnextline(io)
         while !startswith(line, "}")
-            xMatstring = remove_brackets(line)
+            xMatstring = remove_brackets!(line)
             if endswith(xMatstring, ",")
                 append!(xMatvec, parse.(T, split(xMatstring[1:end-1], ",")))
             else
                 append!(xMatvec, parse.(T, split(xMatstring, ",")))
             end
-            line = nextline(io)
+            line = getnextline(io)
         end
-        line = nextline(io)
-        line = nextline(io)
-        line = nextline(io)
+        line = getnextline(io)
+        line = getnextline(io)
+        line = getnextline(io)
         while !startswith(line, "}")
-            yMatstring = remove_brackets(line)
+            yMatstring = remove_brackets!(line)
             if endswith(yMatstring, ",")
                 append!(yMatvec, parse.(T, split(yMatstring[1:end-1], ",")))
             else
                 append!(yMatvec, parse.(T, split(yMatstring, ",")))
             end
-            line = nextline(io)
+            line = getnextline(io)
         end
     end
     # println(stdout, phasevalue)
-    xVecstring = remove_brackets(xVecstring)
+    xVecstring = remove_brackets!(xVecstring)
     xVecstring = split(xVecstring, ",")
     xVec = parse.(T, xVecstring)
     objValPrimal = parse(T, objValPrimalstring)
@@ -139,13 +139,13 @@ function read_results(optimizer::SDPAGMPOptimizer{T}, filepath::String) where T
     inputpath = replace(filepath, "output.dat" => "input.dat-s")
     structurevec = []
     open(inputpath, "r") do io
-        line = nextline(io)
-        line = nextline(io)
-        line = nextline(io)
+        line = getnextline(io)
+        line = getnextline(io)
+        line = getnextline(io)
         structurevec = parse.(Int, split(line))
     end
-    xMatbm = SDOI.BlockMatrix{T}(map(n -> zeros(T, abs(n), abs(n)), optimizer.blkdims))
-    yMatbm = SDOI.BlockMatrix{T}(map(n -> zeros(T, abs(n), abs(n)), optimizer.blkdims))
+    xMatbm = BlockMatrix{T}(map(n -> zeros(T, abs(n), abs(n)), optimizer.blkdims))
+    yMatbm = BlockMatrix{T}(map(n -> zeros(T, abs(n), abs(n)), optimizer.blkdims))
     for i in 1:length(structurevec)
         dim = structurevec[i]
         if dim < 0
