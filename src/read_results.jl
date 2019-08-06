@@ -1,24 +1,25 @@
-# using MathOptInterface
-# using SemidefiniteOptInterface
-# const MOI = MathOptInterface
-# import SemidefiniteOptInterface.block
-# export read_results
+export read_results!
 
-getnextline(io::IO) = chomp(readline(io))
+"""
+    read_results!(optimizer::SDPAGMPOptimizer{T}, filepath::String)
+Populates `optimizer` with results in a SDPA-formatted file specified by `filepath`.
 
-function replace_brackets!(str::SubString)
-    str = replace(str, "{" => "[")
-    str = replace(str, "}" => "]")
-    return str
-end
-function remove_brackets!(str)
-    str = replace(str, "{" => "")
-    str = replace(str, "}" => "")
-    return str
-end
-
+"""
 function read_results!(optimizer::SDPAGMPOptimizer{T}, filepath::String) where T
+
     endswith(filepath, ".dat") || error("Filename '$filepath' must end with .dat")
+
+    getnextline(io::IO) = eof(io) ? error("The output file is possibly corrupted. Check that $filepath conforms to the SDPA output format.") : chomp(readline(io))
+    function replace_brackets!(str::SubString)
+        str = replace(str, "{" => "[")
+        str = replace(str, "}" => "]")
+        return str
+    end
+    function remove_brackets!(str)
+        str = replace(str, "{" => "")
+        str = replace(str, "}" => "")
+        return str
+    end
 
     phasevalue = "noINFO"
     objValPrimalstring = ""

@@ -1,7 +1,3 @@
-# using MathOptInterface
-# MOI = MathOptInterface
-# using SemidefiniteOptInterface
-# SDOI = SemidefiniteOptInterface
 abstract type AbstractBlockMatrix{T} <: AbstractMatrix{T} end
 struct BlockMatrix{T} <: AbstractBlockMatrix{T}
     blocks::Vector{Matrix{T}}
@@ -35,8 +31,6 @@ Base.getindex(A::AbstractBlockMatrix, I::Tuple) = getindex(A, I...)
 
 
 abstract type AbstractSDOptimizer <: MOI.AbstractOptimizer end
-
-# include("interface.jl")
 
 const SVF = MOI.SingleVariable
 const VVF = MOI.VectorOfVariables
@@ -104,9 +98,10 @@ mutable struct SDPAGMPOptimizer{T} <: AbstractSDOptimizer
     X::BlockMatrix{T}
     Z::BlockMatrix{T}
     y::Vector{T}
+    verbose::Bool
 end
 
-SDPAGMPOptimizer{T}() where T = SDPAGMPOptimizer{T}(0,
+SDPAGMPOptimizer{T}(verbose::Bool) where T = SDPAGMPOptimizer{T}(0,
                                                   Int[],
                                                   T[],
                                                   Tuple{T, Int, Int, Int}[],
@@ -119,8 +114,9 @@ SDPAGMPOptimizer{T}() where T = SDPAGMPOptimizer{T}(0,
                                                   MOI.NO_SOLUTION,
                                                   BlockMatrix{T}(Matrix{T}[]),
                                                   BlockMatrix{T}(Matrix{T}[]),
-                                                  T[])
-SDPAGMPoptimizer(T::Type) = SDOIOptimizer(SDPAGMPOptimizer{T}(), T)
+                                                  T[],
+                                                  verbose)
+SDPAGMPoptimizer(T::Type; verbose = false)= SDOIOptimizer(SDPAGMPOptimizer{T}(verbose), T)
 
 MOI.get(::SDPAGMPOptimizer, ::MOI.SolverName) = "SDPA_GMP"
 
@@ -214,7 +210,12 @@ function MOI.optimize!(optimizer::SDPAGMPOptimizer{T}) where T
     full_input_path = joinpath(temp, inputname)
     full_output_path = joinpath(temp, outputname)
     MOI.write(optimizer, full_input_path)
-    sdpa_gmp_binary_solve(optimizer, full_input_path, full_output_path)
+    sdpa_gmp_binary_solve!(optimizer, full_input_path, full_output_path)
+    if optimizer.verbose
+        for i in readlines(full_output_path)
+            println(stdout, i)
+        end
+    end
 end
 
 
@@ -223,9 +224,6 @@ end
 code from SDOI
 """
 
-
-# using Compat
-# using Compat.LinearAlgebra # for diag
 
 # include("load.jl")
 
@@ -459,7 +457,7 @@ function MOI.is_empty(optimizer::SOItoMOIBridge)
 end
 function MOI.empty!(optimizer::SOItoMOIBridge{T}) where T
     for s in optimizer.double
-        MOI.delete(m, s)
+        MOI.delete(optimizer, s)
     end
     MOI.empty!(optimizer.sdoptimizer)
     optimizer.double = CI[]
@@ -560,7 +558,7 @@ end
 sympackedlen(d::Integer) = (d*(d+1)) >> 1
 function _getblock(M::AbstractMatrix{T}, blk::Integer, s::Type{<:DS}) where T
     B = block(M, blk)
-    d = Compat.LinearAlgebra.checksquare(B)
+    d = LinearAlgebra.checksquare(B)
     n = sympackedlen(d)
     v = Vector{T}(undef, n)
     k = 0
@@ -659,7 +657,7 @@ MOI.read!(optimizer::SOItoMOIBridge, filename::String) = MOI.read!(optimizer.sdo
 MOI.read!(optimizer::AbstractSDOptimizer, filename::String) = readsdpa!(optimizer, filename)
 
 function writesdpa(optimizer::AbstractSDOptimizer, filename::String)
-    # endswith(filename, ".dat-s") || @warn "Filename must end with .dat-s $filename"
+    endswith(filename, ".dat-s") || @warn "Filename must end with .dat-s $filename"
     file = open(filename, "w") do io
         nconstrs = getnumberofconstraints(optimizer)
         println(io, nconstrs)
@@ -695,7 +693,7 @@ end
 nextline(io::IO) = chomp(readline(io))
 
 function readsdpa!(optimizer::AbstractSDOptimizer, filename::String)
-    endswith(filename, ".sdpa") || error("Filename '$filename' must end with .sdpa")
+    endswith(filename, ".dat-s") || error("Filename '$filename' must end with .dat-s")
     open(filename, "r") do io
         line = nextline(io)
         while line[1] == '"' || line[1] == '*' # Comment
@@ -729,8 +727,3 @@ function readsdpa!(optimizer::AbstractSDOptimizer, filename::String)
         end
     end
 end
-
-
-# include("mock.jl")
-
-# end # module
