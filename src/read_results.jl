@@ -2,7 +2,7 @@ export read_results!
 
 """
     read_results!(optimizer::SDPAGMPOptimizer{T}, filepath::String)
-Populates `optimizer` with results in a SDPA-formatted file specified by `filepath`.
+Populates `optimizer` with results in a SDPA-formatted output file specified by `filepath`.
 
 """
 function read_results!(optimizer::SDPAGMPOptimizer{T}, filepath::String) where T
@@ -10,6 +10,7 @@ function read_results!(optimizer::SDPAGMPOptimizer{T}, filepath::String) where T
     endswith(filepath, ".dat") || error("Filename '$filepath' must end with .dat")
 
     getnextline(io::IO) = eof(io) ? error("The output file is possibly corrupted. Check that $filepath conforms to the SDPA output format.") : chomp(readline(io))
+    
     function replace_brackets!(str::SubString)
         str = replace(str, "{" => "[")
         str = replace(str, "}" => "]")

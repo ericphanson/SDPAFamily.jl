@@ -99,9 +99,10 @@ mutable struct SDPAGMPOptimizer{T} <: AbstractSDOptimizer
     Z::BlockMatrix{T}
     y::Vector{T}
     verbose::Bool
+    normal_sdpa::Bool
 end
 
-SDPAGMPOptimizer{T}(verbose::Bool) where T = SDPAGMPOptimizer{T}(0,
+SDPAGMPOptimizer{T}(verbose::Bool, normal_sdpa::Bool) where T = SDPAGMPOptimizer{T}(0,
                                                   Int[],
                                                   T[],
                                                   Tuple{T, Int, Int, Int}[],
@@ -115,8 +116,9 @@ SDPAGMPOptimizer{T}(verbose::Bool) where T = SDPAGMPOptimizer{T}(0,
                                                   BlockMatrix{T}(Matrix{T}[]),
                                                   BlockMatrix{T}(Matrix{T}[]),
                                                   T[],
-                                                  verbose)
-SDPAGMPoptimizer(T::Type; verbose = false)= SDOIOptimizer(SDPAGMPOptimizer{T}(verbose), T)
+                                                  verbose,
+                                                  normal_sdpa)
+SDPAGMPoptimizer(T::Type; verbose = false, normal_sdpa = false)= SDOIOptimizer(SDPAGMPOptimizer{T}(verbose, normal_sdpa), T)
 
 MOI.get(::SDPAGMPOptimizer, ::MOI.SolverName) = "SDPA_GMP"
 
