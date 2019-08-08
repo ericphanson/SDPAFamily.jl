@@ -31,7 +31,7 @@ x = Variable(1)
 y = Variable(1)
 p2 = Problem{BigFloat}(:maximize, x + y, [ x <= big"1.0" , y <= big"2.0"])
 
-mock = Convex.solve!(p, SDPA_GMP.SDPAGMPoptimizer(BigFloat));
+mock = Convex.solve!(p, SDPA_GMP.SDPAGMPoptimizer(BigFloat, verbose = true));
 
 # mock2 = SDPA_GMP.sdpa_gmp_binary_solve(p2)
 
@@ -40,3 +40,7 @@ mock = Convex.solve!(p, SDPA_GMP.SDPAGMPoptimizer(BigFloat));
 # p3 = Problem{BigFloat}(:minimize, real(tr(E12 * (s1 + big"2.0000009" * s2) + E21 * (s2 + 2 * s1))), [E12 ⪰ 0, E21 ⪰ 0, E12 + E21 == Diagonal([big"1.0", big"1.0"]) ])
 #
 # mock3 = SDPA_GMP.sdpa_gmp_binary_solve(p3)
+x = Variable(Positive())
+y = Semidefinite(3)
+p = Problem{BigFloat}(:minimize, nuclearnorm(y), y[2,1]<=4, y[2,2]>=3, y[3,3]<=2)
+solve!(p, SDPA_GMP.SDPAGMPoptimizer(BigFloat, verbose = true, normal_sdpa = true));
