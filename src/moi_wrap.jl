@@ -1,3 +1,5 @@
+export SDPAGMPoptimizer
+
 abstract type AbstractBlockMatrix{T} <: AbstractMatrix{T} end
 struct BlockMatrix{T} <: AbstractBlockMatrix{T}
     blocks::Vector{Matrix{T}}
@@ -102,7 +104,7 @@ mutable struct SDPAGMPOptimizer{T} <: AbstractSDOptimizer
     normal_sdpa::Bool
 end
 
-SDPAGMPOptimizer{T}(verbose::Bool, normal_sdpa::Bool) where T = SDPAGMPOptimizer{T}(0,
+SDPAGMPOptimizer{T}(verbose::Bool = false, normal_sdpa::Bool = false) where T = SDPAGMPOptimizer{T}(0,
                                                   Int[],
                                                   T[],
                                                   Tuple{T, Int, Int, Int}[],

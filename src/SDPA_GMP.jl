@@ -4,8 +4,8 @@ MOI = MathOptInterface
 using LinearAlgebra # for diag()
 MOIU = MOI.Utilities
 MOIB = MOI.Bridges
-const sdpa_gmp_path = "sdpa_gmp" # make sure sdpa_gmp binary is in the system PATH
-const sdpa_path = "sdpa"
+const sdpa_gmp_path = "C:\\Users\\zhuji\\Downloads\\sdpa-gmp-7.1.3\\sdpa_gmp" # make sure sdpa_gmp binary is in the system PATH
+const sdpa_path = "C:\\Users\\zhuji\\Downloads\\sdpa7-windows\\sdpa"
 
 export sdpa_gmp_binary_solve!, read_results!
 
@@ -47,11 +47,12 @@ Calls the binary `sdpa_gmp` to solve SDPA-formatted problem specified in a .dat-
 
 This function returns `m` with solutions already populated from results in the output file.
 """
-function sdpa_gmp_binary_solve!(m::SDPAGMPOptimizer, full_input_path::String, full_output_path::String, extra_args::Cmd = `-p /home/jiazheng/Downloads/sdpa-gmp-7.1.3/param.sdpa`)
+function sdpa_gmp_binary_solve!(m::SDPAGMPOptimizer, full_input_path::String, full_output_path::String, extra_args::Cmd = `-pt 0`)
     if m.normal_sdpa
-        extra_args = `-p /home/jiazheng/Downloads/sdpa-7.3.8/param.sdpa` 
+        # extra_args = `-p /home/jiazheng/Downloads/sdpa-7.3.8/param.sdpa` 
         sdpa_binary(`-ds $full_input_path -o $full_output_path $extra_args`);
     else
+        # extra_args = `-p /home/jiazheng/Downloads/sdpa-gmp-7.1.3/param.sdpa`
         sdpa_gmp_binary(`-ds $full_input_path -o $full_output_path $extra_args`);
     end
     read_results!(m, full_output_path);

@@ -3,6 +3,7 @@ using SDPA_GMP
 using MathOptInterface
 const MOI = MathOptInterface
 const MOIU = MOI.Utilities
+const MOIB = MOI.Bridges
 using SemidefiniteOptInterface
 const SDOI = SemidefiniteOptInterface
 
@@ -10,6 +11,7 @@ using SparseArrays
 # using SDPA
 
 using LinearAlgebra
+using GenericLinearAlgebra
 
 eye(n) = Matrix(big(1.0)*I, n, n)
 
@@ -31,7 +33,7 @@ x = Variable(1)
 y = Variable(1)
 p2 = Problem{BigFloat}(:maximize, x + y, [ x <= big"1.0" , y <= big"2.0"])
 
-mock = Convex.solve!(p, SDPA_GMP.SDPAGMPoptimizer(BigFloat, verbose = true));
+mock = Convex.solve!(p2, SDPA_GMP.SDPAGMPoptimizer(BigFloat, verbose = true));
 
 # mock2 = SDPA_GMP.sdpa_gmp_binary_solve(p2)
 
@@ -43,4 +45,27 @@ mock = Convex.solve!(p, SDPA_GMP.SDPAGMPoptimizer(BigFloat, verbose = true));
 x = Variable(Positive())
 y = Semidefinite(3)
 p = Problem{BigFloat}(:minimize, nuclearnorm(y), y[2,1]<=4, y[2,2]>=3, y[3,3]<=2)
-solve!(p, SDPA_GMP.SDPAGMPoptimizer(BigFloat, verbose = true, normal_sdpa = true));
+solve!(p, SDPA_GMP.SDPAGMPoptimizer(BigFloat, verbose = true));
+
+x = Variable(4)
+p = Problem{BigFloat}(:minimize, sum(Diagonal(x)), x == [1, 2, 3, 4])
+@test vexity(p) == AffineVexity()
+solve!(p, solver)
+@test p.optval ≈ 10 atol=TOL
+@test all(abs.(evaluate(Diagonal(x)) - Diagonal([1, 2, 3, 4])) .<= TOL)
+
+x = Variable(4,1)
+p = Problem{BigFloat}(:minimize, dotsort(x, [1,2,3,4]), sum(x) >= 7, x >=0, x<=2, x[4]<=1)
+
+x = Variable(3)
+p = Problem{BigFloat}(:minimize, norm_1(x), [-2 <= x, x <= 1])
+
+x = Variable(4, 4)
+p = Problem{BigFloat}(:minimize, sumlargest(x, 2), sumsmallest(x, 4) >= 1)
+
+A = Semidefinite(2)
+B = [1 0; 0 0]
+ρ = kron(B, A)
+constraints = [partialtrace(ρ, 1, [2; 2]) == BigFloat[0.09942819 0.29923607; 0.29923607 0.90057181], ρ in :SDP]
+p = satisfy(constraints)
+solve!(p, SDPA_GMP.SDPAGMPoptimizer(BigFloat, verbose = true))
