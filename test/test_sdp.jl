@@ -244,12 +244,12 @@
             end
 
             @testset "norm2 atom" begin
-                a = 2+4im
+                a = big"2.0"+big"4.0"*im
                 x = ComplexVariable()
                 objective = norm2(a-x)
                 c1 = real(x)>=0
                 p = Problem{BigFloat}(:minimize, objective,c1)
-                solve!(p, solver)
+                solve!(p, solver);
                 @test p.optval ≈ 0 atol=TOL
                 @test evaluate(objective) ≈ 0 atol=TOL
                 real_diff = real(x.value) - real(a)
@@ -289,7 +289,7 @@
             end
 
             @testset "Complex Semidefinite constraint" begin
-                n = 5
+                n = 3
                 A = rand(n,n) + im*rand(n,n)
                 A = A + A' # now A is hermitian
                 x = ComplexVariable(n,n)

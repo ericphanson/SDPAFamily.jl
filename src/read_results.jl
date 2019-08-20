@@ -1,15 +1,17 @@
 export read_results!
 
+
+
 """
-    read_results!(optimizer::SDPAGMPOptimizer{T}, filepath::String)
+    read_results!(optimizer::Optimizer{T}, filepath::String)
 Populates `optimizer` with results in a SDPA-formatted output file specified by `filepath`.
 
 """
-function read_results!(optimizer::SDPAGMPOptimizer{T}, filepath::String) where T
+function read_results!(optimizer::Optimizer{T}, filepath::String) where T
 
     endswith(filepath, ".dat") || error("Filename '$filepath' must end with .dat")
-
     getnextline(io::IO) = eof(io) ? error("The output file is possibly corrupted. Check that $filepath conforms to the SDPA output format.") : chomp(readline(io))
+
     
     function replace_brackets!(str::SubString)
         str = replace(str, "{" => "[")
@@ -22,20 +24,20 @@ function read_results!(optimizer::SDPAGMPOptimizer{T}, filepath::String) where T
         return str
     end
 
-    phasevalue = "noINFO"
+    phasevalue = :noINFO
     objValPrimalstring = ""
     objValDualstring = ""
     xVecstring = ""
     xMatvec = T[]
     yMatvec = T[]
 
-    open(filepath, "r") do io
+    file = open(filepath, "r") do io
         line = getnextline(io)
 
         while !startswith(line, "phase.value")
             line = getnextline(io)
         end
-        phasevalue = split(line)[3]
+        optimizer.phasevalue = Symbol(split(line)[3])
 
         while !startswith(line, "objValPrimal")
             line = getnextline(io)
@@ -84,8 +86,9 @@ function read_results!(optimizer::SDPAGMPOptimizer{T}, filepath::String) where T
     xVecstring = remove_brackets!(xVecstring)
     xVecstring = split(xVecstring, ",")
     xVec = parse.(T, xVecstring)
-    objValPrimal = parse(T, objValPrimalstring)
-    objValDual = parse(T, objValDualstring)
+    optimizer.primalobj = parse(T, objValPrimalstring)
+    optimizer.dualobj = parse(T, objValDualstring)
+    
 
     # xMatstring = replace(remove_brackets(xMatstring), " " => "")
     # yMatstring = replace(remove_brackets(yMatstring), " " => "")
@@ -94,60 +97,60 @@ function read_results!(optimizer::SDPAGMPOptimizer{T}, filepath::String) where T
     # yMatvec = parse.(T, split(yMatstring[2:end], ","))
     
 
-    if phasevalue == "noINFO"
-        optimizer.terminationstatus = MOI.OPTIMIZE_NOT_CALLED
-        optimizer.primalstatus = MOI.UNKNOWN_RESULT_STATUS
-        optimizer.dualstatus = MOI.UNKNOWN_RESULT_STATUS
-    elseif phasevalue == "pFEAS"
-        optimizer.terminationstatus = MOI.SLOW_PROGRESS
-        optimizer.primalstatus = MOI.FEASIBLE_POINT
-        optimizer.dualstatus = MOI.UNKNOWN_RESULT_STATUS
-    elseif phasevalue == "dFEAS"
-        optimizer.terminationstatus = MOI.SLOW_PROGRESS
-        optimizer.primalstatus = MOI.UNKNOWN_RESULT_STATUS
-        optimizer.dualstatus = MOI.FEASIBLE_POINT
-    elseif phasevalue == "pdFEAS"
-        optimizer.terminationstatus = MOI.OPTIMAL
-        optimizer.primalstatus = MOI.FEASIBLE_POINT
-        optimizer.dualstatus = MOI.FEASIBLE_POINT
-    elseif phasevalue == "pdINF"
-        optimizer.terminationstatus = MOI.INFEASIBLE_OR_UNBOUNDED
-        optimizer.primalstatus = MOI.UNKNOWN_RESULT_STATUS
-        optimizer.dualstatus = MOI.UNKNOWN_RESULT_STATUS
-    elseif phasevalue == "pFEAS_dINF"
-        optimizer.terminationstatus = MOI.DUAL_INFEASIBLE
-        optimizer.primalstatus = MOI.INFEASIBILITY_CERTIFICATE
-        optimizer.dualstatus = MOI.INFEASIBLE_POINT
-    elseif phasevalue == "pINF_dFEAS"
-        optimizer.terminationstatus = MOI.INFEASIBLE
-        optimizer.primalstatus = MOI.INFEASIBLE_POINT
-        optimizer.dualstatus = MOI.INFEASIBILITY_CERTIFICATE
-    elseif phasevalue == "pdOPT"
-        optimizer.terminationstatus = MOI.OPTIMAL
-        optimizer.primalstatus = MOI.FEASIBLE_POINT
-        optimizer.dualstatus = MOI.FEASIBLE_POINT
-    elseif phasevalue == "pUNBD"
-        optimizer.terminationstatus = MOI.DUAL_INFEASIBLE
-        optimizer.primalstatus = MOI.INFEASIBILITY_CERTIFICATE
-        optimizer.dualstatus = MOI.INFEASIBLE_POINT
-    elseif phasevalue == "dUNBD"
-        optimizer.terminationstatus = MOI.INFEASIBLE
-        optimizer.primalstatus = MOI.INFEASIBLE_POINT
-        optimizer.dualstatus = MOI.INFEASIBILITY_CERTIFICATE
-    end
+    # if phasevalue == "noINFO"
+    #     optimizer.terminationstatus = MOI.OPTIMIZE_NOT_CALLED
+    #     optimizer.primalstatus = MOI.UNKNOWN_RESULT_STATUS
+    #     optimizer.dualstatus = MOI.UNKNOWN_RESULT_STATUS
+    # elseif phasevalue == "pFEAS"
+    #     optimizer.terminationstatus = MOI.SLOW_PROGRESS
+    #     optimizer.primalstatus = MOI.FEASIBLE_POINT
+    #     optimizer.dualstatus = MOI.UNKNOWN_RESULT_STATUS
+    # elseif phasevalue == "dFEAS"
+    #     optimizer.terminationstatus = MOI.SLOW_PROGRESS
+    #     optimizer.primalstatus = MOI.UNKNOWN_RESULT_STATUS
+    #     optimizer.dualstatus = MOI.FEASIBLE_POINT
+    # elseif phasevalue == "pdFEAS"
+    #     optimizer.terminationstatus = MOI.OPTIMAL
+    #     optimizer.primalstatus = MOI.FEASIBLE_POINT
+    #     optimizer.dualstatus = MOI.FEASIBLE_POINT
+    # elseif phasevalue == "pdINF"
+    #     optimizer.terminationstatus = MOI.INFEASIBLE_OR_UNBOUNDED
+    #     optimizer.primalstatus = MOI.UNKNOWN_RESULT_STATUS
+    #     optimizer.dualstatus = MOI.UNKNOWN_RESULT_STATUS
+    # elseif phasevalue == "pFEAS_dINF"
+    #     optimizer.terminationstatus = MOI.DUAL_INFEASIBLE
+    #     optimizer.primalstatus = MOI.INFEASIBILITY_CERTIFICATE
+    #     optimizer.dualstatus = MOI.INFEASIBLE_POINT
+    # elseif phasevalue == "pINF_dFEAS"
+    #     optimizer.terminationstatus = MOI.INFEASIBLE
+    #     optimizer.primalstatus = MOI.INFEASIBLE_POINT
+    #     optimizer.dualstatus = MOI.INFEASIBILITY_CERTIFICATE
+    # elseif phasevalue == "pdOPT"
+    #     optimizer.terminationstatus = MOI.OPTIMAL
+    #     optimizer.primalstatus = MOI.FEASIBLE_POINT
+    #     optimizer.dualstatus = MOI.FEASIBLE_POINT
+    # elseif phasevalue == "pUNBD"
+    #     optimizer.terminationstatus = MOI.DUAL_INFEASIBLE
+    #     optimizer.primalstatus = MOI.INFEASIBILITY_CERTIFICATE
+    #     optimizer.dualstatus = MOI.INFEASIBLE_POINT
+    # elseif phasevalue == "dUNBD"
+    #     optimizer.terminationstatus = MOI.INFEASIBLE
+    #     optimizer.primalstatus = MOI.INFEASIBLE_POINT
+    #     optimizer.dualstatus = MOI.INFEASIBILITY_CERTIFICATE
+    # end
 
     optimizer.y = xVec
 
-    inputpath = replace(filepath, "output.dat" => "input.dat-s")
-    structurevec = []
-    open(inputpath, "r") do io
-        line = getnextline(io)
-        line = getnextline(io)
-        line = getnextline(io)
-        structurevec = parse.(Int, split(line))
-    end
-    xMatbm = BlockMatrix{T}(map(n -> zeros(T, abs(n), abs(n)), optimizer.blkdims))
-    yMatbm = BlockMatrix{T}(map(n -> zeros(T, abs(n), abs(n)), optimizer.blkdims))
+    # inputpath = replace(filepath, "output.dat" => "input.dat-s")
+    structurevec = optimizer.blockdims
+    # open(inputpath, "r") do io
+    #     line = getnextline(io)
+    #     line = getnextline(io)
+    #     line = getnextline(io)
+    #     structurevec = parse.(Int, split(line))
+    # end
+    yMatbm = PrimalSolution{T}(map(n -> zeros(T, abs(n), abs(n)), optimizer.blockdims))
+    xMatbm = VarDualSolution{T}(map(n -> zeros(T, abs(n), abs(n)), optimizer.blockdims))
     for i in 1:length(structurevec)
         dim = structurevec[i]
         if dim < 0
@@ -180,3 +183,29 @@ function read_results!(optimizer::SDPAGMPOptimizer{T}, filepath::String) where T
     optimizer.Z = xMatbm
 
 end
+
+function inputElement(optimizer::Optimizer, constr_number::Int, blk::Int, i::Int, j::Int, value::T) where T
+    str = ["$constr_number $blk $i $j $value"]
+    append!(optimizer.elemdata, str)
+end
+
+function initializeSolve(optimizer::Optimizer)
+    filename = joinpath(optimizer.tempfile, "input.dat-s")
+    file = open(filename, "w") do io
+        nconstrs = length(optimizer.b)
+        nblocks = length(optimizer.blockdims)
+        println(io, nconstrs)
+        println(io, nblocks)
+        str = ""
+        for i in optimizer.blockdims
+            str = str*string(i)*" "
+        end
+        println(io, str)
+        for line in optimizer.elemdata
+            println(io, line)
+        end
+    end
+end
+
+
+
