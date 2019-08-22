@@ -15,6 +15,7 @@ RowEchelon = "af85af4c-bcd5-5d23-b03a-a909639aa875"
 
 [compat]
 julia = "1"
+MathOptInterface = "~0.9"
 
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
