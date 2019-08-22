@@ -67,11 +67,11 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
     dualobj::T
     phasevalue::Symbol
     tempfile::String
-    elemdata::Vector{String}
+    elemdata::Vector{Any}
     function Optimizer{T}(; kwargs...) where T
 		optimizer = new(
             zero(T), 1, Int[], Tuple{Int, Int, Int}[], T[],
-            NaN, false, Dict{Symbol, Any}(), T[], PrimalSolution{T}(Matrix{T}[]), VarDualSolution{T}(Matrix{T}[]), zero(T), zero(T), :noINFO, mktempdir(), ["0"])
+            NaN, false, Dict{Symbol, Any}(), T[], PrimalSolution{T}(Matrix{T}[]), VarDualSolution{T}(Matrix{T}[]), zero(T), zero(T), :noINFO, mktempdir(), [])
 		for (key, value) in kwargs
 			MOI.set(optimizer, MOI.RawParameter(key), value)
 		end
@@ -130,7 +130,7 @@ function MOI.is_empty(optimizer::Optimizer)
         isempty(optimizer.blockdims) &&
         isempty(optimizer.varmap) &&
         isempty(optimizer.b) &&
-        optimizer.elemdata == [""]
+        optimizer.elemdata == []
 end
 function MOI.empty!(optimizer::Optimizer{T}) where T
     optimizer.objconstant = zero(Cdouble)
@@ -143,7 +143,7 @@ function MOI.empty!(optimizer::Optimizer{T}) where T
     optimizer.y = T[]
     optimizer.phasevalue = :noINFO
     optimizer.tempfile = mktempdir()
-    optimizer.elemdata = [""]
+    optimizer.elemdata = []
     optimizer.primalobj = zero(T)
     optimizer.dualobj = zero(T)
 end

@@ -77,7 +77,7 @@ x = ComplexVariable()
 objective = norm2(a-x)
 c1 = real(x)>=0
 p = Problem{BigFloat}(:minimize, objective,c1)
-mock = solve!(p, SDPA_GMP.Optimizer{BigFloat}());
+mock = solve!(p3, SDPA_GMP.Optimizer{BigFloat}());
 solve!(p, ProxSDP.Optimizer(log_verbose = true));
 # d = solve!(p, e);
 # g = SDOI.mockSDoptimizer(Float64);
