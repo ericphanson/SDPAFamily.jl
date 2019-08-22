@@ -301,13 +301,13 @@ end
 function MOI.optimize!(m::Optimizer)
 	start_time = time()
     # SDPA.initializeUpperTriangle(m.problem, false)
-    initializeSolve(m)
+    redundant_F = initializeSolve(m)
     # SDPA.solve(m)
-    inputname = "input.dat-s"
+    inputname = "input_reduced.dat-s"
     outputname = "output.dat"
     full_input_path = joinpath(m.tempfile, inputname)
     full_output_path = joinpath(m.tempfile, outputname)
-    sdpa_gmp_binary_solve!(m, full_input_path, full_output_path)
+    sdpa_gmp_binary_solve!(m, full_input_path, full_output_path, redundant_entries = redundant_F)
     m.solve_time = time() - start_time
 end
 

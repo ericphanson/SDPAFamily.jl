@@ -3,16 +3,16 @@ export read_results!
 
 
 """
-    read_results!(optimizer::Optimizer{T}, filepath::String)
-Populates `optimizer` with results in a SDPA-formatted output file specified by `filepath`.
+    read_results!(optimizer::Optimizer{T}, filepath::String, redundant_entries::Vector)
+Populates `optimizer` with results in a SDPA-formatted output file specified by `filepath`. Redundant entries corresponding to linearly dependent constraints are set to 0.
 
 """
-function read_results!(optimizer::Optimizer{T}, filepath::String) where T
+function read_results!(optimizer::Optimizer{T}, filepath::String, redundant_entries::Vector) where T
 
     endswith(filepath, ".dat") || error("Filename '$filepath' must end with .dat")
     getnextline(io::IO) = eof(io) ? error("The output file is possibly corrupted. Check that $filepath conforms to the SDPA output format.") : chomp(readline(io))
 
-    
+
     function replace_brackets!(str::SubString)
         str = replace(str, "{" => "[")
         str = replace(str, "}" => "]")
@@ -88,14 +88,14 @@ function read_results!(optimizer::Optimizer{T}, filepath::String) where T
     xVec = parse.(T, xVecstring)
     optimizer.primalobj = parse(T, objValPrimalstring)
     optimizer.dualobj = parse(T, objValDualstring)
-    
+
 
     # xMatstring = replace(remove_brackets(xMatstring), " " => "")
     # yMatstring = replace(remove_brackets(yMatstring), " " => "")
     #
     # xMatvec = parse.(T, split(xMatstring[2:end], ","))
     # yMatvec = parse.(T, split(yMatstring[2:end], ","))
-    
+
 
     # if phasevalue == "noINFO"
     #     optimizer.terminationstatus = MOI.OPTIMIZE_NOT_CALLED
@@ -138,7 +138,9 @@ function read_results!(optimizer::Optimizer{T}, filepath::String) where T
     #     optimizer.primalstatus = MOI.INFEASIBLE_POINT
     #     optimizer.dualstatus = MOI.INFEASIBILITY_CERTIFICATE
     # end
-
+    for i in redundant_entries
+        splice!(xVec, i:i-1, zero(T))
+    end
     optimizer.y = xVec
 
     # inputpath = replace(filepath, "output.dat" => "input.dat-s")
@@ -205,7 +207,30 @@ function initializeSolve(optimizer::Optimizer)
             println(io, line)
         end
     end
+    redundant_F = presolve(optimizer)
+    reduced = joinpath(optimizer.tempfile, "input_reduced.dat-s")
+    file = open(reduced, "w") do io
+        nconstrs = length(optimizer.b) - length(redundant_F)
+        nblocks = length(optimizer.blockdims)
+        println(io, nconstrs)
+        println(io, nblocks)
+        str = ""
+        for i in optimizer.blockdims
+            str = str*string(i)*" "
+        end
+        println(io, str)
+        cVec = deleteat!(split(optimizer.elemdata[1]), redundant_F)
+        println(io, join(cVec, " "))
+        for i in 2:length(optimizer.elemdata)
+            line = optimizer.elemdata[i]
+            linevec = split(line)
+            constr_index = parse(Int, linevec[1])
+            if !in(constr_index, redundant_F)
+                corrected_index = constr_index - count(x -> x<constr_index, redundant_F)
+                linevec[1] = string(corrected_index)
+                println(io, join(linevec, " "))
+            end
+        end
+    end
+    return redundant_F
 end
-
-
-

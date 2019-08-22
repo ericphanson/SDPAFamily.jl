@@ -39,15 +39,16 @@ using SCS
 
 # # mock2 = SDPA_GMP.sdpa_gmp_binary_solve(p2)
 
-E12, E21 = ComplexVariable(2, 2), ComplexVariable(2, 2);
+E12, E21 = ComplexVariable(2, 2), ComplexVariable(2, 2)
 s1, s2 = [big"0.25" big"-0.25"*im; big"0.25"*im big"0.25"], [big"0.5" big"0.0"; big"0.0" big"0.0"]
+p = minimize(real(tr(E12 * (s1 + 2 * s2) + E21 * (s2 + 2 * s1))), [E12 ⪰ 0, E21 ⪰ 0, E12 + E21 == Diagonal(ones(2)) ])
+solve!(p, SDPA_GMP.Optimizer{Float64}());
 
-p3 = Problem{BigFloat}(:minimize, tr(real(E12 * (s1 + big"2.0" * s2) + E21 * (s2 + 2 * s1))), [E12 ⪰ 0, E12 + E21 == Diagonal([big"1.0", big"1.0"])])
 # #
 # # mock3 = SDPA_GMP.sdpa_gmp_binary_solve(p3)
-# x = Variable(Positive())
-# y = Semidefinite(3)
-# p = Problem{BigFloat}(:minimize, nuclearnorm(y), y[2,1]<=4, y[2,2]>=3, y[3,3]<=2)
+x = Variable(Positive())
+y = Semidefinite(3)
+p = Problem{BigFloat}(:minimize, nuclearnorm(y), y[2,1]<=4, y[2,2]>=3, y[3,3]<=2)
 # solve!(p, SDPA_GMP.SDPAGMPoptimizer(BigFloat, verbose = true));
 
 # x = Variable(4)
@@ -60,8 +61,8 @@ p3 = Problem{BigFloat}(:minimize, tr(real(E12 * (s1 + big"2.0" * s2) + E21 * (s2
 # x = Variable(4,1)
 # p = Problem{BigFloat}(:minimize, dotsort(x, [1,2,3,4]), sum(x) >= 7, x >=0, x<=2, x[4]<=1)
 
-# x = Variable(3)
-# p = Problem{BigFloat}(:minimize, norm_1(x), [-2 <= x, x <= 1])
+x = Variable(3)
+p = Problem{BigFloat}(:minimize, norm_1(x), [-2 <= x, x <= 1])
 
 # x = Variable(4, 4)
 # p = Problem{BigFloat}(:minimize, sumlargest(x, 2), sumsmallest(x, 4) >= 1)
@@ -77,7 +78,7 @@ x = ComplexVariable()
 objective = norm2(a-x)
 c1 = real(x)>=0
 p = Problem{BigFloat}(:minimize, objective,c1)
-mock = solve!(p3, SDPA_GMP.Optimizer{BigFloat}());
+mock = solve!(p, SDPA_GMP.Optimizer{BigFloat}());
 solve!(p, ProxSDP.Optimizer(log_verbose = true));
 # d = solve!(p, e);
 # g = SDOI.mockSDoptimizer(Float64);
@@ -91,7 +92,7 @@ solve!(p, ProxSDP.Optimizer(log_verbose = true));
 
 
 
-n = 70
+n = 5
 M = rand(n,n)+ im*rand(n,n)
 M = M + M'
  # now M is hermitian
