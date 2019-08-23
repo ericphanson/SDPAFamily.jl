@@ -18,8 +18,8 @@ include("presolve.jl")
 Execute the given command literal as the only argument to SDPA-GMP.
 
 """
-function  sdpa_gmp_binary(arg::Cmd, verbose = false)
-    if true
+function  sdpa_gmp_binary(arg::Cmd, silent = false)
+    if !silent
         run(`$sdpa_gmp_path $arg`)
     else
         out = devnull #IOBuffer()
@@ -34,8 +34,8 @@ end
 Execute the given command literal as the only argument to SDPA.
 
 """
-function  sdpa_binary(arg::Cmd, verbose = false)
-    if verbose
+function  sdpa_binary(arg::Cmd, silent = false)
+    if !silent
         run(`$sdpa_path $arg`)
     else
         run(pipeline(`$sdpa_path $arg`, stdout = devnull))
@@ -53,7 +53,7 @@ This function returns `m` with solutions already populated from results in the o
 function sdpa_gmp_binary_solve!(m::Optimizer, full_input_path::String, full_output_path::String; extra_args::Cmd = `-pt 0`, redundant_entries::Vector = [])
     if false
         # extra_args = `-p /home/jiazheng/Downloads/sdpa-7.3.8/param.sdpa`
-        sdpa_binary(`-ds $full_input_path -o $full_output_path $extra_args`, m.verbose);
+        sdpa_binary(`-ds $full_input_path -o $full_output_path $extra_args`, m.silent);
     else
         # extra_args = `-p /home/jiazheng/Downloads/sdpa-gmp-7.1.3/param.sdpa`
         extra_args = `-p C:\\Users\\zhuji\\Downloads\\sdpa-gmp-7.1.3\\param.sdpa`

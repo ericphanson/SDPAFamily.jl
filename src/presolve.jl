@@ -9,10 +9,9 @@ function presolve(optimizer::SDPA_GMP.Optimizer{T}) where T
     start = time()
     filepath = joinpath(optimizer.tempfile, "input.dat-s")
     totaldim = sum(abs.(optimizer.blockdims))
-    F0 = BlockArray(spzeros(T, totaldim, totaldim), abs.(optimizer.blockdims), abs.(optimizer.blockdims))
-    F = Vector{Any}()
+    F = spzeros(T, length(optimizer.b), totaldim^2)
     for i in 1:length(optimizer.b)
-        push!(F,BlockArray(spzeros(T, totaldim, totaldim), abs.(optimizer.blockdims), abs.(optimizer.blockdims)))
+        F[i, :] = sparse(vec(BlockArray(spzeros(T, totaldim, totaldim), abs.(optimizer.blockdims), abs.(optimizer.blockdims)))')
     end
     cVec = T[]
     file = open(filepath, "r") do io
@@ -26,41 +25,58 @@ function presolve(optimizer::SDPA_GMP.Optimizer{T}) where T
             blk = Int(blk)
             i = Int(i)
             j = Int(j)
-            if constr_index == 0
-                F0.blocks[blk, blk][i,j] = value
-            else
-                F[constr_index].blocks[blk, blk][i,j] = value
+            if constr_index != 0
+                offset = sum(abs.(optimizer.blockdims)[1:blk-1])
+                linear_index = (j+offset-1)*totaldim + (i+offset)
+                F[constr_index, linear_index] = value
             end
         end
     end
-    redundant_F = []
-    scratch_matrix = zeros(T, 1, totaldim^2)
-    oldpivot = Int64[]
-    for i in 1:length(optimizer.b)
-        # show(vec(F[i])')
-        scratch_matrix = [scratch_matrix; vec(F[i])']
-        $, pivot = rref_with_pivots!(scratch_matrix)
-        if length(oldpivot) == length(pivot)
-            push!(redundant_F, i)
-        elseif length(oldpivot) == length(pivot) - 1
-            oldpivot = pivot
-        else
-            error("Reduced echelon form failed: this should never happen...")
+
+    aug_mat = hcat(F, cVec)
+    redundant_F = collect(setdiff!(Set(1:length(optimizer.b)), Set(rowvals(reduce!(aug_mat)))))
+    for i in redundant_F
+        if aug_mat[i,end] != 0
+            error("Inconsistency at $i th constraint. Problem is dual infeasible. ")
         end
     end
-
-
-    # F = Array((hcat(vec.(F)...))')
-    # SVD = svd!(F)
-    # S = filter(x -> abs(x)>=1e-10, SVD.S)
-    # U = SVD.U[:, 1:length(S)]
-    # # Vt = SVD.Vt[1:length(S), :]
-    # cVec = U'*cVec
-    # F = Diagonal(S)*SVD.Vt
-    # F0 = reshape(SVD.Vt*vec(Array(F0)), totaldim, totaldim)
-    # A, pivot = rref_with_pivots(F)
     finish = time() - start
     n = length(redundant_F)
-    @info "Presolve finished in $finish seconds. $n constraints are eliminated."
-    return redundant_F
+    @info "Presolve finished in $finish seconds. $n constraint(s) eliminated."
+    return sort!(redundant_F)
+end
+
+function reduce!(A::SparseMatrixCSC{T}, ɛ=T <: Union{Rational,Integer} ? 0 : eps(norm(A,Inf))) where T
+    nr, nc = size(A)
+    i = j = 1
+    visited_rows = Int[]
+    while i <= nr && j <= nc - 1 # avoid touching the cVec
+        rows = setdiff!(rowvals(A)[nzrange(A, j)], visited_rows)
+        if isempty(rows)
+            j += 1
+            continue
+        end
+        (m, mi) = findmax(abs.([A[p,j] for p in rows]))
+        mi = rows[mi]
+        if m <= ɛ
+            if ɛ > 0
+                A[:,j] .= zero(T)
+                dropzeros!(A)
+            end
+            j += 1
+        else
+            push!(visited_rows, mi)
+            d = A[mi,j]
+            A[mi,j:nc] = A[mi,j:nc]/d
+
+            for k in setdiff!(rows, mi)
+                d = A[k,j]
+                A[k,j:nc] -= d*A[mi,j:nc]
+            end
+            dropzeros!(A)
+            i += 1
+            j += 1
+        end
+    end
+    return droptol!(A, ɛ)
 end
