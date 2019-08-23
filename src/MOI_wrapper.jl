@@ -68,12 +68,13 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
     phasevalue::Symbol
     tempfile::String
     elemdata::Vector{Any}
-    function Optimizer{T}(; kwargs...) where T
+	presolve::Bool
+    function Optimizer{T}(; presolve::Bool) where T
 		optimizer = new(
             zero(T), 1, Int[], Tuple{Int, Int, Int}[], T[],
-            NaN, false, Dict{Symbol, Any}(), T[], PrimalSolution{T}(Matrix{T}[]), VarDualSolution{T}(Matrix{T}[]), zero(T), zero(T), :noINFO, mktempdir(), [])
-		for (key, value) in kwargs
-			MOI.set(optimizer, MOI.RawParameter(key), value)
+            NaN, false, Dict{Symbol, Any}(), T[], PrimalSolution{T}(Matrix{T}[]), VarDualSolution{T}(Matrix{T}[]), zero(T), zero(T), :noINFO, mktempdir(), [], true)
+		if !presolve
+			optimizer.presolve = false
 		end
 		return optimizer
     end
@@ -249,23 +250,6 @@ function MOIU.load_variables(optimizer::Optimizer{T}, nvars) where T
         optimizer.b = [one(T)]
         optimizer.blockdims = [optimizer.blockdims; -1]
     end
-    # optimizer.problem = SDPAProblem()
-    # setParameterType(optimizer.problem, PARAMETER_DEFAULT)
-	# TODO Take `silent` into account here
-    # setparameters!(optimizer.problem, optimizer.options)
-    # inputConstraintNumber(optimizer.problem, length(optimizer.b))
-    # inputBlockNumber(optimizer.problem, length(optimizer.blockdims))
-    # for (i, blkdim) in enumerate(optimizer.blockdims)
-    #     inputBlockSize(optimizer.problem, i, blkdim)
-    #     inputBlockType(optimizer.problem, i, blkdim < 0 ? LP : SDP)
-    # end
-    # initializeUpperTriangleSpace(optimizer.problem)
-    CVec = ""
-    for i in string.(optimizer.b)
-        # inputCVec(optimizer, i, optimizer.b[i])
-        CVec = CVec*i*" "
-    end
-    push!(optimizer.elemdata, CVec)
     if dummy
         inputElement(optimizer, 1, length(optimizer.blockdims), 1, 1, one(T))
     end
@@ -303,7 +287,7 @@ function MOI.optimize!(m::Optimizer)
     # SDPA.initializeUpperTriangle(m.problem, false)
     redundant_F = initializeSolve(m)
     # SDPA.solve(m)
-    inputname = "input_reduced.dat-s"
+    inputname = "input.dat-s"
     outputname = "output.dat"
     full_input_path = joinpath(m.tempfile, inputname)
     full_output_path = joinpath(m.tempfile, outputname)

@@ -5,7 +5,7 @@ version = "0.1.0"
 
 [deps]
 BinaryProvider = "b99e7846-7c00-51b0-8f62-c81ae34c0232"
-BlockArrays = "8e7c35d0-a365-5155-bbbb-fb81a777f24e"
+DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
 GenericLinearAlgebra = "14197337-ba66-59df-a3e3-ca00e7dcff7a"
 Libdl = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"

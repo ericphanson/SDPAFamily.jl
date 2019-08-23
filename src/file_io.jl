@@ -1,7 +1,5 @@
 export read_results!
 
-
-
 """
     read_results!(optimizer::Optimizer{T}, filepath::String, redundant_entries::Vector)
 Populates `optimizer` with results in a SDPA-formatted output file specified by `filepath`. Redundant entries corresponding to linearly dependent constraints are set to 0.
@@ -82,75 +80,16 @@ function read_results!(optimizer::Optimizer{T}, filepath::String, redundant_entr
             line = getnextline(io)
         end
     end
-    # println(stdout, phasevalue)
     xVecstring = remove_brackets!(xVecstring)
     xVecstring = split(xVecstring, ",")
     xVec = parse.(T, xVecstring)
     optimizer.primalobj = parse(T, objValPrimalstring)
     optimizer.dualobj = parse(T, objValDualstring)
-
-
-    # xMatstring = replace(remove_brackets(xMatstring), " " => "")
-    # yMatstring = replace(remove_brackets(yMatstring), " " => "")
-    #
-    # xMatvec = parse.(T, split(xMatstring[2:end], ","))
-    # yMatvec = parse.(T, split(yMatstring[2:end], ","))
-
-
-    # if phasevalue == "noINFO"
-    #     optimizer.terminationstatus = MOI.OPTIMIZE_NOT_CALLED
-    #     optimizer.primalstatus = MOI.UNKNOWN_RESULT_STATUS
-    #     optimizer.dualstatus = MOI.UNKNOWN_RESULT_STATUS
-    # elseif phasevalue == "pFEAS"
-    #     optimizer.terminationstatus = MOI.SLOW_PROGRESS
-    #     optimizer.primalstatus = MOI.FEASIBLE_POINT
-    #     optimizer.dualstatus = MOI.UNKNOWN_RESULT_STATUS
-    # elseif phasevalue == "dFEAS"
-    #     optimizer.terminationstatus = MOI.SLOW_PROGRESS
-    #     optimizer.primalstatus = MOI.UNKNOWN_RESULT_STATUS
-    #     optimizer.dualstatus = MOI.FEASIBLE_POINT
-    # elseif phasevalue == "pdFEAS"
-    #     optimizer.terminationstatus = MOI.OPTIMAL
-    #     optimizer.primalstatus = MOI.FEASIBLE_POINT
-    #     optimizer.dualstatus = MOI.FEASIBLE_POINT
-    # elseif phasevalue == "pdINF"
-    #     optimizer.terminationstatus = MOI.INFEASIBLE_OR_UNBOUNDED
-    #     optimizer.primalstatus = MOI.UNKNOWN_RESULT_STATUS
-    #     optimizer.dualstatus = MOI.UNKNOWN_RESULT_STATUS
-    # elseif phasevalue == "pFEAS_dINF"
-    #     optimizer.terminationstatus = MOI.DUAL_INFEASIBLE
-    #     optimizer.primalstatus = MOI.INFEASIBILITY_CERTIFICATE
-    #     optimizer.dualstatus = MOI.INFEASIBLE_POINT
-    # elseif phasevalue == "pINF_dFEAS"
-    #     optimizer.terminationstatus = MOI.INFEASIBLE
-    #     optimizer.primalstatus = MOI.INFEASIBLE_POINT
-    #     optimizer.dualstatus = MOI.INFEASIBILITY_CERTIFICATE
-    # elseif phasevalue == "pdOPT"
-    #     optimizer.terminationstatus = MOI.OPTIMAL
-    #     optimizer.primalstatus = MOI.FEASIBLE_POINT
-    #     optimizer.dualstatus = MOI.FEASIBLE_POINT
-    # elseif phasevalue == "pUNBD"
-    #     optimizer.terminationstatus = MOI.DUAL_INFEASIBLE
-    #     optimizer.primalstatus = MOI.INFEASIBILITY_CERTIFICATE
-    #     optimizer.dualstatus = MOI.INFEASIBLE_POINT
-    # elseif phasevalue == "dUNBD"
-    #     optimizer.terminationstatus = MOI.INFEASIBLE
-    #     optimizer.primalstatus = MOI.INFEASIBLE_POINT
-    #     optimizer.dualstatus = MOI.INFEASIBILITY_CERTIFICATE
-    # end
     for i in redundant_entries
         splice!(xVec, i:i-1, zero(T))
     end
     optimizer.y = xVec
-
-    # inputpath = replace(filepath, "output.dat" => "input.dat-s")
     structurevec = optimizer.blockdims
-    # open(inputpath, "r") do io
-    #     line = getnextline(io)
-    #     line = getnextline(io)
-    #     line = getnextline(io)
-    #     structurevec = parse.(Int, split(line))
-    # end
     yMatbm = PrimalSolution{T}(map(n -> zeros(T, abs(n), abs(n)), optimizer.blockdims))
     xMatbm = VarDualSolution{T}(map(n -> zeros(T, abs(n), abs(n)), optimizer.blockdims))
     for i in 1:length(structurevec)
@@ -187,50 +126,51 @@ function read_results!(optimizer::Optimizer{T}, filepath::String, redundant_entr
 end
 
 function inputElement(optimizer::Optimizer, constr_number::Int, blk::Int, i::Int, j::Int, value::T) where T
-    str = ["$constr_number $blk $i $j $value"]
-    append!(optimizer.elemdata, str)
+    push!(optimizer.elemdata, (constr_number, blk, i, j, value))
 end
 
 function initializeSolve(optimizer::Optimizer)
-    filename = joinpath(optimizer.tempfile, "input.dat-s")
-    file = open(filename, "w") do io
-        nconstrs = length(optimizer.b)
-        nblocks = length(optimizer.blockdims)
-        println(io, nconstrs)
-        println(io, nblocks)
-        str = ""
-        for i in optimizer.blockdims
-            str = str*string(i)*" "
-        end
-        println(io, str)
-        for line in optimizer.elemdata
-            println(io, line)
-        end
-    end
-    redundant_F = presolve(optimizer)
-    reduced = joinpath(optimizer.tempfile, "input_reduced.dat-s")
-    file = open(reduced, "w") do io
-        nconstrs = length(optimizer.b) - length(redundant_F)
-        nblocks = length(optimizer.blockdims)
-        println(io, nconstrs)
-        println(io, nblocks)
-        str = ""
-        for i in optimizer.blockdims
-            str = str*string(i)*" "
-        end
-        println(io, str)
-        cVec = deleteat!(split(optimizer.elemdata[1]), redundant_F)
-        println(io, join(cVec, " "))
-        for i in 2:length(optimizer.elemdata)
-            line = optimizer.elemdata[i]
-            linevec = split(line)
-            constr_index = parse(Int, linevec[1])
-            if !in(constr_index, redundant_F)
-                corrected_index = constr_index - count(x -> x<constr_index, redundant_F)
-                linevec[1] = string(corrected_index)
-                println(io, join(linevec, " "))
+    if !optimizer.presolve
+        filename = joinpath(optimizer.tempfile, "input.dat-s")
+        file = open(filename, "w") do io
+            nconstrs = length(optimizer.b)
+            nblocks = length(optimizer.blockdims)
+            println(io, nconstrs)
+            println(io, nblocks)
+            writedlm(io, optimizer.blockdims', " ")
+            writedlm(io, optimizer.b', " ")
+            for line in optimizer.elemdata
+                for i in line
+                    print(io, i)
+                    print(io, " ")
+                end
+                println(io)
             end
         end
+        return []
+    else
+        redundant_F = presolve(optimizer)
+        reduced = joinpath(optimizer.tempfile, "input.dat-s")
+        file = open(reduced, "w") do io
+            nconstrs = length(optimizer.b) - length(redundant_F)
+            nblocks = length(optimizer.blockdims)
+            println(io, nconstrs)
+            println(io, nblocks)
+            writedlm(io, optimizer.blockdims', " ")
+            cVec = deleteat!(copy(optimizer.b), redundant_F)
+            writedlm(io, cVec', " ")
+            for entry in optimizer.elemdata
+                constr_index, blk, i, j, value = entry
+                if !in(constr_index, redundant_F)
+                    constr_index = constr_index - count(x -> x<constr_index, redundant_F)
+                    for i in (constr_index, blk, i, j, value)
+                        print(io, i)
+                        print(io, " ")
+                    end
+                    println(io)
+                end
+            end
+        end
+        return redundant_F
     end
-    return redundant_F
 end

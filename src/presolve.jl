@@ -1,4 +1,3 @@
-using BlockArrays
 using SparseArrays
 using GenericLinearAlgebra
 export presolve
@@ -9,29 +8,15 @@ function presolve(optimizer::SDPA_GMP.Optimizer{T}) where T
     filepath = joinpath(optimizer.tempfile, "input.dat-s")
     totaldim = sum(abs.(optimizer.blockdims))
     F = spzeros(T, length(optimizer.b), totaldim^2)
-    for i in 1:length(optimizer.b)
-        F[i, :] = sparse(vec(BlockArray(spzeros(T, totaldim, totaldim), abs.(optimizer.blockdims), abs.(optimizer.blockdims)))')
-    end
-    cVec = T[]
-    file = open(filepath, "r") do io
-        chomp(readline(io))
-        chomp(readline(io))
-        chomp(readline(io))
-        cVec = parse.(T, split(strip(chomp(readline(io))), " "))
-        while !eof(io)
-            constr_index, blk, i, j, value = parse.(T, split(strip(chomp(readline(io))), " "))
-            constr_index = Int(constr_index)
-            blk = Int(blk)
-            i = Int(i)
-            j = Int(j)
-            if constr_index != 0
-                offset = sum(abs.(optimizer.blockdims)[1:blk-1])
-                linear_index = (j+offset-1)*totaldim + (i+offset)
-                F[constr_index, linear_index] = value
-            end
+    cVec = optimizer.b
+    for entry in optimizer.elemdata
+        constr_index, blk, i, j, value = entry
+        if constr_index != 0
+            offset = sum(abs.(optimizer.blockdims)[1:blk-1])
+            linear_index = (j+offset-1)*totaldim + (i+offset)
+            F[constr_index, linear_index] = value
         end
     end
-
     aug_mat = hcat(F, cVec)
     redundant_F = collect(setdiff!(Set(1:length(optimizer.b)), Set(rowvals(reduce!(aug_mat)))))
     for i in redundant_F
