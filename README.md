@@ -13,7 +13,7 @@ This package is not yet registered in `METADATA.jl`. To install, type `]` in the
 (v1.1) pkg> add https://github.com/ericphanson/SDPA_GMP.jl.git
 ```
 
-After installing the package, make sure that the `sdpa_gmp` binary is in system PATH. Alternatively, modify the `sdpa_gmp_path` constant in `SDPA_GMP.jl` to a path that points to the `sdpa_gmp` binary. Further information about compiling SDPA-GMP binary can be found [here](https://sourceforge.net/projects/sdpa/files/sdpa-gmp/sdpa-gmp.7.1.2-install.txt). 
+After installing the package, make sure that the `sdpa_gmp` binary is in system `PATH`. Alternatively, modify the `sdpa_gmp_path` constant in `SDPA_GMP.jl` to a path that points to the `sdpa_gmp` binary. Further information about compiling SDPA-GMP binary can be found [here](https://sourceforge.net/projects/sdpa/files/sdpa-gmp/sdpa-gmp.7.1.2-install.txt). 
 
 Note that before compilation it is often necessary to modify the SDPA-GMP source code so that the output values have sufficient precision. To do this, modify the `P_FORMAT` string at line 23 in `sdpa_struct.h` so that the output has a precision no less than the default precision (200 bits) or precision specified by the parameter file. 
 
