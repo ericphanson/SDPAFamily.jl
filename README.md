@@ -29,4 +29,4 @@ SDPA-GMP.jl uses `Float64` for problem data and solution by default. To use, for
 
 ### Using presolve
 
-SDPA-GMP will emit `cholesky miss condition :: not positive definite` error if the problem data contains linearly dependent constraints. By default, a presolver will try to detect such constraints by Gaussian elimination. The redundant constraints are omitted from the problem formulation and the corresponding decision variables are set to 0 in the final result. The time taken to perform the presolve step depends on the size of the problem. To disable, call `SDPA_GMP.Optimizer(presolve = false)` instead. 
+SDPA-GMP will emit `cholesky miss condition :: not positive definite` error if the problem data contain linearly dependent constraints. By default, a presolver will try to detect such constraints by Gaussian elimination. The redundant constraints are omitted from the problem formulation and the corresponding decision variables are set to 0 in the final result. The time taken to perform the presolve step depends on the size of the problem. To disable, call `SDPA_GMP.Optimizer(presolve = false)` instead. 
