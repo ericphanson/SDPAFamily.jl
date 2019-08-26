@@ -69,7 +69,7 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
     tempfile::String
     elemdata::Vector{Any}
 	presolve::Bool
-    function Optimizer{T}(; presolve::Bool) where T
+    function Optimizer{T}(; presolve::Bool = true) where T
 		optimizer = new(
             zero(T), 1, Int[], Tuple{Int, Int, Int}[], T[],
             NaN, false, Dict{Symbol, Any}(), T[], PrimalSolution{T}(Matrix{T}[]), VarDualSolution{T}(Matrix{T}[]), zero(T), zero(T), :noINFO, mktempdir(), [], true)

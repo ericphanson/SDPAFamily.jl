@@ -1,14 +1,22 @@
 export read_results!
 
 """
+
     read_results!(optimizer::Optimizer{T}, filepath::String, redundant_entries::Vector)
 Populates `optimizer` with results in a SDPA-formatted output file specified by `filepath`. Redundant entries corresponding to linearly dependent constraints are set to 0.
 
 """
-function read_results!(optimizer::Optimizer{T}, filepath::String, redundant_entries::Vector) where T
+function read_results!(
+    optimizer::Optimizer{T},
+    filepath::String,
+    redundant_entries::Vector
+) where T
 
     endswith(filepath, ".dat") || error("Filename '$filepath' must end with .dat")
-    getnextline(io::IO) = eof(io) ? error("The output file is possibly corrupted. Check that $filepath conforms to the SDPA output format.") : chomp(readline(io))
+    getnextline(io::IO) =
+        eof(io) ?
+        error("The output file is possibly corrupted. Check that $filepath conforms to the SDPA output format.") :
+        chomp(readline(io))
 
 
     function replace_brackets!(str::SubString)
@@ -30,56 +38,56 @@ function read_results!(optimizer::Optimizer{T}, filepath::String, redundant_entr
     yMatvec = T[]
 
     file = open(filepath, "r") do io
-        line = getnextline(io)
-
-        while !startswith(line, "phase.value")
             line = getnextline(io)
-        end
-        optimizer.phasevalue = Symbol(split(line)[3])
 
-        while !startswith(line, "objValPrimal")
-            line = getnextline(io)
-        end
-        objValPrimalstring = split(line)[3]
+            while !startswith(line, "phase.value")
+                line = getnextline(io)
+            end
+            optimizer.phasevalue = Symbol(split(line)[3])
 
-        while !startswith(line, "objValDual")
-            line = getnextline(io)
-        end
-        objValDualstring = split(line)[3]
+            while !startswith(line, "objValPrimal")
+                line = getnextline(io)
+            end
+            objValPrimalstring = split(line)[3]
 
-        while !startswith(line, "xVec")
-            line = getnextline(io)
-        end
-        line = getnextline(io)
-        xVecstring = line
+            while !startswith(line, "objValDual")
+                line = getnextline(io)
+            end
+            objValDualstring = split(line)[3]
 
-        while !startswith(line, "xMat")
-            line = getnextline(io)
-        end
-        line = getnextline(io)
-        line = getnextline(io)
-        while !startswith(line, "}")
-            xMatstring = remove_brackets!(line)
-            if endswith(xMatstring, ",")
-                append!(xMatvec, parse.(T, split(xMatstring[1:end-1], ",")))
-            else
-                append!(xMatvec, parse.(T, split(xMatstring, ",")))
+            while !startswith(line, "xVec")
+                line = getnextline(io)
             end
             line = getnextline(io)
-        end
-        line = getnextline(io)
-        line = getnextline(io)
-        line = getnextline(io)
-        while !startswith(line, "}")
-            yMatstring = remove_brackets!(line)
-            if endswith(yMatstring, ",")
-                append!(yMatvec, parse.(T, split(yMatstring[1:end-1], ",")))
-            else
-                append!(yMatvec, parse.(T, split(yMatstring, ",")))
+            xVecstring = line
+
+            while !startswith(line, "xMat")
+                line = getnextline(io)
             end
             line = getnextline(io)
+            line = getnextline(io)
+            while !startswith(line, "}")
+                xMatstring = remove_brackets!(line)
+                if endswith(xMatstring, ",")
+                    append!(xMatvec, parse.(T, split(xMatstring[1:end-1], ",")))
+                else
+                    append!(xMatvec, parse.(T, split(xMatstring, ",")))
+                end
+                line = getnextline(io)
+            end
+            line = getnextline(io)
+            line = getnextline(io)
+            line = getnextline(io)
+            while !startswith(line, "}")
+                yMatstring = remove_brackets!(line)
+                if endswith(yMatstring, ",")
+                    append!(yMatvec, parse.(T, split(yMatstring[1:end-1], ",")))
+                else
+                    append!(yMatvec, parse.(T, split(yMatstring, ",")))
+                end
+                line = getnextline(io)
+            end
         end
-    end
     xVecstring = remove_brackets!(xVecstring)
     xVecstring = split(xVecstring, ",")
     xVec = parse.(T, xVecstring)
@@ -90,9 +98,15 @@ function read_results!(optimizer::Optimizer{T}, filepath::String, redundant_entr
     end
     optimizer.y = xVec
     structurevec = optimizer.blockdims
-    yMatbm = PrimalSolution{T}(map(n -> zeros(T, abs(n), abs(n)), optimizer.blockdims))
-    xMatbm = VarDualSolution{T}(map(n -> zeros(T, abs(n), abs(n)), optimizer.blockdims))
-    for i in 1:length(structurevec)
+    yMatbm = PrimalSolution{T}(map(
+        n -> zeros(T, abs(n), abs(n)),
+        optimizer.blockdims
+    ))
+    xMatbm = VarDualSolution{T}(map(
+        n -> zeros(T, abs(n), abs(n)),
+        optimizer.blockdims
+    ))
+    for i = 1:length(structurevec)
         dim = structurevec[i]
         if dim < 0
             dim = abs(dim)
@@ -125,10 +139,31 @@ function read_results!(optimizer::Optimizer{T}, filepath::String, redundant_entr
 
 end
 
-function inputElement(optimizer::Optimizer, constr_number::Int, blk::Int, i::Int, j::Int, value::T) where T
+"""
+
+    inputElement(optimizer::Optimizer, constr_number::Int, blk::Int, i::Int, j::Int, value::T) where T
+
+Stores the constraint data in `optimizer.elemdata` as a vector of tuples. Each tuple corresponds to one line in the SDPA-formatted input file.
+"""
+function inputElement(
+    optimizer::Optimizer,
+    constr_number::Int,
+    blk::Int,
+    i::Int,
+    j::Int,
+    value::T
+) where T
     push!(optimizer.elemdata, (constr_number, blk, i, j, value))
 end
 
+"""
+
+    initializeSolve(optimizer::Optimizer)
+
+Writes problem data into an SDPA-formatted file named `input.dat-s`. `presolve.jl` routine is applied as indicated by `optimizer.presolve`.
+
+Returns a vector of indices for redundant constraints, which are omitted from the input file.
+"""
 function initializeSolve(optimizer::Optimizer)
     if !optimizer.presolve
         filename = joinpath(optimizer.tempfile, "input.dat-s")
@@ -151,26 +186,28 @@ function initializeSolve(optimizer::Optimizer)
     else
         redundant_F = presolve(optimizer)
         reduced = joinpath(optimizer.tempfile, "input.dat-s")
-        file = open(reduced, "w") do io
-            nconstrs = length(optimizer.b) - length(redundant_F)
-            nblocks = length(optimizer.blockdims)
-            println(io, nconstrs)
-            println(io, nblocks)
-            writedlm(io, optimizer.blockdims', " ")
-            cVec = deleteat!(copy(optimizer.b), redundant_F)
-            writedlm(io, cVec', " ")
-            for entry in optimizer.elemdata
-                constr_index, blk, i, j, value = entry
-                if !in(constr_index, redundant_F)
-                    constr_index = constr_index - count(x -> x<constr_index, redundant_F)
-                    for i in (constr_index, blk, i, j, value)
-                        print(io, i)
-                        print(io, " ")
+        file =
+            open(reduced, "w") do io
+                nconstrs = length(optimizer.b) - length(redundant_F)
+                nblocks = length(optimizer.blockdims)
+                println(io, nconstrs)
+                println(io, nblocks)
+                writedlm(io, optimizer.blockdims', " ")
+                cVec = deleteat!(copy(optimizer.b), redundant_F)
+                writedlm(io, cVec', " ")
+                for entry in optimizer.elemdata
+                    constr_index, blk, i, j, value = entry
+                    if !in(constr_index, redundant_F)
+                        constr_index = constr_index -
+                                       count(x -> x < constr_index, redundant_F)
+                        for i in (constr_index, blk, i, j, value)
+                            print(io, i)
+                            print(io, " ")
+                        end
+                        println(io)
                     end
-                    println(io)
                 end
             end
-        end
         return redundant_F
     end
 end

@@ -41,8 +41,8 @@ using SCS
 
 E12, E21 = ComplexVariable(2, 2), ComplexVariable(2, 2)
 s1, s2 = [big"0.25" big"-0.25"*im; big"0.25"*im big"0.25"], [big"0.5" big"0.0"; big"0.0" big"0.0"]
-p = minimize(real(tr(E12 * (s1 + 2 * s2) + E21 * (s2 + 2 * s1))), [E12 ⪰ 0, E21 ⪰ 0, E12 + E21 == Diagonal(ones(2)) ])
-solve!(p, SDPA_GMP.Optimizer{Float64}());
+p = Problem{BigFloat}(:minimize, real(tr(E12 * (s1 + 2 * s2) + E21 * (s2 + 2 * s1))), [E12 ⪰ 0, E21 ⪰ 0, E12 + E21 == Diagonal(ones(2)) ])
+solve!(p, SDPA_GMP.Optimizer{BigFloat}());
 
 # #
 # # mock3 = SDPA_GMP.sdpa_gmp_binary_solve(p3)
@@ -78,10 +78,10 @@ x = ComplexVariable()
 objective = norm2(a-x)
 c1 = real(x)>=0
 p = Problem{BigFloat}(:minimize, objective,c1)
-mock = solve!(p, SDPA_GMP.Optimizer{BigFloat}());
+
+mock = solve!(p, SDPA_GMP.Optimizer{BigFloat}(presolve = false));
 solve!(p, ProxSDP.Optimizer(log_verbose = true));
-# d = solve!(p, e);
-# g = SDOI.mockSDoptimizer(Float64);
+# d = solve!(p, e); # g = SDOI.mockSDoptimizer(Float64);
 # f = SCS.Optimizer();
 
 # g = [1.2; 4.3];
@@ -100,5 +100,5 @@ x = ComplexVariable(n,n)
 objective = norm2(M - x)
 c1 = x in :SDP
 p = Problem{Float64}(:minimize, objective, c1)
-mmo = solve!(p3, SDPA_GMP.SDPAGMPoptimizer(BigFloat, verbose = true, normal_sdpa=false));
+mmo = solve!(p, SDPA_GMP.Optimizer{Float64}());
 c, A, b, cones, var_to_ranges, vartypes, conic_constraints = Convex.conic_problem(p3);
