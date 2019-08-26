@@ -20,7 +20,7 @@ Calls the binary `sdpa_gmp` to solve SDPA-formatted problem specified in a .dat-
 
 This function returns `m` with solutions already populated from results in the output file.
 """
-function sdpa_gmp_binary_solve!(m::Optimizer, full_input_path::String, full_output_path::String; extra_args::Cmd = `-pt 0`, redundant_entries::Vector = [])
+function sdpa_gmp_binary_solve!(m::Optimizer, full_input_path::String, full_output_path::String; extra_args::Cmd = ``, redundant_entries::Vector = [])
     # extra_args = `-p /home/jiazheng/Downloads/sdpa-gmp-7.1.3/param.sdpa`
     sdpa_gmp_binary(`-ds $full_input_path -o $full_output_path $extra_args`, m.silent);
     read_results!(m, full_output_path, redundant_entries);

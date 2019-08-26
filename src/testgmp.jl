@@ -41,7 +41,7 @@ using SCS
 
 E12, E21 = ComplexVariable(2, 2), ComplexVariable(2, 2)
 s1, s2 = [big"0.25" big"-0.25"*im; big"0.25"*im big"0.25"], [big"0.5" big"0.0"; big"0.0" big"0.0"]
-p = Problem{BigFloat}(:minimize, real(tr(E12 * (s1 + 2 * s2) + E21 * (s2 + 2 * s1))), [E12 ⪰ 0, E21 ⪰ 0, E12 + E21 == Diagonal(ones(2)) ])
+p = Problem{BigFloat}(:minimize, real(tr(E12 * (s1 + 2 * s2) + E21 * (s2 + 2 * s1))), [E12 ⪰ big"0.0", E21 ⪰ big"0.0", E12 + E21 == Diagonal(ones(BigFloat, 2)) ])
 solve!(p, SDPA_GMP.Optimizer{BigFloat}());
 
 # #

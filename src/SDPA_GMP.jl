@@ -4,7 +4,7 @@ using DelimitedFiles # for writing SDPA input file
 using MathOptInterface
 MOI = MathOptInterface
 MOIB = MOI.Bridges
-const sdpa_gmp_path = "C:\\Users\\zhuji\\Downloads\\sdpa-gmp-7.1.3\\sdpa_gmp" # make sure sdpa_gmp binary is in the system PATH
+const sdpa_gmp_path = "sdpa_gmp" # make sure sdpa_gmp binary is in the system PATH
 
 export sdpa_gmp_binary_solve!, read_results!
 

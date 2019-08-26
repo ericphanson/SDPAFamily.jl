@@ -80,6 +80,10 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
     end
 end
 
+function Optimizer(;presolve::Bool = true)
+	return Optimizer{Float64}(; presolve = presolve)
+end
+
 varmap(optimizer::Optimizer, vi::MOI.VariableIndex) = optimizer.varmap[vi.value]
 
 function MOI.supports(optimizer::Optimizer, param::MOI.RawParameter)
