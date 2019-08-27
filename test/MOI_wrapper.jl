@@ -7,7 +7,7 @@ const MOIU = MOI.Utilities
 const MOIB = MOI.Bridges
 
 import SDPA_GMP
-const optimizer = SDPA_GMP.Optimizer()
+const optimizer = SDPA_GMP.Optimizer{Float64}()
 MOI.set(optimizer, MOI.Silent(), true)
 
 @testset "SolverName" begin
