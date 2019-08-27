@@ -25,7 +25,7 @@ SDPA-GMP uses the parameter file named `param.sdpa` in the same folder as the bi
 
 ### Using a number type other than `BigFloat`
 
-SDPA-GMP.jl uses `BigFloat` for problem data and solution by default. To use, for example, `Float64` instead, simply call `SDPA_GMP.Optimizer{Float64}()`. However, this may cause underflow errors when reading the solution file, particularly when `MathOptInterface` bridges are used. Note that with `MathOptInterface` all the problem data must be parametrised by the same nymber type, i.e. `Float64` in this case. 
+SDPA-GMP.jl uses `BigFloat` for problem data and solution by default. To use, for example, `Float64` instead, simply call `SDPA_GMP.Optimizer{Float64}()`. However, this may cause underflow errors when reading the solution file, particularly when `MathOptInterface` bridges are used. Note that with `MathOptInterface` all the problem data must be parametrised by the same number type, i.e. `Float64` in this case. 
 
 ### Using presolve
 
