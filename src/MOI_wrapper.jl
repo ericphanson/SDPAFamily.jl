@@ -79,6 +79,7 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
 		end
 		if T != BigFloat
 			@warn "Not using BigFloat entries may cause underflow errors."
+		end
 		return optimizer
     end
 end
