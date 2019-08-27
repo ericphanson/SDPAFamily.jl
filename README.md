@@ -15,7 +15,8 @@ This package is not yet registered in `METADATA.jl`. To install, type `]` in the
 
 After installing the package, make sure that the `sdpa_gmp` binary is in system `PATH`. Alternatively, modify the `binary_path` field in `SDPA_GMP.Optimizer()` to a path that points to the `sdpa_gmp` binary. Further information about compiling SDPA-GMP binary can be found [here](https://sourceforge.net/projects/sdpa/files/sdpa-gmp/sdpa-gmp.7.1.2-install.txt). 
 
-Note that before compilation it is often necessary to modify the SDPA-GMP source code so that the output values have sufficient precision. 
+Note that it is often necessary to ensure that the output values have sufficient printout precision. 
+
 * For source code downloaded from the official website (dated 20150320), modify the `P_FORMAT` string at line 23 in `sdpa_struct.h` so that the output has a precision no less than 200 bits (default) or precision specified by the parameter file. 
 * For source code downloaded from its [GitHub repository](https://github.com/nakatamaho/sdpa-gmp), specify the print format string in `param.sdpa` as described in the [SDPA users manual](https://sourceforge.net/projects/sdpa/files/sdpa/sdpa.7.1.1.manual.20080618.pdf).
 
