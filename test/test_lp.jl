@@ -88,7 +88,7 @@
 
     @testset "neg atom" begin
         x = Variable(3)
-        p = Problem{BigFloat}(:minimize, 1, [x >= -2, x <= -2, neg(x) <= 3])
+        p = Problem{BigFloat}(:minimize, Constant(1), [x >= -2, x <= -2, neg(x) <= 3])
         @test vexity(p) == ConvexVexity()
         solve!(p, solver)
         @test p.optval ≈ 1 atol=TOL

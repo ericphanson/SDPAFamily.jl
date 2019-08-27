@@ -1,7 +1,7 @@
 using Convex
 using Convex: DotMultiplyAtom
 using Test
-using ProxSDP
+using SDPA_GMP
 using MathOptInterface
 using Random
 const MOI = MathOptInterface
@@ -18,7 +18,7 @@ Random.seed!(2)
 
 solvers = Any[]
 
-push!(solvers, SCS.Optimizer(verbose=false))
+push!(solvers, SDPA_GMP.Optimizer{BigFloat}())
 
 # If Gurobi is installed, uncomment to test with it:
 #using Gurobi
@@ -34,7 +34,7 @@ push!(solvers, SCS.Optimizer(verbose=false))
     # include(joinpath("test","test_affine.jl"))
     # include(joinpath("test","test_lp.jl"))
     # include("test_socp.jl")
-    include(joinpath("C:\\Users\\zhuji\\.julia\\dev\\Convex\\test\\test_sdp.jl"))
+    include("test_sdp.jl")
     # include("test_exp.jl")
     # include("test_sdp_and_exp.jl")
     # include("test_mip.jl")

@@ -69,19 +69,22 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
     tempfile::String
     elemdata::Vector{Any}
 	presolve::Bool
+	binary_path::String
     function Optimizer{T}(; presolve::Bool = true) where T
 		optimizer = new(
             zero(T), 1, Int[], Tuple{Int, Int, Int}[], T[],
-            NaN, false, Dict{Symbol, Any}(), T[], PrimalSolution{T}(Matrix{T}[]), VarDualSolution{T}(Matrix{T}[]), zero(T), zero(T), :noINFO, mktempdir(), [], true)
+            NaN, false, Dict{Symbol, Any}(), T[], PrimalSolution{T}(Matrix{T}[]), VarDualSolution{T}(Matrix{T}[]), zero(T), zero(T), :noINFO, mktempdir(), [], true, "sdpa_gmp")
 		if !presolve
 			optimizer.presolve = false
 		end
+		if T != BigFloat
+			@warn "Not using BigFloat entries may cause underflow errors."
 		return optimizer
     end
 end
 
 function Optimizer(;presolve::Bool = true)
-	return Optimizer{Float64}(; presolve = presolve)
+	return Optimizer{BigFloat}(; presolve = presolve)
 end
 
 varmap(optimizer::Optimizer, vi::MOI.VariableIndex) = optimizer.varmap[vi.value]
@@ -138,7 +141,7 @@ function MOI.is_empty(optimizer::Optimizer)
         optimizer.elemdata == []
 end
 function MOI.empty!(optimizer::Optimizer{T}) where T
-    optimizer.objconstant = zero(Cdouble)
+    optimizer.objconstant = zero(T)
     optimizer.objsign = 1
     empty!(optimizer.blockdims)
     empty!(optimizer.varmap)
@@ -312,19 +315,19 @@ function MOI.get(m::Optimizer, ::MOI.TerminationStatus)
     elseif status == :pdINF
         return MOI.INFEASIBLE_OR_UNBOUNDED
     elseif status == :pFEAS_dINF
-        return MOI.DUAL_INFEASIBLE
-    elseif status == :pINF_dFEAS
         return MOI.INFEASIBLE
+    elseif status == :pINF_dFEAS
+        return MOI.DUAL_INFEASIBLE
     elseif status == :pdOPT
         return MOI.OPTIMAL
     elseif status == :pUNBD
-        return MOI.DUAL_INFEASIBLE
-    elseif status == :dUNBD
         return MOI.INFEASIBLE
+    elseif status == :dUNBD
+        return MOI.DUAL_INFEASIBLE
     end
 end
 
-function MOI.get(m::Optimizer, ::MOI.PrimalStatus)
+function MOI.get(m::Optimizer, ::MOI.DualStatus)
     status = m.phasevalue
     if status == :noINFO
         return MOI.UNKNOWN_RESULT_STATUS
@@ -349,7 +352,7 @@ function MOI.get(m::Optimizer, ::MOI.PrimalStatus)
     end
 end
 
-function MOI.get(m::Optimizer, ::MOI.DualStatus)
+function MOI.get(m::Optimizer, ::MOI.PrimalStatus)
     status = m.phasevalue
     if status == :noINFO
         return MOI.UNKNOWN_RESULT_STATUS
