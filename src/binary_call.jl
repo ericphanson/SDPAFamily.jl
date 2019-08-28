@@ -1,3 +1,5 @@
+const default_params = normpath(joinpath(@__DIR__, "..", "deps", "param.sdpa"))
+
 """
     sdpa_gmp_binary_solve!(m::Optimizer, full_input_path, full_output_path, extra_args::Cmd, redundant_entries)
 
@@ -6,8 +8,7 @@ Calls the binary `sdpa_gmp` to solve SDPA-formatted problem specified in a .dat-
 
 This function returns `m` with solutions already populated from results in the output file.
 """
-function sdpa_gmp_binary_solve!(m::Optimizer, full_input_path::String, full_output_path::String; extra_args::Cmd = ``, redundant_entries::Vector = [])
-    # extra_args = `-p /home/jiazheng/Downloads/sdpa-gmp-7.1.3/param.sdpa`
+function sdpa_gmp_binary_solve!(m::Optimizer, full_input_path::String, full_output_path::String; extra_args::Cmd = `-p  $default_params`, redundant_entries::Vector = [])
     sdpa_gmp_path = m.binary_path
     arg = `-ds $full_input_path -o $full_output_path $extra_args`
     if !m.silent
