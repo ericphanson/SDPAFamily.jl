@@ -42,9 +42,9 @@ end
 """
     function reduce!(A::SparseMatrixCSC{T}, ɛ = T <: Union{Rational,Integer} ? 0 : eps(norm(A, Inf))) where T
 
-Identifies linearly dependent constraints in the problem. This is done by a naive Gaussian elimination.
+Identifies linearly dependent constraints in the problem. The last column of input is constraint constants and they are included to check if the linearly dependent constraints are redundant or inconsistent. This is done by a naive Gaussian elimination.
 
-Returns a vector with the indices of redundant constraints, which should be removed from the formulation. The rest of the constraints form a maximal linearly independent subset of the original set of constraints. 
+Returns a vector with the indices of redundant constraints, which should be removed from the formulation. The rest of the constraints form a maximal linearly independent subset of the original set of constraints.
 """
 function reduce!(A::SparseMatrixCSC{T}, ɛ = T <: Union{Rational,Integer} ? 0 : eps(norm(A, Inf))) where T
     nr, nc = size(A)
