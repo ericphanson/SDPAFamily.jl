@@ -1,8 +1,10 @@
 using SparseArrays
 using GenericLinearAlgebra
-export presolve
+export presolve 
 
-
+struct PresolveError <: Exception
+    msg::String
+end
 """
     presolve(optimizer::SDPA_GMP.Optimizer{T}) where T
 
@@ -26,16 +28,19 @@ function presolve(optimizer::SDPA_GMP.Optimizer{T}) where T
     aug_mat = hcat(F, cVec)
     redundant_F = collect(setdiff!(
         Set(1:length(optimizer.b)),
-        Set(rowvals(reduce!(aug_mat)))
+        Set(rowvals(reduce!(aug_mat)[:, 1:end-1]))
     ))
     for i in redundant_F
         if aug_mat[i, end] != 0
-            error("Inconsistency at $i th constraint. Problem is dual infeasible. ")
+            # println(aug_mat[i, end])
+            throw(PresolveError("Inconsistency at constraint index $i. Problem is dual infeasible."))
         end
     end
     finish = time() - start
     n = length(redundant_F)
-    @info "Presolve finished in $finish seconds. $n constraint(s) eliminated."
+    if !optimizer.silent
+        @info "Presolve finished in $finish seconds. $n constraint(s) eliminated."
+    end
     return sort!(redundant_F)
 end
 
@@ -61,7 +66,7 @@ function reduce!(A::SparseMatrixCSC{T}, ɛ = T <: Union{Rational,Integer} ? 0 : 
         if m <= ɛ
             if ɛ > 0
                 A[:, j] .= zero(T)
-                dropzeros!(A)
+                droptol!(A, ɛ)
             end
             j += 1
         else
@@ -73,7 +78,7 @@ function reduce!(A::SparseMatrixCSC{T}, ɛ = T <: Union{Rational,Integer} ? 0 : 
                 d = A[k, j]
                 A[k, j:nc] -= d * A[mi, j:nc]
             end
-            dropzeros!(A)
+            droptol!(A, ɛ)
             i += 1
             j += 1
         end

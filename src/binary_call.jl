@@ -27,9 +27,8 @@ function sdpa_gmp_binary_solve!(m::Optimizer, full_input_path::String, full_outp
         run(`$sdpa_gmp_path $arg`)
     else
         out = devnull
-        run(`$sdpa_gmp_path $arg`)
-
-        # run(pipeline(`$sdpa_gmp_path $arg`, stdout = out))
+        # run(`$sdpa_gmp_path $arg`)
+        run(pipeline(`$sdpa_gmp_path $arg`, stdout = out))
     end
     read_results!(m, safe_output_path, redundant_entries);
     return m

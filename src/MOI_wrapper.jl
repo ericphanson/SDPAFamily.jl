@@ -70,12 +70,16 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
     elemdata::Vector{Any}
 	presolve::Bool
 	binary_path::String
-    function Optimizer{T}(; presolve::Bool = true) where T
+	no_solve::Bool
+    function Optimizer{T}(; presolve::Bool = true, silent::Bool = false) where T
 		optimizer = new(
             zero(T), 1, Int[], Tuple{Int, Int, Int}[], T[],
-            NaN, false, Dict{Symbol, Any}(), T[], PrimalSolution{T}(Matrix{T}[]), VarDualSolution{T}(Matrix{T}[]), zero(T), zero(T), :noINFO, mktempdir(), [], true, "sdpa_gmp")
+            NaN, silent, Dict{Symbol, Any}(), T[], PrimalSolution{T}(Matrix{T}[]), VarDualSolution{T}(Matrix{T}[]), zero(T), zero(T), :noINFO, mktempdir(), [], true, "sdpa_gmp", false)
 		if !presolve
 			optimizer.presolve = false
+		end
+		if silent
+			optimizer.silent = true
 		end
 		if T != BigFloat
 			@warn "Not using BigFloat entries may cause underflow errors."
@@ -84,8 +88,8 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
     end
 end
 
-function Optimizer(;presolve::Bool = true)
-	return Optimizer{BigFloat}(; presolve = presolve)
+function Optimizer(;presolve::Bool = true, silent::Bool = false)
+	return Optimizer{BigFloat}(; presolve = presolve, silent = silent)
 end
 
 varmap(optimizer::Optimizer, vi::MOI.VariableIndex) = optimizer.varmap[vi.value]
@@ -299,7 +303,9 @@ function MOI.optimize!(m::Optimizer)
     outputname = "output.dat"
     full_input_path = joinpath(m.tempfile, inputname)
     full_output_path = joinpath(m.tempfile, outputname)
-    sdpa_gmp_binary_solve!(m, full_input_path, full_output_path, redundant_entries = redundant_F)
+	if !m.no_solve
+	    sdpa_gmp_binary_solve!(m, full_input_path, full_output_path, redundant_entries = redundant_F)
+	end
     m.solve_time = time() - start_time
 end
 
