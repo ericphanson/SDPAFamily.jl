@@ -166,7 +166,7 @@ Returns a vector of indices for redundant constraints, which are omitted from th
 """
 function initializeSolve(optimizer::Optimizer)
     if !optimizer.presolve
-        filename = joinpath(optimizer.tempfile, "input.dat-s")
+        filename = joinpath(optimizer.tempdir, "input.dat-s")
         file = open(filename, "w") do io
             nconstrs = length(optimizer.b)
             nblocks = length(optimizer.blockdims)
@@ -185,7 +185,7 @@ function initializeSolve(optimizer::Optimizer)
         return []
     else
         redundant_F = presolve(optimizer)
-        reduced = joinpath(optimizer.tempfile, "input.dat-s")
+        reduced = joinpath(optimizer.tempdir, "input.dat-s")
         file =
             open(reduced, "w") do io
                 nconstrs = length(optimizer.b) - length(redundant_F)
