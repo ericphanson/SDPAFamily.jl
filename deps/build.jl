@@ -57,6 +57,7 @@ if dl_info === nothing && unsatisfied && !custom_library
             products = [
                 FileProduct(prefix, "sdpa_gmp", :sdpa_gmp),
             ]
+            has_WSL = true
 
 
         end
@@ -70,7 +71,7 @@ end
 # trying to install is not itself installed) then load it up!
 if (unsatisfied || !isinstalled(dl_info...; prefix = prefix)) && !custom_library
     # Download and install binaries
-    install(dl_info...; prefix = prefix, force = true, verbose = verbose)
+    install(dl_info...; prefix = prefix, force = true, verbose = verbose, ignore_platform = has_WSL)
 end
 
 # Write out a deps.jl file that will contain mappings for our products
