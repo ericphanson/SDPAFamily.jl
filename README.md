@@ -13,25 +13,15 @@ This package is not yet registered in the General registry. To install, type `]`
 pkg> add https://github.com/ericphanson/SDPA_GMP.jl.git
 ```
 
-### MacOS or Linux
+### Automatic binary installation
 
 If you are on MacOS or Linux, this package will attempt to automatically download the SDPA-GMP binary, built from <https://github.com/ericphanson/sdpa-gmp> (built by [SDPA_GMP_Builder.jl](https://github.com/ericphanson/SDPA_GMP_Builder)). This is patched from the official SDPA-GMP source to allow printing more digits, in order to recover high-precision output.
 
-### Windows
+SDPA-GMP does not compile on Windows. However, it can be used via the [Windows Subsystem for Linux](https://docs.microsoft.com/en-us/windows/wsl/about)(WSL). If you have WSL installed, then SDPA_GMP.jl will try to automatically detect this and use an appropriate binary, called via WSL. This binary can be found at the repo <https://github.com/ericphanson/SDPA_GMP_Builder>, and is built on WSL from the source code at <https://github.com/ericphanson/sdpa-gmp>.
 
-SDPA-GMP does not compile on Windows. However, it can be used via the [Windows Subsystem for Linux](https://docs.microsoft.com/en-us/windows/wsl/about)(WSL). You can install the SDPA-GMP binary on your WSL installation by issuing the following commands in the WSL prompt:
+SDPA-GMP is available under a GPLv2 license, which can be found here: <https://github.com/ericphanson/SDPA_GMP_Builder/blob/master/deps/COPYING>.
 
-```bash
-mkdir SDPA_GMP
-cd SDPA_GMP
-wget https://github.com/ericphanson/SDPA_GMP_Builder/releases/download/v7.1.3/SDPA_GMP_Builder.v7.1.3.x86_64-linux-gnu.tar.gz
-tar -xf SDPA_GMP_Builder.v7.1.3.x86_64-linux-gnu.tar.gz
-cp usr/bin/sdpa_gmp /usr/bin/local/sdpa_gmp
-```
-
-If you have WSL installed and SDPA-GMP installed on your WSL path (as the above commands try to do), then SDPA_GMP.jl will try to automatically detect this and use that SDPA-GMP binary.
-
-### Custom binary location
+### Custom binary
 
 If you would like to use a different binary, set the enviromental variable `JULIA_SDPA_GMP_PATH` to the folder containing the binary you would like to use, and then build the package. This can be done in Julia by, e.g.,
 

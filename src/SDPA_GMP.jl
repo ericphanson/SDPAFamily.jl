@@ -20,8 +20,11 @@ using BinaryProvider
 # `sdpa_gmp` is the default path to the binary.
 include(joinpath(@__DIR__, "..", "deps", "deps.jl"))
 
+WSLize_path(path) = replace(path, ":" => "") |> x -> replace(x, "\\" => "/") |> x -> "/mnt/"*x |> lowercase
+
 const default_params_path = normpath(joinpath(@__DIR__, "..", "deps", "param.sdpa"))
-const default_params_path_wsl = normpath(joinpath(@__DIR__, "..", "deps", "param.sdpa")) |> x -> replace(x, ":" => "") |> x -> replace(x, "\\" => "/") |> x -> "/mnt/"*x |> x -> lowercase(x)
+const default_params_path_wsl = WSLize_path(default_params_path)
+
 
 include("MOI_wrapper.jl")
 include("file_io.jl")

@@ -2,7 +2,7 @@ using BinaryProvider # requires BinaryProvider 0.3.0 or later
 
 # Parse some basic command-line arguments
 const verbose = "--verbose" in ARGS
-const prefix = Prefix(get([a for a in ARGS if a != "--verbose"], 1, joinpath(@__DIR__, "usr")))
+prefix = Prefix(get([a for a in ARGS if a != "--verbose"], 1, joinpath(@__DIR__, "usr")))
 products = [
     ExecutableProduct(prefix, "sdpa_gmp", :sdpa_gmp),
 ]
@@ -38,28 +38,22 @@ if dl_info === nothing && unsatisfied && !custom_library
     # Alternatively, you could attempt to install from a separate provider,
     # build from source or something even more ambitious here.
     if Sys.iswindows()
-        @info "SDPA-GMP does not directly support Windows. See the SDPA_GMP.jl readme for instructions on setting up SDPA-GMP via Windows subsystem for linux."
         # try to see is `sdpa_gmp` is installed on WSL
         if !isempty(Sys.which("wsl"))
-            @info "Windows subsystem for Linux detected. Trying `sdpa_gmp` there."
-            has_wsl =   try
-                success(`wsl sdpa_gmp`)
-            catch e
-                if !(e isa Base.ProcessException)
-                    rethrow(e)
-                else
-                    false
-                end
-            end
-            @info "Attempt to use `sdpa_gmp` succeeded. Using `sdpa_gmp` via WSL."
+            @info "Windows subsystem for Linux detected. Using WSL-compiled binary."
+            
+            
+            prefix = Prefix(joinpath(prefix, "bin"))
+            BinaryProvider.download_verify(url="https://github.com/ericphanson/SDPA_GMP_Builder/tree/master/deps/sdpa_gmp_wsl", dest=joinpath(prefix.path,"sdpa_gmp"), hash="f8ed0c3f2aefa1ab5a90f1999c78548625f6122f969972b8a51b54a0017b3a59", verbose=verbose)
 
-            dl_info = choose_download(download_info, Linux(:x86_64)) 
             products = [
                 FileProduct(prefix, "sdpa_gmp", :sdpa_gmp),
             ]
             has_WSL = true
 
-
+        else
+            @info "SDPA-GMP does not directly support Windows, and requires Windows Subsystem for Linux (WSL). "
+            error("WSL was not detected.")
         end
     else
         error("Your platform (\"$(Sys.MACHINE)\", parsed as \"$(triplet(platform_key_abi()))\") is not supported by BinaryBuilder for this package! That means you need to install `sdpa_gmp` yourself, and put it on the PATH so this package can find it.")

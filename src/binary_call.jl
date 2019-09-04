@@ -7,19 +7,22 @@ Calls the binary `sdpa_gmp` to solve SDPA-formatted problem specified in a .dat-
 This function returns `m` with solutions already populated from results in the output file.
 """
 function sdpa_gmp_binary_solve!(m::Optimizer, full_input_path::String, full_output_path::String; extra_args::Cmd = ``, redundant_entries::Vector = [])
+    read_path = full_output_path
     if m.use_WSL
-        full_input_path = replace(full_input_path, ":" => "") |> x -> replace(x, "\\" => "/") |> x -> "/mnt/"*x |> x -> lowercase(x)
-        full_output_path = replace(full_output_path, ":" => "") |> x -> replace(x, "\\" => "/") |> x -> "/mnt/"*x |> x -> lowercase(x)
+        full_input_path = WSLize_path(full_input_path)
+        full_output_path = WSLize_path(full_output_path)
         if !m.silent
             @info "Redirecting to sdpa_gmp in WSL environment."
         end
     end
     arg = `-ds $full_input_path -o $full_output_path -p $(m.params_path) $extra_args`
     if m.use_WSL
-        wsl_binary_path = replace(m.binary_path, ":" => "") |> x -> replace(x, "\\" => "/") |> x -> "/mnt/"*x |> x -> lowercase(x)
-        run(pipeline(`wsl $wsl_binary_path $arg`, stdout = m.silent ? devnull : stdout))
+        wsl_binary_path = dirname(WSLize_path(m.binary_path))
+        cd(wsl_binary_path) do
+            run(pipeline(`wsl sdpa_gmp $arg`, stdout = m.silent ? devnull : stdout))
+        end
     else
         run(pipeline(`$(m.binary_path) $arg`, stdout = m.silent ? devnull : stdout))
     end
-    read_results!(m, full_output_path, redundant_entries);
+    read_results!(m, read_path, redundant_entries);
 end
