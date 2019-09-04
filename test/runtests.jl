@@ -5,6 +5,6 @@ using Test
 using Pkg
 Pkg.add(PackageSpec(name="Convex", url="https://github.com/ericphanson/Convex.jl", rev="MathOptInterface"))
 
+include("MOI_wrapper.jl")
 include("presolve.jl")
 include("Convex.jl")
-include("MOI_wrapper.jl")
