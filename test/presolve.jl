@@ -8,9 +8,12 @@ const MOIU = MOI.Utilities
 const MOIB = MOI.Bridges
 
 import SDPA_GMP
+using Random
+
+Random.seed!(5)
+setprecision(256)
 
 @testset "Presolve: reduce subroutine" begin
-    setprecision(256)
     for i in 1:10
         M = sprand(BigFloat, 10, 20000, 0.003)
         M[:, 20] .= big"0.0" # reduce does not consider the last column

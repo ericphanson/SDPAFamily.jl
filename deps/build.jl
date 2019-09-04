@@ -44,7 +44,10 @@ if dl_info === nothing && unsatisfied && !custom_library
             
             
             prefix = Prefix(joinpath(prefix, "bin"))
-            BinaryProvider.download_verify(url="https://github.com/ericphanson/SDPA_GMP_Builder/tree/master/deps/sdpa_gmp_wsl", dest=joinpath(prefix.path,"sdpa_gmp"), hash="f8ed0c3f2aefa1ab5a90f1999c78548625f6122f969972b8a51b54a0017b3a59", verbose=verbose)
+            BinaryProvider.download_verify("https://github.com/ericphanson/SDPA_GMP_Builder/tree/master/deps/sdpa_gmp_wsl",  # url
+                    "f8ed0c3f2aefa1ab5a90f1999c78548625f6122f969972b8a51b54a0017b3a59", # hash
+                    joinpath(prefix.path,"sdpa_gmp");  # destination
+                    verbose=verbose)
 
             products = [
                 FileProduct(prefix, "sdpa_gmp", :sdpa_gmp),
@@ -63,7 +66,7 @@ end
 
 # If we have a download, and we are unsatisfied (or the version we're
 # trying to install is not itself installed) then load it up!
-if (unsatisfied || !isinstalled(dl_info...; prefix = prefix)) && !custom_library
+if  dl_info !== nothing && !custom_library && (unsatisfied || !isinstalled(dl_info...; prefix = prefix)) 
     # Download and install binaries
     install(dl_info...; prefix = prefix, force = true, verbose = verbose, ignore_platform = has_WSL)
 end
