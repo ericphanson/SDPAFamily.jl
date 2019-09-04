@@ -15,6 +15,11 @@ function sdpa_gmp_binary_solve!(m::Optimizer, full_input_path::String, full_outp
         end
     end
     arg = `-ds $full_input_path -o $full_output_path -p $(m.params_path) $extra_args`
-    run(pipeline(`$(m.binary_path) $arg`, stdout = m.silent ? devnull : stdout))
+    if m.use_WSL
+        wsl_binary_path = replace(m.binary_path, ":" => "") |> x -> replace(x, "\\" => "/") |> x -> "/mnt/"*x |> x -> lowercase(x)
+        run(pipeline(`wsl $wsl_binary_path $arg`, stdout = m.silent ? devnull : stdout))
+    else
+        run(pipeline(`$(m.binary_path) $arg`, stdout = m.silent ? devnull : stdout))
+    end
     read_results!(m, full_output_path, redundant_entries);
 end

@@ -52,10 +52,12 @@ if dl_info === nothing && unsatisfied && !custom_library
                 end
             end
             @info "Attempt to use `sdpa_gmp` succeeded. Using `sdpa_gmp` via WSL."
-            custom_library = true
-            
-            # Not tested yet...
-            custom_products = [ExecutableProduct("", "wsl sdpa_gmp", :sdpa_gmp) ]
+
+            dl_info = choose_download(download_info, Linux(:x86_64)) 
+            products = [
+                FileProduct(prefix, "sdpa_gmp", :sdpa_gmp),
+            ]
+
 
         end
     else
