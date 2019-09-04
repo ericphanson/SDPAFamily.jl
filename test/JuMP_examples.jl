@@ -8,7 +8,7 @@
 # See http://github.com/JuliaOpt/JuMP.jl
 #############################################################################
 
-using JuMP, Test, LinearAlgebra, SDPA_GMP, SCS, MosekTools
+using JuMP, Test, LinearAlgebra, SDPA_GMP
 import Random
 
 """
@@ -41,9 +41,7 @@ function solve_max_cut_sdp(num_vertex, weights)
 
     # Compute the Cholesky factorization of X, i.e., X = V^T V.
     opt_X = Hermitian(JuMP.value.(X), :U)  # Tell Julia its PSD.
-    show(opt_X ≈ [1.0 -1.0 -1.0 1.0; -1.0 1.0 1.0 -1.0; -1.0 1.0 1.0 -1.0; 1.0 -1.0 -1.0 1.0])
-    # opt_X = [1.0 -1.0 -1.0 1.0; -1.0 1.0 1.0 -1.0; -1.0 1.0 1.0 -1.0; 1.0 -1.0 -1.0 1.0]
-    factorization = cholesky(opt_X, Val(true); check = false)
+    factorization = cholesky(opt_X + 1e-5*I, Val(true); check = false)
     V = (factorization.P * factorization.L)'
 
     # Normalize columns.

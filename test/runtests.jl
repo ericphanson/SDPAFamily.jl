@@ -3,4 +3,4 @@ using Test
 
 include("MOI_wrapper.jl")
 include("Convex.jl")
-include("Presolve.jl")
+include("presolve.jl")
