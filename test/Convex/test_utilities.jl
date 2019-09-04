@@ -3,7 +3,7 @@
     @testset "clearmemory" begin
         # solve a problem to populate globals
         x = Variable()
-        p = minimize(-x, [x <= 0])
+        p = Problem{BigFloat}(:minimize, -x, [x <= 0])
         @test vexity(p) == AffineVexity()
         solve!(p, solvers[1])
 

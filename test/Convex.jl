@@ -18,7 +18,7 @@ Random.seed!(2)
 
 solvers = Any[]
 
-push!(solvers, SDPA_GMP.Optimizer{BigFloat}())
+push!(solvers, SDPA_GMP.Optimizer{BigFloat}(presolve = false, silent = true))
 
 # If Gurobi is installed, uncomment to test with it:
 #using Gurobi
@@ -29,13 +29,14 @@ push!(solvers, SDPA_GMP.Optimizer{BigFloat}())
 #push!(solvers, MosekSolver(LOG=0))
 
 @testset "Convex" begin
-    # include("test_utilities.jl")
-    # include(joinpath("test","test_const.jl"))
-    # include(joinpath("test","test_affine.jl"))
-    # include(joinpath("test","test_lp.jl"))
-    # include("test_socp.jl")
-    include("test_sdp.jl")
-    # include("test_exp.jl")
-    # include("test_sdp_and_exp.jl")
-    # include("test_mip.jl")
+    include(joinpath("Convex", "test_utilities.jl"))
+    include(joinpath("Convex", "test_const.jl"))
+    include(joinpath("Convex", "test_affine.jl"))
+    include(joinpath("Convex", "test_lp.jl"))
+    solvers[1] = SDPA_GMP.Optimizer{BigFloat}(silent = true)
+    include(joinpath("Convex", "test_socp.jl"))
+    include(joinpath("Convex", "test_sdp.jl"))
+    # include(joinpath("Convex", "test_exp.jl")
+    # include(joinpath("Convex", "test_sdp_and_exp.jl")
+    # include(joinpath("Convex", "test_mip.jl")
 end
