@@ -30,6 +30,14 @@ if haskey(ENV,"JULIA_SDPA_GMP_PATH")
     end
 end
 
+# try to detect if we are *within* WSL
+# https://github.com/microsoft/WSL/issues/423#issuecomment-221627364
+if Sys.islinux() && occursin("WSL", read(`cat /proc/version`, String))
+    install_wsl_binary = true
+else
+    install_wsl_binary = false
+end
+
 # Install unsatisfied or updated dependencies:
 unsatisfied = any(!satisfied(p; verbose = verbose) for p in products)
 dl_info = choose_download(download_info, platform_key_abi())
@@ -41,17 +49,7 @@ if dl_info === nothing && unsatisfied && !custom_library
         # try to see is `sdpa_gmp` is installed on WSL
         if !isempty(Sys.which("wsl"))
             @info "Windows subsystem for Linux detected. Using WSL-compiled binary."
-            
-            
-            prefix = Prefix(joinpath(prefix, "bin"))
-            BinaryProvider.download_verify("https://github.com/ericphanson/SDPA_GMP_Builder/raw/master/deps/sdpa_gmp_wsl",  # url
-                    "f8ed0c3f2aefa1ab5a90f1999c78548625f6122f969972b8a51b54a0017b3a59", # hash
-                    joinpath(prefix.path,"sdpa_gmp");  # destination
-                    verbose=verbose)
-
-            products = [
-                FileProduct(prefix, "sdpa_gmp", :sdpa_gmp),
-            ]
+            install_wsl_binary = true            
             has_WSL = true
 
         else
@@ -62,6 +60,19 @@ if dl_info === nothing && unsatisfied && !custom_library
         error("Your platform (\"$(Sys.MACHINE)\", parsed as \"$(triplet(platform_key_abi()))\") is not supported by BinaryBuilder for this package! That means you need to install `sdpa_gmp` yourself, and put it on the PATH so this package can find it.")
     end
 
+end
+
+# we install WSL binary if we are on Windows and WSL is available, or if we are within WSL itself already.
+if install_wsl_binary
+    prefix = Prefix(joinpath(prefix, "bin"))
+    BinaryProvider.download_verify("https://github.com/ericphanson/SDPA_GMP_Builder/raw/master/deps/sdpa_gmp_wsl",  # url
+            "f8ed0c3f2aefa1ab5a90f1999c78548625f6122f969972b8a51b54a0017b3a59", # hash
+            joinpath(prefix.path,"sdpa_gmp");  # destination
+            verbose=verbose)
+
+    products = [
+        FileProduct(prefix, "sdpa_gmp", :sdpa_gmp),
+    ]
 end
 
 # If we have a download, and we are unsatisfied (or the version we're
