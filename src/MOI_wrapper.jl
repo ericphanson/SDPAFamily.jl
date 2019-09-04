@@ -1,4 +1,4 @@
-# export PARAMETER_DEFAULT, PARAMETER_UNSTABLE_BUT_FAST, PARAMETER_STABLE_BUT_SLOW
+# This file modifies code from SDPA.jl (https://github.com/JuliaOpt/SDPA.jl), which is available under an MIT license (see LICENSE).
 
 using MathOptInterface
 MOI = MathOptInterface
