@@ -6,7 +6,6 @@ version = "0.1.0"
 [deps]
 BinaryProvider = "b99e7846-7c00-51b0-8f62-c81ae34c0232"
 DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
-GenericLinearAlgebra = "14197337-ba66-59df-a3e3-ca00e7dcff7a"
 Libdl = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 MathOptInterface = "b8f27783-ece8-5eb3-8dc8-9495eed66fee"
@@ -17,4 +16,9 @@ MathOptInterface = "~0.9"
 julia = "1"
 
 [extras]
+GenericLinearAlgebra = "14197337-ba66-59df-a3e3-ca00e7dcff7a"
+Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test", "Pkg", "GenericLinearAlgebra"]
