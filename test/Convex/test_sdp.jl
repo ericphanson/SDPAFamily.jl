@@ -1,6 +1,6 @@
 
 # TODO: uncomment vexity checks once SDP on vars/constraints changes vexity of problem
-@testset "SDP Atoms: " for solver in solvers
+@testset "SDP Atoms: " for solver in solvers begin
     if true # can_solve_sdp(solver)
         @testset "sdp variables" begin
             y = Variable((2,2), :Semidefinite)
