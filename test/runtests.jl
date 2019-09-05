@@ -5,9 +5,25 @@ using Test
 using Pkg
 Pkg.add(PackageSpec(name="Convex", url="https://github.com/ericphanson/Convex.jl", rev="MathOptInterface"))
 
-@testset "SDPA_GMP" begin
-    include("variant_test.jl")
-    include("MOI_wrapper.jl")
+@testset "General utilities" begin
     include("presolve.jl")
+    include("variant_test.jl")
+end
+
+@testset "SDPA-GMP" begin
+    global var = :gmp
+    include("MOI_wrapper.jl")
+    include("Convex.jl")
+end
+
+@testset "SDPA-DD" begin
+    global var = :dd
+    include("MOI_wrapper.jl")
+    include("Convex.jl")
+end
+
+@testset "SDPA-QD" begin
+    global var = :qd
+    include("MOI_wrapper.jl")
     include("Convex.jl")
 end

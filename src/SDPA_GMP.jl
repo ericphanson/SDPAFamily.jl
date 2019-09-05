@@ -32,9 +32,11 @@ This function converts Windows paths for use via WSL.
 """
 WSLize_path(path) = replace(path, ":" => "") |> x -> replace(x, "\\" => "/") |> x -> "/mnt/"*x |> lowercase
 
-const default_params_path = normpath(joinpath(@__DIR__, "..", "deps", "param.sdpa"))
-const default_params_path_wsl = WSLize_path(default_params_path)
+const default_gmp_params_path = normpath(joinpath(@__DIR__, "..", "deps", "param_gmp.sdpa"))
+const default_gmp_params_path_wsl = WSLize_path(default_gmp_params_path)
 
+const default_ddqd_params_path = normpath(joinpath(@__DIR__, "..", "deps", "param_dd_qd.sdpa"))
+const default_ddqd_params_path_wsl = WSLize_path(default_ddqd_params_path)
 
 include("MOI_wrapper.jl")
 include("file_io.jl")

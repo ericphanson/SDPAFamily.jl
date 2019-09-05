@@ -7,7 +7,7 @@ const MOIU = MOI.Utilities
 const MOIB = MOI.Bridges
 
 import SDPA_GMP
-const optimizer = SDPA_GMP.Optimizer{Float64}(presolve=true)
+const optimizer = SDPA_GMP.Optimizer{Float64}(presolve=true, variant = var)
 MOI.set(optimizer, MOI.Silent(), true)
 
 @testset "SolverName" begin
@@ -26,21 +26,26 @@ const bridged = MOIB.full_bridge_optimizer(cached, Float64)
 # test 1e-3 because of rsoc3 test, otherwise, 1e-5 is enough
 const config = MOIT.TestConfig(atol=1e-3, rtol=1e-3)
 
-# @testset "Unit" begin
-#     MOIT.unittest(bridged, config, [
-#         # `TimeLimitSec` not supported.
-#         "time_limit_sec",
-#         # SingleVariable objective of bridged variables, will be solved by objective bridges
-#         "solve_time", "raw_status_string",
-#         "solve_singlevariable_obj",
-#         # Quadratic functions are not supported
-#         "solve_qcp_edge_cases", "solve_qp_edge_cases",
-#         # Integer and ZeroOne sets are not supported
-#         "solve_integer_edge_cases", "solve_objbound_edge_cases",
-#         "solve_zero_one_with_bounds_1",
-#         "solve_zero_one_with_bounds_2",
-#         "solve_zero_one_with_bounds_3"])
-# end
+@testset "Unit" begin
+    exclusion_list = [
+        # `TimeLimitSec` not supported.
+        "time_limit_sec",
+        # SingleVariable objective of bridged variables, will be solved by objective bridges
+        "solve_time", "raw_status_string",
+        "solve_singlevariable_obj",
+        # Quadratic functions are not supported
+        "solve_qcp_edge_cases", "solve_qp_edge_cases",
+        # Integer and ZeroOne sets are not supported
+        "solve_integer_edge_cases", "solve_objbound_edge_cases",
+        "solve_zero_one_with_bounds_1",
+        "solve_zero_one_with_bounds_2",
+        "solve_zero_one_with_bounds_3"]
+    if var == :gmp
+        # Underflow results when using Float64 with SDPA-GMP
+        push!(exclusion_list, "solve_affine_equalto")
+    end
+    MOIT.unittest(bridged, config, exclusion_list)
+end
 @testset "Linear tests" begin
     # See explanation in `MOI/test/Bridges/lazy_bridge_optimizer.jl`.
     # This is to avoid `Variable.VectorizeBridge` which does not support

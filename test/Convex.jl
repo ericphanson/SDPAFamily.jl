@@ -18,7 +18,7 @@ Random.seed!(2)
 
 solvers = []
 
-push!(solvers, () -> SDPA_GMP.Optimizer{BigFloat}(presolve = false, silent = true))
+push!(solvers, () -> SDPA_GMP.Optimizer{BigFloat}(presolve = false, silent = true, variant = var))
 
 
 @testset "Convex" begin
@@ -26,7 +26,7 @@ push!(solvers, () -> SDPA_GMP.Optimizer{BigFloat}(presolve = false, silent = tru
     include(joinpath("Convex", "test_const.jl"))
     include(joinpath("Convex", "test_affine.jl"))
     include(joinpath("Convex", "test_lp.jl"))
-    solvers[1] = () -> SDPA_GMP.Optimizer{BigFloat}(presolve = true, silent = true)
+    solvers[1] = () -> SDPA_GMP.Optimizer{BigFloat}(presolve = true, silent = true, variant = var)
     include(joinpath("Convex", "test_socp.jl"))
     include(joinpath("Convex", "test_sdp.jl"))
     # include(joinpath("Convex", "test_exp.jl")
