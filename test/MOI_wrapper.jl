@@ -39,11 +39,9 @@ const config = MOIT.TestConfig(atol=1e-3, rtol=1e-3)
         "solve_integer_edge_cases", "solve_objbound_edge_cases",
         "solve_zero_one_with_bounds_1",
         "solve_zero_one_with_bounds_2",
-        "solve_zero_one_with_bounds_3"]
-    if var == :gmp
-        # Underflow results when using Float64 with SDPA-GMP
-        push!(exclusion_list, "solve_affine_equalto")
-    end
+        "solve_zero_one_with_bounds_3",
+        # Underflow results when using Float64
+        "solve_affine_equalto"]
     MOIT.unittest(bridged, config, exclusion_list)
 end
 @testset "Linear tests" begin
