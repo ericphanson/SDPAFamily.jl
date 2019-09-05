@@ -6,3 +6,4 @@
 /dev/
 deps/usr
 deps/build.log
+deps/deps.jl

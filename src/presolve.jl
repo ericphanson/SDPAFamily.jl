@@ -1,10 +1,10 @@
 using SparseArrays
-using GenericLinearAlgebra
 export presolve 
 
 struct PresolveError <: Exception
     msg::String
 end
+
 """
     presolve(optimizer::SDPA_GMP.Optimizer{T}) where T
 

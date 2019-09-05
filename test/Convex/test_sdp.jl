@@ -1,18 +1,18 @@
 
 # TODO: uncomment vexity checks once SDP on vars/constraints changes vexity of problem
 @testset "SDP Atoms: " for solver in solvers begin
-    if true # can_solve_sdp(solver)
+    if true # can_solve_sdp(solver())
         @testset "sdp variables" begin
             y = Variable((2,2), :Semidefinite)
             p = Problem{BigFloat}(:minimize, y[1,1])
             # @fact vexity(p) --> ConvexVexity()
-            solve!(p, solver)
+            solve!(p, solver())
             @test p.optval ≈ 0 atol=TOL
 
             y = Variable((3,3), :Semidefinite)
             p = Problem{BigFloat}(:minimize, y[1,1], y[2,2]==1)
             # @fact vexity(p) --> ConvexVexity()
-            solve!(p, solver)
+            solve!(p, solver())
             @test p.optval ≈ 0 atol=TOL
 
             # Solution is obtained as y[2,2] -> infinity
@@ -21,26 +21,26 @@
             # y = Variable((2, 2), :Semidefinite)
             # p = Problem{BigFloat}(:minimize, y[1, 1], y[1, 2] == 1)
             # # @fact vexity(p) --> ConvexVexity()
-            # solve!(p, solver)
+            # solve!(p, solver())
             # @fact p.optval --> roughly(0, TOL)
 
             y = Semidefinite(3)
             p = Problem{BigFloat}(:minimize, sum(diag(y)), y[1, 1] == 1)
             # @fact vexity(p) --> ConvexVexity()
-            solve!(p, solver)
+            solve!(p, solver())
             @test p.optval ≈ 1 atol=TOL
 
             y = Variable((3, 3), :Semidefinite)
             p = Problem{BigFloat}(:minimize, tr(y), y[2,1]<=4, y[2,2]>=3)
             # @fact vexity(p) --> ConvexVexity()
-            solve!(p, solver)
+            solve!(p, solver())
             @test p.optval ≈ 3 atol=TOL
 
             x = Variable(Positive())
             y = Semidefinite(3)
             p = Problem{BigFloat}(:minimize, y[1, 2], y[2, 1] == 1)
             # @fact vexity(p) --> ConvexVexity()
-            solve!(p, solver)
+            solve!(p, solver())
             @test p.optval ≈ 1 atol=TOL
         end
 
@@ -50,7 +50,7 @@
             y = Variable((3, 3))
             p = Problem{BigFloat}(:minimize, x + y[1, 1], isposdef(y), x >= 1, y[2, 1] == 1)
             # @fact vexity(p) --> ConvexVexity()
-            solve!(p, solver)
+            solve!(p, solver())
             @test p.optval ≈ 1 atol=TOL
         end
 
@@ -58,7 +58,7 @@
             y = Semidefinite(3)
             p = Problem{BigFloat}(:minimize, nuclearnorm(y), y[2,1]<=4, y[2,2]>=3, y[3,3]<=2)
             @test vexity(p) == ConvexVexity()
-            solve!(p, solver)
+            solve!(p, solver())
             @test p.optval ≈ 3 atol=TOL
             @test evaluate(nuclearnorm(y)) ≈ 3 atol=TOL
         end
@@ -67,7 +67,7 @@
             y = Variable((3,3))
             p = Problem{BigFloat}(:minimize, opnorm(y), y[2,1]<=4, y[2,2]>=3, sum(y)>=12)
             @test vexity(p) == ConvexVexity()
-            solve!(p, solver)
+            solve!(p, solver())
             @test p.optval ≈ 4 atol=TOL
             @test evaluate(opnorm(y)) ≈ 4 atol=TOL
         end
@@ -76,7 +76,7 @@
             y = Variable((3,3))
             p = Problem{BigFloat}(:minimize, sigmamax(y), y[2,1]<=4, y[2,2]>=3, sum(y)>=12)
             @test vexity(p) == ConvexVexity()
-            solve!(p, solver)
+            solve!(p, solver())
             @test p.optval ≈ 4 atol=TOL
             @test evaluate(sigmamax(y)) ≈ 4 atol=TOL
         end
@@ -85,7 +85,7 @@
         #     y = Semidefinite(3)
         #     p = Problem{BigFloat}(:minimize, lambdamax(y), y[1,1]>=4)
         #     @test vexity(p) == ConvexVexity()
-        #     solve!(p, solver)
+        #     solve!(p, solver())
         #     @test p.optval ≈ 4 atol=TOL
         #     @test evaluate(lambdamax(y)) ≈ 4 atol=TOL
         # end
@@ -94,7 +94,7 @@
         #     y = Semidefinite(3)
         #     p = Problem{BigFloat}(:maximize, lambdamin(y), tr(y)<=6)
         #     @test vexity(p) == ConvexVexity()
-        #     solve!(p, solver)
+        #     solve!(p, solver())
         #     @test p.optval ≈ 2 atol=TOL
         #     @test evaluate(lambdamin(y)) ≈ 2 atol=TOL
         end
@@ -104,7 +104,7 @@
             P = Variable(3, 3)
             p = Problem{BigFloat}(:minimize, matrixfrac(x, P), P <= 2*eye(3), P >= 0.5 * eye(3))
             @test vexity(p) == ConvexVexity()
-            solve!(p, solver)
+            solve!(p, solver())
             @test p.optval ≈ 7 atol=TOL
             @test (evaluate(matrixfrac(x, P)))[1] ≈ 7 atol=TOL
         end
@@ -114,7 +114,7 @@
             P = Variable(3, 3)
             p = Problem{BigFloat}(:minimize, matrixfrac(x, P), lambdamax(P) <= 2, x[1] >= 1)
             @test vexity(p) == ConvexVexity()
-            solve!(p, solver)
+            solve!(p, solver())
             @test p.optval ≈ 0.5 atol=TOL
             @test (evaluate(matrixfrac(x, P)))[1] ≈ 0.5 atol=TOL
         end
@@ -122,32 +122,32 @@
         @testset "sum largest eigs" begin
             x = Semidefinite(3)
             p = Problem{BigFloat}(:minimize, sumlargesteigs(x, 2), x >= 1)
-            solve!(p, solver)
+            solve!(p, solver())
             @test p.optval ≈ 3 atol=TOL
             @test evaluate(x) ≈ ones(3, 3) atol=TOL
 
             x = Semidefinite(3)
             p = Problem{BigFloat}(:minimize, sumlargesteigs(x, 2), [x[i,:] >= i for i=1:3]...)
-            solve!(p, solver)
+            solve!(p, solver())
             @test p.optval ≈ 8.4853 atol=TOL
 
             x1 = Semidefinite(3)
             p1 = Problem{BigFloat}(:minimize, lambdamax(x1), x1[1,1]>=4)
-            solve!(p1, solver)
+            solve!(p1, solver())
 
             x2 = Semidefinite(3)
             p2 = Problem{BigFloat}(:minimize, sumlargesteigs(x2, 1), x2[1,1]>=4)
-            solve!(p2, solver)
+            solve!(p2, solver())
 
             @test p1.optval ≈ p2.optval atol=TOL
 
             x1 = Semidefinite(3)
             p1 = Problem{BigFloat}(:minimize, lambdamax(x1), [x1[i,:] >= i for i=1:3]...)
-            solve!(p1, solver)
+            solve!(p1, solver())
 
             x2 = Semidefinite(3)
             p2 = Problem{BigFloat}(:minimize, sumlargesteigs(x2, 1), [x2[i,:] >= i for i=1:3]...)
-            solve!(p2, solver)
+            solve!(p2, solver())
 
             @test p1.optval ≈ p2.optval atol=TOL
 
@@ -160,7 +160,7 @@
             W = kron(id, X)
             p = Problem{BigFloat}(:maximize, tr(W), tr(X) ≤ 1)
             @test vexity(p) == AffineVexity()
-            solve!(p, solver)
+            solve!(p, solver())
             @test p.optval ≈ 4 atol=TOL
         end
 
@@ -170,7 +170,7 @@
             ρ = kron(B, A)
             constraints = [partialtrace(ρ, 1, [2; 2]) == BigFloat[0.09942819 0.29923607; 0.29923607 0.90057181], ρ in :SDP]
             p = Problem{BigFloat}(:minimize, Constant(0), constraints)
-            solve!(p, solver)
+            solve!(p, solver())
             @test evaluate(ρ) ≈ BigFloat[0.09942819 0.29923607 0 0; 0.299237 0.900572 0 0; 0 0 0 0; 0 0 0 0] atol=TOL
             @test evaluate(partialtrace(ρ, 1, [2; 2])) ≈ [0.09942819 0.29923607; 0.29923607 0.90057181] atol=TOL
 
@@ -210,11 +210,11 @@
                 b = A * xo
                 x = Variable(n)
                 p1 = Problem{BigFloat}(:minimize, sum(x), A*x == b, x>=0)
-                solve!(p1, solver)
+                solve!(p1, solver())
                 x1 = x.value
 
                 p2 = Problem{BigFloat}(:minimize, sum(x), real(A)*x == real(b), imag(A)*x==imag(b), x>=0)
-                solve!(p2, solver)
+                solve!(p2, solver())
                 x2 = x.value
                 @test x1 == x2
             end
@@ -227,13 +227,13 @@
                 b = A * xo
                 x = ComplexVariable(n)
                 p1 = Problem{BigFloat}(:minimize, real(sum(x)), A*x == b, real(x)>=0, imag(x)>=0)
-                solve!(p1, solver)
+                solve!(p1, solver())
                 x1 = x.value
 
                 xr = Variable(n)
                 xi = Variable(n)
                 p2 = Problem{BigFloat}(:minimize, sum(xr), real(A)*xr-imag(A)*xi == real(b), imag(A)*xr+real(A)*xi == imag(b), xr>=0, xi>=0)
-                solve!(p2, solver)
+                solve!(p2, solver())
                 #x2 = xr.value + im*xi.value
                 real_diff = real(x1) - xr.value
 
@@ -249,7 +249,7 @@
                 objective = norm2(a-x)
                 c1 = real(x)>=0
                 p = Problem{BigFloat}(:minimize, objective,c1)
-                solve!(p, solver);
+                solve!(p, solver());
                 @test p.optval ≈ 0 atol=TOL
                 @test evaluate(objective) ≈ 0 atol=TOL
                 real_diff = real(x.value) - real(a)
@@ -264,7 +264,7 @@
                 objective = sumsquares(a-x)
                 c1 = real(x)>=0
                 p = Problem{BigFloat}(:minimize, objective,c1)
-                solve!(p, solver)
+                solve!(p, solver())
                 @test p.optval ≈ 0 atol=TOL
                 @test evaluate(objective) ≈ zeros(1, 1) atol=TOL
                 real_diff = real.(x.value) - real.(a)
@@ -279,7 +279,7 @@
                 objective = abs(a-x)
                 c1 = real(x)>=0
                 p = Problem{BigFloat}(:minimize, objective,c1)
-                solve!(p, solver)
+                solve!(p, solver())
                 @test p.optval ≈ 0 atol=TOL
                 @test evaluate(objective) ≈ zeros(1) atol=TOL
                 real_diff = real(x.value) .- real(a)
@@ -296,7 +296,7 @@
                 objective = sumsquares(A - x)
                 c1 = x in :SDP
                 p = Problem{BigFloat}(:minimize, objective, c1)
-                solve!(p, solver)
+                solve!(p, solver())
                 # test that X is approximately equal to posA:
                 l,v = eigen(A)
                 posA = v*Diagonal(max.(l,0))*v'

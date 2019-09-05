@@ -3,7 +3,7 @@
         x = Variable()
         p = Problem{BigFloat}(:minimize, -x, [x <= 0])
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 0 atol=TOL
         @test evaluate(-x) ≈ 0 atol=TOL
     end
@@ -19,7 +19,7 @@
         x = Variable(1)
         p = Problem{BigFloat}(:minimize, big"2.0" * x, [x >= 2, x <= 4])
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 4 atol=TOL
         @test (evaluate(big"2.0"*x))[1] ≈ 4 atol=TOL
 
@@ -27,7 +27,7 @@
         A = big"1.5" * eye(2)
         p = Problem{BigFloat}(:minimize, [2 2] * x, [A * x >= [big"1.1"; big"1.1"]])
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ big"2.93333" atol=TOL
         @test (evaluate([2 2] * x))[1] ≈ big"2.93333" atol=TOL
         @test vec(evaluate(A * x)) ≈ [big"1.1"; big"1.1"] atol=TOL
@@ -40,18 +40,18 @@
         o = 3 * y
         p = Problem{BigFloat}(:minimize, o, c)
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 3 atol=TOL
 
         p = Problem{BigFloat}(:minimize, o, c...)
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 3 atol=TOL
 
         # Check #274
         x = ComplexVariable(2,2)
         p = Problem{BigFloat}(:minimize,  real( [1.0im, 0.0]' * x * [1.0im, 0.0] ), [ x == [1.0 0.0; 0.0 1.0] ])
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 1.0
     end
 
@@ -59,7 +59,7 @@
         x = Variable(2)
         p = Problem{BigFloat}(:minimize, dot([2.0; 2.0], x), x >= [1.1; 1.1])
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 4.4 atol=TOL
         @test (evaluate(dot([2.0; 2.0], x)))[1] ≈ 4.4 atol=TOL
     end
@@ -68,7 +68,7 @@
         x = Variable(2,2)
         p = Problem{BigFloat}(:minimize, dot(fill(2.0, (2,2)), x), x >= 1.1)
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 8.8 atol=TOL
         @test (evaluate(dot(fill(2.0, (2, 2)), x)))[1] ≈ 8.8 atol=TOL
     end
@@ -78,21 +78,21 @@
         y = Variable(1)
         p = Problem{BigFloat}(:minimize, x + y, [x >= 3, y >= 2])
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 5 atol=TOL
         @test evaluate(x + y) ≈ 5 atol=TOL
 
         x = Variable(1)
         p = Problem{BigFloat}(:minimize, x, [eye(2) + x >= eye(2)])
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 0 atol=TOL
         @test evaluate(eye(2) + x) ≈ eye(2) atol=TOL
 
         y = Variable()
         p = Problem{BigFloat}(:minimize, y - 5, y >= -1)
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ -6 atol=TOL
         @test evaluate(y - 5) ≈ -6 atol=TOL
     end
@@ -102,7 +102,7 @@
         c = ones(2, 1)
         p = Problem{BigFloat}(:minimize, x' * c, x >= 1)
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 2 atol=TOL
         @test (evaluate(x' * c))[1] ≈ 2 atol=TOL
 
@@ -110,7 +110,7 @@
         c = ones(2, 1)
         p = Problem{BigFloat}(:minimize, c' * X' * c, [X >= ones(2, 2)])
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 4 atol=TOL
         @test (evaluate(c' * X' * c))[1] ≈ 4 atol=TOL
 
@@ -124,7 +124,7 @@
         p = Problem{BigFloat}(:minimize, c * x' * d + d' * x * c' + (c * x''''' * d)',
                     [x' >= r_2, x >= r, x''' >= r_2, x'' >= r])
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         s = sum(max.(r, r_2')) * 3
         @test p.optval ≈ s atol=TOL
         @test (evaluate(c * x' * d + d' * x * c' + (c * ((((x')')')')' * d)'))[1] ≈ s atol=TOL
@@ -134,7 +134,7 @@
         x = Variable(2)
         p = Problem{BigFloat}(:minimize, x[1] + x[2], [x >= 1])
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 2 atol=TOL
         @test (evaluate(x[1] + x[2]))[1] ≈ 2 atol=TOL
 
@@ -142,7 +142,7 @@
         I = [true true false]
         p = Problem{BigFloat}(:minimize, sum(x[I]), [x >= 1])
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 2 atol=TOL
         @test (evaluate(sum(x[I])))[1] ≈ 2 atol=TOL
 
@@ -154,7 +154,7 @@
         c = rand(1, n)
         p = Problem{BigFloat}(:minimize, c * X[1:n, 5:5+n-1]' * c', X >= A)
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         s = c * A[1:n, 5:5+n-1]' * c'
         @test p.optval ≈ s[1] atol=TOL
         @test evaluate(c * (X[1:n, 5:(5 + n) - 1])' * c') ≈ s atol=TOL
@@ -164,14 +164,14 @@
         x = Variable(2,2)
         p = Problem{BigFloat}(:minimize, sum(x), x>=1)
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 4 atol=TOL
         @test evaluate(sum(x)) ≈ 4 atol=TOL
 
         x = Variable(2,2)
         p = Problem{BigFloat}(:minimize, sum(x) - 2*x[1,1], x>=1, x[1,1]<=2)
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 1 atol=TOL
         @test (evaluate(sum(x) - 2 * x[1, 1]))[1] ≈ 1 atol=TOL
 
@@ -179,7 +179,7 @@
         a = rand(10, 1)
         p = Problem{BigFloat}(:maximize, sum(x[2:6]), x <= a)
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ sum(a[2:6]) atol=TOL
         @test evaluate(sum(x[2:6])) ≈ sum(a[2:6]) atol=TOL
     end
@@ -188,14 +188,14 @@
         x = Variable(2,2)
         p = Problem{BigFloat}(:minimize, sum(diag(x,1)), x >= 1)
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 1 atol=TOL
         @test evaluate(sum(diag(x, 1))) ≈ 1 atol=TOL
 
         x = Variable(4, 4)
         p = Problem{BigFloat}(:minimize, sum(diag(x)), x >= 2)
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 8 atol=TOL
         @test evaluate(sum(diag(x))) ≈ 8 atol=TOL
     end
@@ -204,7 +204,7 @@
         x = Variable(2,2)
         p = Problem{BigFloat}(:minimize, tr(x), x >= 1)
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 2 atol=TOL
         @test evaluate(tr(x)) ≈ 2 atol=TOL
     end
@@ -213,42 +213,42 @@
         x = Variable(3)
         p = Problem{BigFloat}(:maximize, sum(dot(*)(x,[1,2,3])), x<=1)
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 6 atol=TOL
         @test evaluate(sum((dot(*))(x, [1, 2, 3]))) ≈ 6 atol=TOL
 
         x = Variable(3, 3)
         p = Problem{BigFloat}(:maximize, sum(dot(*)(x,eye(3))), x<=1)
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 3 atol=TOL
         @test evaluate(sum((dot(*))(x, eye(3)))) ≈ 3 atol=TOL
 
         x = Variable(5, 5)
         p = Problem{BigFloat}(:minimize, x[1, 1], dot(*)(3,x) >= 3)
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 1 atol=TOL
         @test (evaluate(x[1, 1]))[1] ≈ 1 atol=TOL
 
         x = Variable(3,1)
         p = Problem{BigFloat}(:minimize, sum(dot(*)(ones(3,3), x)), x>=1)
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 9 atol=TOL
         @test (evaluate(x[1, 1]))[1] ≈ 1 atol=TOL
 
         x = Variable(1,3)
         p = Problem{BigFloat}(:minimize, sum(dot(*)(ones(3,3), x)), x>=1)
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 9 atol=TOL
         @test (evaluate(x[1, 1]))[1] ≈ 1 atol=TOL
 
         x = Variable(1, 3, Positive())
         p = Problem{BigFloat}(:maximize, sum(dot(/)(x,[1 2 3])), x<=1)
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 11 / 6 atol=TOL
         @test evaluate(sum((dot(/))(x, [1 2 3]))) ≈ 11 / 6 atol=TOL
 
@@ -264,14 +264,14 @@
         c = rand()
         p = Problem{BigFloat}(:minimize, sum(reshape(X, 2, 3) + A), X >= c)
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ sum(A .+ c) atol=TOL
         @test evaluate(sum(reshape(X, 2, 3) + A)) ≈ sum(A .+ c) atol=TOL
 
         b = rand(6)
         p = Problem{BigFloat}(:minimize, sum(vec(X) + b), X >= c)
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ sum(b .+ c) atol=TOL
         @test evaluate(sum(vec(X) + b)) ≈ sum(b .+ c) atol=TOL
 
@@ -281,7 +281,7 @@
         a = collect(1:16)
         p = Problem{BigFloat}(:minimize, c' * reshaped, reshaped >= a)
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         # TODO: why is accuracy lower here?
         @test p.optval ≈ 136 atol=10TOL
         @test (evaluate(c' * reshaped))[1] ≈ 136 atol=10TOL
@@ -292,7 +292,7 @@
         y = Variable(4, 6)
         p = Problem{BigFloat}(:maximize, sum(x) + sum([y fill(4.0, 4)]), [x y fill(2.0, (4, 2))] <= 2)
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 96 atol=TOL
         @test evaluate(sum(x) + sum([y fill(4.0, 4)])) ≈ 96 atol=TOL
         @test evaluate([x y fill(2.0, (4, 2))]) ≈ fill(2.0, (4, 12)) atol=TOL
@@ -305,7 +305,7 @@
         # TODO: fix dimension mismatch [y 4*eye(4); x -ones(4, 6)]
         p = Problem{BigFloat}(:maximize, sum(x) + sum([y 4*eye(4); x -ones(4, 6)]), [x;y'] <= 2)
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         # TODO: why is accuracy lower here?
         @test p.optval ≈ 104 atol=10TOL
         @test evaluate(sum(x) + sum([y 4 * eye(4); x -(ones(4, 6))])) ≈ 104 atol=10TOL
@@ -319,7 +319,7 @@
         x = Variable(4)
         p = Problem{BigFloat}(:minimize, sum(Diagonal(x)), x == [1, 2, 3, 4])
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 10 atol=TOL
         @test all(abs.(evaluate(Diagonal(x)) - Diagonal([1, 2, 3, 4])) .<= TOL)
 
@@ -327,12 +327,12 @@
         c = [1; 2; 3]
         p = Problem{BigFloat}(:minimize, c' * Diagonal(x) * c, x >= 1, sum(x) == 10)
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 21 atol=TOL
 
         x = Variable(3)
         p = Problem{BigFloat}(:minimize, sum(x), x >= 1, Diagonal(x)[1, 2] == 1)
-        # @test solve!(p, solver) === nothing
+        # @test solve!(p, solver()) === nothing
         @test p.status != MOI.OPTIMAL
     end
 
@@ -341,7 +341,7 @@
         h = [1, -1]
         p = Problem{BigFloat}(:minimize, sum(conv(h, x)) + sum(x), x >= 1, x <= 2)
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 3 atol=TOL
         @test evaluate(sum(conv(h, x))) ≈ 0 atol=TOL
 
@@ -349,7 +349,7 @@
         h = [1, -1]
         p = Problem{BigFloat}(:minimize, sum(conv(x, h)) + sum(x), x >= 1, x <= 2)
         @test vexity(p) == AffineVexity()
-        solve!(p, solver)
+        solve!(p, solver())
         @test p.optval ≈ 3 atol=TOL
         @test evaluate(sum(conv(h, x))) ≈ 0 atol=TOL
 
@@ -360,15 +360,15 @@
     #     p = satisfy(x >= 0)
     #     add_constraints!(p, x >= 1)
     #     add_constraints!(p, [x >= -1, x <= 4])
-    #     solve!(p, solver)
+    #     solve!(p, solver())
     #     @test p.status == MOI.OPTIMAL
     # 
     #     p = satisfy([x >= 0, x >= 1, x <= 2])
-    #     solve!(p, solver)
+    #     solve!(p, solver())
     #     @test p.status == MOI.OPTIMAL
     #
     #     p = Problem{BigFloat}(:maximize, 1, [x >= 1, x <= 2])
-    #     solve!(p, solver)
+    #     solve!(p, solver())
     #     @test p.status == MOI.OPTIMAL
     #
     #     constr = x >= 0
@@ -377,14 +377,14 @@
     #     constr2 = x >= 0
     #     constr2 += [x >= 2, x <= 3] + constr
     #     p = satisfy(constr)
-    #     solve!(p, solver)
+    #     solve!(p, solver())
     #     @test p.status == MOI.OPTIMAL
     # end
 
     @testset "dual" begin
         x = Variable()
         p = Problem{BigFloat}(:minimize, x, x >= 0)
-        solve!(p, solver)
+        solve!(p, solver())
         if p.solution.has_dual
             println("Solution object has dual value, checking for dual correctness.")
             @test p.constraints[1].dual ≈ 1 atol=TOL
@@ -392,7 +392,7 @@
 
         x = Variable()
         p = Problem{BigFloat}(:maximize, x, x <= 0)
-        solve!(p, solver)
+        solve!(p, solver())
         if p.solution.has_dual
             println("Solution object has dual value, checking for dual correctness.")
             @test p.constraints[1].dual ≈ 1 atol=TOL
@@ -400,7 +400,7 @@
 
         x = Variable()
         p = Problem{BigFloat}(:minimize, x, x >= 0, x == 2)
-        solve!(p, solver)
+        solve!(p, solver())
         if p.solution.has_dual
             println("Solution object has dual value, checking for dual correctness.")
             @test p.constraints[1].dual ≈ 0 atol=TOL
@@ -410,7 +410,7 @@
         x = Variable(2)
         A = 1.5 * eye(2)
         p = Problem{BigFloat}(:minimize, dot([2.0; 2.0], x), [A * x >= [1.1; 1.1]])
-        solve!(p, solver)
+        solve!(p, solver())
         if p.solution.has_dual
             println("Solution object has dual value, checking for dual correctness.")
             dual = [4/3; 4/3]

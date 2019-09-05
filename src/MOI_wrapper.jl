@@ -1,4 +1,4 @@
-# export PARAMETER_DEFAULT, PARAMETER_UNSTABLE_BUT_FAST, PARAMETER_STABLE_BUT_SLOW
+# This file modifies code from SDPA.jl (https://github.com/JuliaOpt/SDPA.jl), which is available under an MIT license (see LICENSE).
 
 using MathOptInterface
 MOI = MathOptInterface
@@ -66,30 +66,30 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
     primalobj::T
     dualobj::T
     phasevalue::Symbol
-    tempfile::String
+    tempdir::String
     elemdata::Vector{Any}
 	presolve::Bool
 	binary_path::String
-	no_solve::Bool
-    function Optimizer{T}(; presolve::Bool = true, silent::Bool = false) where T
+	params_path::String
+    no_solve::Bool
+    use_WSL::Bool
+    function Optimizer{T}(; variant = :gmp, presolve::Bool = false, silent::Bool = false,
+            binary_path = BB_PATHS[variant], use_WSL = HAS_WSL, params_path = use_WSL ? default_params_path_wsl : default_params_path) where T
 		optimizer = new(
             zero(T), 1, Int[], Tuple{Int, Int, Int}[], T[],
-            NaN, silent, Dict{Symbol, Any}(), T[], PrimalSolution{T}(Matrix{T}[]), VarDualSolution{T}(Matrix{T}[]), zero(T), zero(T), :noINFO, mktempdir(), [], true, "sdpa_gmp", false)
-		if !presolve
-			optimizer.presolve = false
-		end
-		if silent
-			optimizer.silent = true
-		end
+            NaN, silent, Dict{Symbol, Any}(), T[], PrimalSolution{T}(Matrix{T}[]), VarDualSolution{T}(Matrix{T}[]), zero(T), zero(T), :noINFO, mktempdir(), [], presolve, binary_path, params_path, false, use_WSL)
+        
+        if use_WSL && binary_path ∈ (BB_PATHS[:dd], BB_PATHS[:qd])
+            error("WSL binaries haven't been built yet for SDPA-DD and SDPA-QD.")
+        end
+        
 		if T != BigFloat
 			@warn "Not using BigFloat entries may cause underflow errors."
 		end
 		return optimizer
     end
-end
 
-function Optimizer(;presolve::Bool = true, silent::Bool = false)
-	return Optimizer{BigFloat}(; presolve = presolve, silent = silent)
+    Optimizer(; kwargs...) = Optimizer{BigFloat}(; kwargs...)
 end
 
 varmap(optimizer::Optimizer, vi::MOI.VariableIndex) = optimizer.varmap[vi.value]
@@ -155,7 +155,7 @@ function MOI.empty!(optimizer::Optimizer{T}) where T
     optimizer.Z = VarDualSolution{T}(Matrix{T}[])
     optimizer.y = T[]
     optimizer.phasevalue = :noINFO
-    optimizer.tempfile = mktempdir()
+    optimizer.tempdir = mktempdir()
     optimizer.elemdata = []
     optimizer.primalobj = zero(T)
     optimizer.dualobj = zero(T)
@@ -301,8 +301,8 @@ function MOI.optimize!(m::Optimizer)
     # SDPA.solve(m)
     inputname = "input.dat-s"
     outputname = "output.dat"
-    full_input_path = joinpath(m.tempfile, inputname)
-    full_output_path = joinpath(m.tempfile, outputname)
+    full_input_path = joinpath(m.tempdir, inputname)
+    full_output_path = joinpath(m.tempdir, outputname)
 	if !m.no_solve
 	    sdpa_gmp_binary_solve!(m, full_input_path, full_output_path, redundant_entries = redundant_F)
 	end

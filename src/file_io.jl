@@ -1,10 +1,9 @@
 export read_results!
 
 """
-
     read_results!(optimizer::Optimizer{T}, filepath::String, redundant_entries::Vector)
-Populates `optimizer` with results in a SDPA-formatted output file specified by `filepath`. Redundant entries corresponding to linearly dependent constraints are set to 0.
 
+Populates `optimizer` with results in a SDPA-formatted output file specified by `filepath`. Redundant entries corresponding to linearly dependent constraints are set to 0.
 """
 function read_results!(
     optimizer::Optimizer{T},
@@ -140,7 +139,6 @@ function read_results!(
 end
 
 """
-
     inputElement(optimizer::Optimizer, constr_number::Int, blk::Int, i::Int, j::Int, value::T) where T
 
 Stores the constraint data in `optimizer.elemdata` as a vector of tuples. Each tuple corresponds to one line in the SDPA-formatted input file.
@@ -157,7 +155,6 @@ function inputElement(
 end
 
 """
-
     initializeSolve(optimizer::Optimizer)
 
 Writes problem data into an SDPA-formatted file named `input.dat-s`. `presolve.jl` routine is applied as indicated by `optimizer.presolve`.
@@ -166,7 +163,7 @@ Returns a vector of indices for redundant constraints, which are omitted from th
 """
 function initializeSolve(optimizer::Optimizer)
     if !optimizer.presolve
-        filename = joinpath(optimizer.tempfile, "input.dat-s")
+        filename = joinpath(optimizer.tempdir, "input.dat-s")
         file = open(filename, "w") do io
             nconstrs = length(optimizer.b)
             nblocks = length(optimizer.blockdims)
@@ -185,7 +182,7 @@ function initializeSolve(optimizer::Optimizer)
         return []
     else
         redundant_F = presolve(optimizer)
-        reduced = joinpath(optimizer.tempfile, "input.dat-s")
+        reduced = joinpath(optimizer.tempdir, "input.dat-s")
         file =
             open(reduced, "w") do io
                 nconstrs = length(optimizer.b) - length(redundant_F)
