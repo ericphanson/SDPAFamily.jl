@@ -7,6 +7,9 @@ julia:
   - 1.0
   - 1.2
   - nightly
+branches: # build master branch + PRs
+  only:
+  - master
 matrix:
   # fast_finish marks the build as passing even if allow_failures builds are still running
   fast_finish: true

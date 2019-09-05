@@ -13,14 +13,32 @@ using Random
 Random.seed!(5)
 setprecision(256)
 
+# In the following, we use this of the random API:
+# https://docs.julialang.org/en/v1/stdlib/Random/index.html#Generating-values-from-a-collection-1
+struct RandomRationalType end
+const RandomRational = RandomRationalType()
+
+"""
+Random.rand(rng::AbstractRNG, ::Random.SamplerTrivial{RandomRationalType})::Rational{BigInt}
+
+For the purposes of these tests, we define `rand(RandomRational)` to give a random rational number in
+the interval [1/10_000, 1 - 1/10_000] representable with a denominator of size at most 10_000, with the type `Rational{BigInt}`.
+"""
+function Random.rand(rng::AbstractRNG, ::Random.SamplerTrivial{RandomRationalType})
+    D = big(rand(2:10_000)) 
+    N = big(rand(1:D-1))
+    return N // D
+end
+
 @testset "Presolve: reduce subroutine" begin
     for i in 1:10
-        M = sprand(BigFloat, 10, 20000, 0.003)
+        # make sprand generate its nonzeros via our `RandomRational`'s
+        M = 1000*sprand(10, 20000, 0.003, n -> [ rand(RandomRational) for _ = 1:n ], Rational{BigInt})
         M[:, 20] .= big"0.0" # reduce does not consider the last column
         dropzeros!(M)
         j = rand(setdiff(1:10,i))
         k = rand(setdiff(1:10,i))
-        λ = rand(BigFloat)
+        λ = rand(Rational{BigInt})
         M[i, :] = λ*M[j, :] + (1-λ)*M[k, :]
         rows = Set(rowvals(SDPA_GMP.reduce!(M)[:, 1:end-1]))
         redundant = collect(setdiff!(Set(1:10), rows))
@@ -28,13 +46,13 @@ setprecision(256)
         @test redundant[1] ∈ (i, j, k)
     end
     for i in 1:10
-        M = sprand(BigFloat, 10, 2000, 0.01)
+        M = 1000*sprand(10, 2000, 0.01, n -> [ rand(RandomRational) for _ = 1:n ], Rational{BigInt})
         M[:, 20] .= big"0.0" # reduce does not consider the last column
         dropzeros!(M)
         j = rand(setdiff(1:10,i))
         k = rand(setdiff(1:10,i))
         l = rand(setdiff(1:10,i))
-        λ = rand(BigFloat)
+        λ = rand(RandomRational)
         M[i, :] = λ*M[j, :] + (1-λ)*M[k, :] + λ/2*M[l, :]
         rows = Set(rowvals(SDPA_GMP.reduce!(M)[:, 1:end-1]))
         redundant = collect(setdiff!(Set(1:10), rows))
@@ -47,7 +65,7 @@ end
     for n in 2:5
         opt = SDPA_GMP.Optimizer(silent = true)
         opt.no_solve = true
-        A = rand(n,n) + im*rand(n,n)
+        A = rand(BigFloat, n,n) + im*rand(BigFloat, n,n)
         A = A + A' # now A is hermitian
         x = ComplexVariable(n,n)
         objective = sumsquares(A - x)
