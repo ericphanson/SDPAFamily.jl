@@ -7,9 +7,9 @@ const MOIB = MOI.Bridges
 using BinaryProvider
 
 
-# The `deps.jl` file defines `has_WSL::Bool` and `sdpa_gmp::String`.
+# The `deps.jl` file defines `HAS_WSL::Bool` and `sdpa_gmp::String`.
 #
-# `has_WSL == true` means we default to `use_WSL = true`
+# `HAS_WSL == true` means we default to `use_WSL = true`
 # in SDPA_GMP.Optimizer; otherwise we default to `use_WSL = false`.
 # if `use_WSL` is set to true for a given SDPA_GMP.Optimizer, that means
 # we default to using `default_params_path_wsl` as the params, and
@@ -17,6 +17,13 @@ using BinaryProvider
 #
 # `sdpa_gmp` is the default path to the binary.
 include(joinpath(@__DIR__, "..", "deps", "deps.jl"))
+
+"""
+    BB_PATHS::Dict{Symbol,String}
+
+Holds the binary-builder-built paths to the executables for `sdpa_gmp`, `sdpa_dd`, and `sdpa_qd`.
+"""
+const BB_PATHS = Dict(:gmp => sdpa_gmp, :dd => sdpa_dd, :qd => sdpa_qd)
 
 """
     WSLize_path(path::String) -> String
