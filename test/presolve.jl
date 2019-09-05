@@ -38,7 +38,7 @@ end
         dropzeros!(M)
         j = rand(setdiff(1:10,i))
         k = rand(setdiff(1:10,i))
-        λ = rand(Rational{BigInt})
+        λ = rand(RandomRational)
         M[i, :] = λ*M[j, :] + (1-λ)*M[k, :]
         rows = Set(rowvals(SDPA_GMP.reduce!(M)[:, 1:end-1]))
         redundant = collect(setdiff!(Set(1:10), rows))
