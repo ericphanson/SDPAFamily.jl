@@ -12,7 +12,7 @@
         β.value = ones(5)
 
         problem = Problem{BigFloat}(:minimize, sum(c * β), [β >= 0])
-        solve!(problem, solver)
+        solve!(problem, solver())
         @test problem.optval ≈ evaluate(sum(c * β)) atol=TOL
         @test problem.optval ≈ 0.0 atol=TOL
         @test β.value ≈ zeros(5) atol=TOL
@@ -23,11 +23,11 @@
         y = Variable(2)
         fix!(x, [1 1]')
         prob = Problem{BigFloat}(:minimize, y'*(x+[2 2]'), [y>=0])
-        solve!(prob, solver)
+        solve!(prob, solver())
         @test prob.optval ≈ 0.0 atol = TOL
 
         prob = Problem{BigFloat}(:minimize, x'*y, [y>=0])
-        solve!(prob, solver)
+        solve!(prob, solver())
         @test prob.optval ≈ 0.0 atol = TOL
     end
 

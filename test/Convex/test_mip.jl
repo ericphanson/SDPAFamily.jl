@@ -1,18 +1,18 @@
-@testset "Mixed Integer Programs: $solver" for solver in solvers
-    if can_solve_mip(solver)
-        mip_solver = !can_solve_mip(solver) ? GLPKSolverMIP() : solver
+@testset "Mixed Integer Programs: $solver()" for solver in solvers
+    if can_solve_mip(solver())
+        mip_solver = !can_solve_mip(solver()) ? GLPKSolverMIP() : solver()
 
         @testset "lp fallback interface" begin
             x = Variable()
             p = minimize(x, x>=4.3)
             @test vexity(p) == AffineVexity()
-            solve!(p, solver)
+            solve!(p, solver())
             @test p.optval ≈ 4.3 atol=TOL
 
             x = Variable(2)
             p = minimize(norm(x,1), x[1]>=4.3)
             @test vexity(p) == ConvexVexity()
-            solve!(p, solver)
+            solve!(p, solver())
             @test p.optval ≈ 4.3 atol=TOL
         end
 

@@ -5,7 +5,7 @@
         x = Variable()
         p = Problem{BigFloat}(:minimize, -x, [x <= 0])
         @test vexity(p) == AffineVexity()
-        solve!(p, solvers[1])
+        solve!(p, solvers[1]())
 
         @test !isempty(Convex.id_to_variables)
         @test !isempty(Convex.conic_constr_to_constr)
