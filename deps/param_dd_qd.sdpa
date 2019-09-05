@@ -7,4 +7,4 @@
 0.1     double 0.0 <= betaStar <  1.0;
 0.2     double 0.0 <= betaBar  <  1.0, betaStar <= betaBar;
 0.9     double 0.0 < gammaStar  <  1.0;
-1.0E-20	double 0.0 < epsilonDash;
+1.0E-7	double 0.0 < epsilonDash;

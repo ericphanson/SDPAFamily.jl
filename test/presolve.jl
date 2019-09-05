@@ -64,6 +64,7 @@ end
         for i in 1:20
             M = sprand(20, 100, 0.5)
             M[i, :] .= eps(norm(M, Inf))
+            M[:, 1] .= eps(norm(M, Inf))
             M = SDPA_GMP.reduce!(M)
             I, J, V = findnz(M)
             @test i ∉ I 
