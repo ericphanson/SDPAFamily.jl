@@ -33,3 +33,4 @@ push!(solvers, () -> SDPA_GMP.Optimizer{BigFloat}(presolve = false, silent = tru
     # include(joinpath("Convex", "test_sdp_and_exp.jl")
     # include(joinpath("Convex", "test_mip.jl")
 end
+

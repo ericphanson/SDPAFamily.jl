@@ -27,3 +27,7 @@ end
     include("MOI_wrapper.jl")
     include("Convex.jl")
 end
+
+@testset "High-precision example" begin
+    include("high_precision_test.jl")
+end
