@@ -1,6 +1,6 @@
 using Convex
 using Test
-using SDPA_GMP, SCS
+using SDPA_GMP
 
 @testset "High precision test" begin
     E12, E21 = ComplexVariable(2, 2), ComplexVariable(2, 2)
