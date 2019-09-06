@@ -93,6 +93,9 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
         if variant == :qd && params_path == (use_WSL ? default_gmp_params_path_wsl : default_gmp_params_path)
             optimizer.params_path = use_WSL ? default_qd_params_path_wsl : default_qd_params_path
         end
+        if variant == :plain && params_path == (use_WSL ? default_gmp_params_path_wsl : default_gmp_params_path)
+            optimizer.params_path = use_WSL ? default_plain_params_path_wsl : default_plain_params_path
+        end
 
 		return optimizer
     end

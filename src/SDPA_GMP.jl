@@ -45,6 +45,9 @@ const default_dd_params_path_wsl = WSLize_path(default_dd_params_path)
 const default_qd_params_path = normpath(joinpath(@__DIR__, "..", "deps", "param_qd.sdpa"))
 const default_qd_params_path_wsl = WSLize_path(default_qd_params_path)
 
+const default_plain_params_path = normpath(joinpath(@__DIR__, "..", "deps", "param_plain.sdpa"))
+const default_plain_params_path_wsl = WSLize_path(default_plain_params_path)
+
 include("MOI_wrapper.jl")
 include("file_io.jl")
 include("presolve.jl")
