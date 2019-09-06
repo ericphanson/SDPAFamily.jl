@@ -90,12 +90,12 @@ function read_results!(
     xVecstring = remove_brackets!(xVecstring)
     xVecstring = split(xVecstring, ",")
     xVec = parse.(T, xVecstring)
+    optimizer.primalobj = parse(T, objValPrimalstring)
     optimizer.dualobj = parse(T, objValDualstring)
     for i in redundant_entries
         splice!(xVec, i:i-1, zero(T))
     end
     optimizer.y = xVec
-    optimizer.primalobj = dot(optimizer.y, optimizer.b)
     structurevec = optimizer.blockdims
     yMatbm = PrimalSolution{T}(map(
         n -> zeros(T, abs(n), abs(n)),
