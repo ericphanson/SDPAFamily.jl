@@ -39,8 +39,11 @@ WSLize_path(path) = replace(path, ":" => "") |> x -> replace(x, "\\" => "/") |> 
 const default_gmp_params_path = normpath(joinpath(@__DIR__, "..", "deps", "param_gmp.sdpa"))
 const default_gmp_params_path_wsl = WSLize_path(default_gmp_params_path)
 
-const default_ddqd_params_path = normpath(joinpath(@__DIR__, "..", "deps", "param_dd_qd.sdpa"))
-const default_ddqd_params_path_wsl = WSLize_path(default_ddqd_params_path)
+const default_dd_params_path = normpath(joinpath(@__DIR__, "..", "deps", "param_dd.sdpa"))
+const default_dd_params_path_wsl = WSLize_path(default_dd_params_path)
+
+const default_qd_params_path = normpath(joinpath(@__DIR__, "..", "deps", "param_qd.sdpa"))
+const default_qd_params_path_wsl = WSLize_path(default_qd_params_path)
 
 include("MOI_wrapper.jl")
 include("file_io.jl")

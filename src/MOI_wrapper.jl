@@ -87,8 +87,11 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
 			@warn "Not using BigFloat entries may cause underflow errors."
         end
         
-        if variant ∈ (:dd, :qd) && params_path == (use_WSL ? default_gmp_params_path_wsl : default_gmp_params_path)
-            optimizer.params_path = use_WSL ? default_ddqd_params_path_wsl : default_ddqd_params_path
+        if variant == :dd && params_path == (use_WSL ? default_gmp_params_path_wsl : default_gmp_params_path)
+            optimizer.params_path = use_WSL ? default_dd_params_path_wsl : default_dd_params_path
+        end
+        if variant == :qd && params_path == (use_WSL ? default_gmp_params_path_wsl : default_gmp_params_path)
+            optimizer.params_path = use_WSL ? default_qd_params_path_wsl : default_qd_params_path
         end
 
 		return optimizer
