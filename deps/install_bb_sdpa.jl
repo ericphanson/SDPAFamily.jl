@@ -3,6 +3,7 @@
 function install_bb_sdpa(prefix, verbose)
     products = [
         ExecutableProduct(prefix, "sdpa", :sdpa),
+        LibraryProduct(prefix, ["libsdpa"], :libsdpa),
     ]
     
     # Download binaries from hosted location
