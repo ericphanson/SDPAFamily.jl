@@ -27,7 +27,7 @@ push!(solvers, () -> SDPA_GMP.Optimizer{BigFloat}(presolve = false, silent = tru
     include(joinpath("Convex", "test_affine.jl"))
     include(joinpath("Convex", "test_lp.jl"))
     solvers[1] = () -> SDPA_GMP.Optimizer{BigFloat}(presolve = true, silent = true, variant = var)
-    include(joinpath("Convex", "test_socp.jl"))
+    # include(joinpath("Convex", "test_socp.jl"))
     include(joinpath("Convex", "test_sdp.jl"))
     # include(joinpath("Convex", "test_exp.jl")
     # include(joinpath("Convex", "test_sdp_and_exp.jl")
