@@ -1,5 +1,6 @@
 include("install_bb_qd.jl")
 include("install_bb_sdpa.jl")
+include("install_bb_sdpa_high_precision.jl")
 include("install_custom_WSL_binaries.jl")
 
 using BinaryProvider # requires BinaryProvider 0.3.0 or later
@@ -53,7 +54,8 @@ elseif install_wsl_binary
     products = install_custom_WSL_binaries(prefix, verbose)
 else
     products = install_bb_qd(prefix, verbose)
-    append!(products, install_bb_sdpa(prefix, verbose))
+    append!(products, install_bb_sdpa_high_precision(prefix, verbose))
+    append!(products, install_bb_sdpa(prefix, verbose)) # install plain SDPA binary too, for comparisons
 end
 
 # Write out a deps.jl file that will contain mappings for our products
@@ -66,9 +68,10 @@ open(deps_file_path, "a") do io
     write(io, """
 
     const HAS_WSL = $HAS_WSL
-    if $install_wsl_binary
+    if $install_wsl_binary || $custom_library
         const sdpa_dd = ""
         const sdpa_qd = ""
+        const sdpa = ""
     end
     """)
 end

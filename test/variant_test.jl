@@ -1,11 +1,10 @@
 using Convex, LinearAlgebra, SDPA_GMP
 
 
-@testset "Simple test with variant $var" for var in (:gmp, :qd, :dd)
+@testset "Simple test with variant $var" for var in (:plain, :gmp, :qd, :dd)
     solver = SDPA_GMP.Optimizer{BigFloat}(variant=var, silent=true)
     y = Variable((3, 3), :Semidefinite)
     p = Problem{BigFloat}(:minimize, tr(y), y[2,1]<=4, y[2,2]>=3)
-    # @fact vexity(p) --> ConvexVexity()
     solve!(p, solver)
     @test p.optval ≈ big"3.0" atol=1e-5
 end

@@ -18,12 +18,16 @@ using BinaryProvider
 # `sdpa_gmp` is the default path to the binary.
 include(joinpath(@__DIR__, "..", "deps", "deps.jl"))
 
+function __init__()
+    check_deps()
+end
+
 """
     BB_PATHS::Dict{Symbol,String}
 
 Holds the binary-builder-built paths to the executables for `sdpa_gmp`, `sdpa_dd`, and `sdpa_qd`.
 """
-const BB_PATHS = Dict(:gmp => sdpa_gmp, :dd => sdpa_dd, :qd => sdpa_qd)
+const BB_PATHS = Dict(:gmp => sdpa_gmp, :dd => sdpa_dd, :qd => sdpa_qd, :plain => sdpa)
 
 """
     WSLize_path(path::String) -> String
