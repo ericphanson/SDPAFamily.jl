@@ -72,6 +72,7 @@ open(deps_file_path, "a") do io
         const sdpa_dd = ""
         const sdpa_qd = ""
         const sdpa = ""
+        const libsdpa = ""
     end
     """)
 end

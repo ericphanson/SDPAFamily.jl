@@ -18,6 +18,8 @@ using BinaryProvider
 # `sdpa_gmp` is the default path to the binary.
 include(joinpath(@__DIR__, "..", "deps", "deps.jl"))
 
+const prefix = Prefix(joinpath(@__DIR__, "..", "deps", "usr"))
+
 function __init__()
     check_deps()
 end
