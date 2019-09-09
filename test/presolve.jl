@@ -83,7 +83,7 @@ end
             c1 = x in :SDP
             problem = Problem{BigFloat}(:minimize, objective, c1)
 
-            solve!(problem, opt)
+            @test_throws BoundsError solve!(problem, opt)
             @test length(SDPA_GMP.presolve(opt)) == n^2 - n
         end
     end
