@@ -25,7 +25,7 @@ For the purposes of these tests, we define `rand(RandomRational)` to give a rand
 the interval [1/10_000, 1 - 1/10_000] representable with a denominator of size at most 10_000, with the type `Rational{BigInt}`.
 """
 function Random.rand(rng::AbstractRNG, ::Random.SamplerTrivial{RandomRationalType})
-    D = big(rand(2:10_000)) 
+    D = big(rand(2:10_000))
     N = big(rand(1:D-1))
     return N // D
 end
@@ -67,21 +67,21 @@ end
             M[:, 1] .= eps(norm(M, Inf))
             M = SDPA_GMP.reduce!(M)
             I, J, V = findnz(M)
-            @test i ∉ I 
+            @test i ∉ I
         end
 
     end
 
     @testset "redundant constraints" begin
         for n in 2:5
-            opt = SDPA_GMP.Optimizer(silent = true)
+            opt = SDPA_GMP.Optimizer{Float64}(silent = true)
             opt.no_solve = true
-            A = rand(BigFloat, n,n) + im*rand(BigFloat, n,n)
+            A = rand(Float64, n,n) + im*rand(Float64, n,n)
             A = A + A' # now A is hermitian
             x = ComplexVariable(n,n)
             objective = sumsquares(A - x)
             c1 = x in :SDP
-            problem = Problem{BigFloat}(:minimize, objective, c1)
+            problem = Problem{Float64}(:minimize, objective, c1)
 
             @test_throws BoundsError solve!(problem, opt)
             @test length(SDPA_GMP.presolve(opt)) == n^2 - n
