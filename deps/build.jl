@@ -38,7 +38,7 @@ if !custom_library
         # try to see is `sdpa_gmp` is installed on WSL
         if !isempty(Sys.which("wsl"))
             @info "Windows subsystem for Linux detected. Using WSL-compiled binary."
-            install_wsl_binary = true            
+            install_wsl_binary = true
             HAS_WSL = true
 
         else
@@ -69,9 +69,6 @@ open(deps_file_path, "a") do io
 
     const HAS_WSL = $HAS_WSL
     if $install_wsl_binary || $custom_library
-        const sdpa_dd = ""
-        const sdpa_qd = ""
-        const sdpa = ""
         const libsdpa = ""
     end
     """)

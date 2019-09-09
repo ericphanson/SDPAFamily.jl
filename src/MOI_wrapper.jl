@@ -78,15 +78,11 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
             use_WSL = HAS_WSL,
             params_path = use_WSL ? WSLize_path(default_params_path[variant]) : default_params_path[variant]
             ) where T
-            
+
 		optimizer = new(
             zero(T), 1, Int[], Tuple{Int, Int, Int}[], T[],
             NaN, silent, Dict{Symbol, Any}(), T[], PrimalSolution{T}(Matrix{T}[]), VarDualSolution{T}(Matrix{T}[]), zero(T), zero(T), :noINFO, mktempdir(), [], presolve, binary_path, params_path, false, use_WSL)
-        
-        if use_WSL && binary_path ∈ (BB_PATHS[:dd], BB_PATHS[:qd], BB_PATHS[:plain])
-            error("WSL binaries haven't been built yet for SDPA-DD, SDPA-QD, or SDPA-plain.")
-        end
-        
+
 		if T != BigFloat
 			@warn "Not using BigFloat entries may cause underflow errors."
         end
