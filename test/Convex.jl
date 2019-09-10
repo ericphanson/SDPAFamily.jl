@@ -1,35 +1,19 @@
-using Convex
-using Convex: DotMultiplyAtom
-using Test
-using SDPAFamily
-using MathOptInterface
-using Random
-const MOI = MathOptInterface
-using GenericLinearAlgebra
-using LinearAlgebra
-import Random.shuffle
-import Statistics.mean
-
-TOL = 1e-3
-eye(n) = Matrix(1.0I, n, n)
-
-# Seed random number stream to improve test reliability
-Random.seed!(2)
-
-solvers = []
-
-push!(solvers, () -> SDPAFamily.Optimizer{BigFloat}(presolve = false, silent = true, variant = var))
+using Convex: Convex
+using Convex.ProblemDepot: run_tests, foreach_problem
 
 
-@testset "Convex" begin
-    include(joinpath("Convex", "test_utilities.jl"))
-    include(joinpath("Convex", "test_const.jl"))
-    include(joinpath("Convex", "test_affine.jl"))
-    include(joinpath("Convex", "test_lp.jl"))
-    solvers[1] = () -> SDPAFamily.Optimizer{BigFloat}(presolve = true, silent = true, variant = var)
-    # include(joinpath("Convex", "test_socp.jl"))
-    include(joinpath("Convex", "test_sdp.jl"))
-    # include(joinpath("Convex", "test_exp.jl")
-    # include(joinpath("Convex", "test_sdp_and_exp.jl")
-    # include(joinpath("Convex", "test_mip.jl")
+@testset "Convex tests with variant $var" begin
+    foreach_problem(;exclude=[  r"mip",
+                                r"exp",
+                                r"benchmark",
+                                r"lp_min_atom", # hangs
+                                r"lp_max_atom", # hangs
+                            ]) do name, problem_func
+        @testset "$name" begin
+            problem_func(Val(true), 1e-3, 0.0, Float64) do p
+                @info "Testing" name var
+                solve!(p, SDPAFamily.Optimizer{Float64}(presolve = true, silent = true, variant = var))
+            end
+        end
+    end
 end
