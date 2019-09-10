@@ -56,7 +56,7 @@ The main object of interest supplied by this package is `SDPAFamily.Optimizer{T}
 * `silent`: a boolean to indicate whether or not to print output. Defaults to `true`.
 * `presolve`: whether or not to run a presolve routine to remove linearly dependent constraints. See below for more details. Defaults to `false`. Note, `presolve=true` is required to pass many of the tests for this package; linearly independent constraints are an assumption of the SDPA-family, but constraints generated from high level modelling languages often do have linear dependence between them.
 * `binary_path`: a string representing a path to the SDPA-GMP binary to use. The default is chosen at `build` time.
-* `params_path`: a representing a path to a parameter file named `param.sdpa` in the same folder as the binary if present. For details please refer to the [SDPA users manual](https://sourceforge.net/projects/sdpa/files/sdpa/sdpa.7.1.1.manual.20080618.pdf). The default parameters used by SDPAFamily.jl are here: <https://github.com/ericphanson/SDPAFamily.jl/blob/master/deps/param.sdpa>.
+* `params_path`: a string representing a path to a parameter file named `param.sdpa` in the same folder as the binary if present. For details please refer to the [SDPA users manual](https://sourceforge.net/projects/sdpa/files/sdpa/sdpa.7.1.1.manual.20080618.pdf). The default parameters used by SDPAFamily.jl are here: <https://github.com/ericphanson/SDPAFamily.jl/blob/master/deps/param.sdpa>.
 
 ### Example
 
