@@ -11,12 +11,6 @@ Pkg.add(PackageSpec(name="Convex", url="https://github.com/ericphanson/Convex.jl
     include("variant_test.jl")
 end
 
-@testset "SDPA-GMP" begin
-    global var = :gmp
-    include("MOI_wrapper.jl")
-    include("Convex.jl")
-end
-
 @testset "SDPA-DD" begin
     global var = :dd
     include("MOI_wrapper.jl")
@@ -25,6 +19,12 @@ end
 
 @testset "SDPA-QD" begin
     global var = :qd
+    include("MOI_wrapper.jl")
+    include("Convex.jl")
+end
+
+@testset "SDPA-GMP" begin
+    global var = :gmp
     include("MOI_wrapper.jl")
     include("Convex.jl")
 end
