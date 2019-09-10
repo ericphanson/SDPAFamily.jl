@@ -8,7 +8,7 @@ using Convex.ProblemDepot: run_tests, foreach_problem
                                 r"benchmark"
                             ]) do name, problem_func
         @testset "$name" begin
-            problem_func(Val(true), 1e-3, 0.0, Float64) do problem
+            problem_func(Val(true), 1e-3, 0.0, Float64) do p
                 @info "Testing" name var
                 solve!(p, SDPAFamily.Optimizer{Float64}(presolve = true, silent = true, variant = var))
             end
