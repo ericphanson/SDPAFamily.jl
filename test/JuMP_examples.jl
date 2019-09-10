@@ -8,7 +8,7 @@
 # See http://github.com/JuliaOpt/JuMP.jl
 #############################################################################
 
-using JuMP, Test, LinearAlgebra, SDPA_GMP
+using JuMP, Test, LinearAlgebra, SDPAFamily
 import Random
 
 """

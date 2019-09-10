@@ -1,7 +1,7 @@
 using Convex
 using Convex: DotMultiplyAtom
 using Test
-using SDPA_GMP
+using SDPAFamily
 using MathOptInterface
 using Random
 const MOI = MathOptInterface
@@ -18,7 +18,7 @@ Random.seed!(2)
 
 solvers = []
 
-push!(solvers, () -> SDPA_GMP.Optimizer{BigFloat}(presolve = false, silent = true, variant = var))
+push!(solvers, () -> SDPAFamily.Optimizer{BigFloat}(presolve = false, silent = true, variant = var))
 
 
 @testset "Convex" begin
@@ -26,11 +26,10 @@ push!(solvers, () -> SDPA_GMP.Optimizer{BigFloat}(presolve = false, silent = tru
     include(joinpath("Convex", "test_const.jl"))
     include(joinpath("Convex", "test_affine.jl"))
     include(joinpath("Convex", "test_lp.jl"))
-    solvers[1] = () -> SDPA_GMP.Optimizer{BigFloat}(presolve = true, silent = true, variant = var)
+    solvers[1] = () -> SDPAFamily.Optimizer{BigFloat}(presolve = true, silent = true, variant = var)
     # include(joinpath("Convex", "test_socp.jl"))
     include(joinpath("Convex", "test_sdp.jl"))
     # include(joinpath("Convex", "test_exp.jl")
     # include(joinpath("Convex", "test_sdp_and_exp.jl")
     # include(joinpath("Convex", "test_mip.jl")
 end
-

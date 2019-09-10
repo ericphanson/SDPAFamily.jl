@@ -7,7 +7,7 @@ const MOIT = MOI.Test
 const MOIU = MOI.Utilities
 const MOIB = MOI.Bridges
 
-import SDPA_GMP
+import SDPAFamily
 using Random
 
 Random.seed!(5)
@@ -42,7 +42,7 @@ end
             k = rand(setdiff(1:10,i))
             λ = rand(RandomRational)
             M[i, :] = λ*M[j, :] + (1-λ)*M[k, :]
-            rows = Set(rowvals(SDPA_GMP.reduce!(M)[:, 1:end-1]))
+            rows = Set(rowvals(SDPAFamily.reduce!(M)[:, 1:end-1]))
             redundant = collect(setdiff!(Set(1:10), rows))
             @test length(redundant) == 1
             @test redundant[1] ∈ (i, j, k)
@@ -56,7 +56,7 @@ end
             l = rand(setdiff(1:10,i))
             λ = rand(RandomRational)
             M[i, :] = λ*M[j, :] + (1-λ)*M[k, :] + λ/2*M[l, :]
-            rows = Set(rowvals(SDPA_GMP.reduce!(M)[:, 1:end-1]))
+            rows = Set(rowvals(SDPAFamily.reduce!(M)[:, 1:end-1]))
             redundant = collect(setdiff!(Set(1:10), rows))
             @test length(redundant) == 1
             @test redundant[1] ∈ (i, j, k, l)
@@ -65,7 +65,7 @@ end
             M = sprand(20, 100, 0.5)
             M[i, :] .= eps(norm(M, Inf))
             M[:, 1] .= eps(norm(M, Inf))
-            M = SDPA_GMP.reduce!(M)
+            M = SDPAFamily.reduce!(M)
             I, J, V = findnz(M)
             @test i ∉ I
         end
@@ -74,7 +74,7 @@ end
 
     @testset "redundant constraints" begin
         for n in 2:5
-            opt = SDPA_GMP.Optimizer{Float64}(silent = true)
+            opt = SDPAFamily.Optimizer{Float64}(silent = true)
             opt.no_solve = true
             A = rand(Float64, n,n) + im*rand(Float64, n,n)
             A = A + A' # now A is hermitian
@@ -84,21 +84,21 @@ end
             problem = Problem{Float64}(:minimize, objective, c1)
 
             @test_throws BoundsError solve!(problem, opt)
-            @test length(SDPA_GMP.presolve(opt)) == n^2 - n
+            @test length(SDPAFamily.presolve(opt)) == n^2 - n
         end
     end
 
     @testset "inconsistent constraints" begin
-        m = SDPA_GMP.Optimizer()
+        m = SDPAFamily.Optimizer()
         m.blockdims = [3]
         m.elemdata = [(1, 1, 1, 1, big"1.0"), (1, 1, 2, 2, big"1.0"), (1, 1, 3, 3, big"1.0"),
             (2, 1, 1, 2, big"2.0"), (2, 1, 2, 1, big"2.0"),
             (3, 1, 1, 1, big"2.0"), (3, 1, 2, 2, big"2.0"), (3, 1, 3, 3, big"2.0"),
             (3, 1, 1, 2, big"3.0"), (3, 1, 2, 1, big"3.0")]
         m.b = [big"2.2", big"3.1", big"9.05"]
-        @test length(SDPA_GMP.presolve(m))==1
+        @test length(SDPAFamily.presolve(m))==1
         m.b = [big"2.2", big"3.1", big"9.05"-eps(9.05)]
-        @test_throws SDPA_GMP.PresolveError SDPA_GMP.presolve(m)
+        @test_throws SDPAFamily.PresolveError SDPAFamily.presolve(m)
     end
 
 end

@@ -6,13 +6,13 @@ struct PresolveError <: Exception
 end
 
 """
-    presolve(optimizer::SDPA_GMP.Optimizer{T}) where T
+    presolve(optimizer::SDPAFamily.Optimizer{T}) where T
 
 Identifies linearly dependent constraints in the problem. This is done by a naive Gaussian elimination.
 
 Returns a vector with the indices of redundant constraints, which should be removed from the formulation. The rest of the constraints form a maximal linearly independent subset of the original set of constraints.
 """
-function presolve(optimizer::SDPA_GMP.Optimizer{T}) where T
+function presolve(optimizer::SDPAFamily.Optimizer{T}) where T
     start = time()
     totaldim = sum(abs.(optimizer.blockdims))
     F = spzeros(T, length(optimizer.b), totaldim^2)

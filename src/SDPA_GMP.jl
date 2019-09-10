@@ -1,4 +1,4 @@
-module SDPA_GMP
+module SDPAFamily
 using LinearAlgebra # for diag()
 using DelimitedFiles # for writing SDPA input file
 using MathOptInterface
@@ -10,8 +10,8 @@ using BinaryProvider
 # The `deps.jl` file defines `HAS_WSL::Bool` and `sdpa_gmp::String`.
 #
 # `HAS_WSL == true` means we default to `use_WSL = true`
-# in SDPA_GMP.Optimizer; otherwise we default to `use_WSL = false`.
-# if `use_WSL` is set to true for a given SDPA_GMP.Optimizer, that means
+# in SDPAFamily.Optimizer; otherwise we default to `use_WSL = false`.
+# if `use_WSL` is set to true for a given SDPAFamily.Optimizer, that means
 # we default to using `default_params_path_wsl` as the params, and
 # in the binary call, we turn the paths into WSL paths.
 #

@@ -1,4 +1,4 @@
-using SDPA_GMP
+using SDPAFamily
 using Test
 
 # Make sure we get the MOI branch of Convex. This can be removed once Convex.jl proper supports MOI.
