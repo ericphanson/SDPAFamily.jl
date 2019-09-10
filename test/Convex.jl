@@ -6,7 +6,8 @@ using Convex.ProblemDepot: run_tests, foreach_problem
     foreach_problem(;exclude=[  r"mip",
                                 r"exp",
                                 r"benchmark",
-                                r"lp_min_atom", # hang
+                                r"lp_min_atom", # hangs
+                                r"lp_max_atom", # hangs
                             ]) do name, problem_func
         @testset "$name" begin
             problem_func(Val(true), 1e-3, 0.0, Float64) do p
