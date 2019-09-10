@@ -5,36 +5,38 @@ using Test
 using Pkg
 Pkg.add(PackageSpec(name="Convex", url="https://github.com/ericphanson/Convex.jl", rev="MathOptInterface"))
 
+@testset "SDPAFamily" begin
 
-@testset "General utilities" begin
-    include("presolve.jl")
-    include("variant_test.jl")
-end
+    @testset "General utilities" begin
+        include("presolve.jl")
+        include("variant_test.jl")
+    end
 
-@testset "SDPA-plain" begin
-    global var = :plain
-    include("MOI_wrapper.jl")
-    include("Convex.jl")
-end
+    @testset "SDPA-plain" begin
+        global var = :plain
+        include("MOI_wrapper.jl")
+        include("Convex.jl")
+    end
 
-@testset "SDPA-DD" begin
-    global var = :dd
-    include("MOI_wrapper.jl")
-    include("Convex.jl")
-end
+    @testset "SDPA-DD" begin
+        global var = :dd
+        include("MOI_wrapper.jl")
+        include("Convex.jl")
+    end
 
-@testset "SDPA-QD" begin
-    global var = :qd
-    include("MOI_wrapper.jl")
-    include("Convex.jl")
-end
+    @testset "SDPA-QD" begin
+        global var = :qd
+        include("MOI_wrapper.jl")
+        include("Convex.jl")
+    end
 
-@testset "SDPA-GMP" begin
-    global var = :gmp
-    include("MOI_wrapper.jl")
-    include("Convex.jl")
-end
+    @testset "SDPA-GMP" begin
+        global var = :gmp
+        include("MOI_wrapper.jl")
+        include("Convex.jl")
+    end
 
-@testset "High-precision example" begin
-    include("high_precision_test.jl")
+    @testset "High-precision example" begin
+        include("high_precision_test.jl")
+    end
 end
