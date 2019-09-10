@@ -1,4 +1,5 @@
-using Convex: Convex, ProblemDepot
+using Convex: Convex
+using Convex.ProblemDepot: run_tests
 
 
 @testset "Convex tests with variant $var" begin
