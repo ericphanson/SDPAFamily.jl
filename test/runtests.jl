@@ -3,7 +3,7 @@ using Test
 
 # Make sure we get the MOI branch of Convex. This can be removed once Convex.jl proper supports MOI.
 using Pkg
-Pkg.add(PackageSpec(name="Convex", url="https://github.com/ericphanson/Convex.jl", rev="MathOptInterface2"))
+Pkg.add(PackageSpec(name="Convex", url="https://github.com/ericphanson/Convex.jl", rev="MathOptInterface"))
 
 
 @testset "General utilities" begin
