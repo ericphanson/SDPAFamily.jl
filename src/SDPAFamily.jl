@@ -29,13 +29,13 @@ end
 
 Holds the binary-builder-built paths to the executables for `sdpa_gmp`, `sdpa_dd`, and `sdpa_qd`.
 """
-const BB_PATHS = Dict(:gmp => sdpa_gmp, :dd => sdpa_dd, :qd => sdpa_qd, :plain => sdpa)
+const BB_PATHS = Dict(:sdpa_gmp => sdpa_gmp, :sdpa_dd => sdpa_dd, :sdpa_qd => sdpa_qd, :sdpa => sdpa)
 
 const default_params_path = Dict(
-    :gmp =>  normpath(joinpath(@__DIR__, "..", "deps", "param_gmp.sdpa")),
-    :dd => normpath(joinpath(@__DIR__, "..", "deps", "param_dd.sdpa")),
-    :qd => normpath(joinpath(@__DIR__, "..", "deps", "param_qd.sdpa")),
-    :plain => normpath(joinpath(@__DIR__, "..", "deps", "param_plain.sdpa"))
+    :sdpa_gmp =>  normpath(joinpath(@__DIR__, "..", "deps", "param_gmp.sdpa")),
+    :sdpa_dd => normpath(joinpath(@__DIR__, "..", "deps", "param_dd.sdpa")),
+    :sdpa_qd => normpath(joinpath(@__DIR__, "..", "deps", "param_qd.sdpa")),
+    :sdpa => normpath(joinpath(@__DIR__, "..", "deps", "param_plain.sdpa"))
 )
 
 """

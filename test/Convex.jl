@@ -8,19 +8,19 @@ common_excludes = [  r"mip",
                     r"lp_max_atom", # hangs
                     r"sdp_Complex_Semidefinite_constraint", # too large
                     ]
-excludes_dict = Dict(:gmp => vcat(common_excludes,Regex[
+excludes_dict = Dict(:sdpa_gmp => vcat(common_excludes,Regex[
                         r"affine_Partial_transpose", # slow
                         r"affine_Diagonal_atom" # underflows
                     ]),
-                    :dd =>  vcat(common_excludes,Regex[
+                    :sdpa_dd =>  vcat(common_excludes,Regex[
                         r"affine_Partial_transpose", # slow
                         r"affine_Diagonal_atom" # underflows
                     ]),
-                    :qd =>  vcat(common_excludes,Regex[
+                    :sdpa_qd =>  vcat(common_excludes,Regex[
                         r"affine_Partial_transpose", # slow
                         r"affine_Diagonal_atom" # underflows
                     ]),
-                    :plain => vcat(common_excludes,Regex[
+                    :sdpa => vcat(common_excludes,Regex[
                         r"affine_Partial_transpose" # slow
                     ]),)
 

@@ -73,17 +73,18 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
 	params_path::String
     no_solve::Bool
     use_WSL::Bool
+	variant::Symbol
     function Optimizer{T}(; variant = :gmp, presolve::Bool = false, silent::Bool = false,
             binary_path = BB_PATHS[variant],
-            use_WSL = HAS_WSL,
+            use_WSL = HAS_WSL[variant],
             params_path = use_WSL ? WSLize_path(default_params_path[variant]) : default_params_path[variant]
             ) where T
 
 		optimizer = new(
             zero(T), 1, Int[], Tuple{Int, Int, Int}[], T[],
-            NaN, silent, Dict{Symbol, Any}(), T[], PrimalSolution{T}(Matrix{T}[]), VarDualSolution{T}(Matrix{T}[]), zero(T), zero(T), :noINFO, mktempdir(), [], presolve, binary_path, params_path, false, use_WSL)
+            NaN, silent, Dict{Symbol, Any}(), T[], PrimalSolution{T}(Matrix{T}[]), VarDualSolution{T}(Matrix{T}[]), zero(T), zero(T), :noINFO, mktempdir(), [], presolve, binary_path, params_path, false, use_WSL, variant)
 
-		if T != BigFloat
+		if T != BigFloat && !optimizer.silent
 			@warn "Not using BigFloat entries may cause underflow errors."
         end
 
