@@ -10,7 +10,7 @@ common_excludes = [  r"mip",
                     ]
 excludes_dict = Dict(:sdpa_gmp => vcat(common_excludes,Regex[
                         r"affine_Partial_transpose", # slow
-                        r"affine_Diagonal_atom" # underflows
+                        # r"affine_Diagonal_atom" # underflows
                     ]),
                     :sdpa_dd =>  vcat(common_excludes,Regex[
                         r"affine_Partial_transpose", # slow

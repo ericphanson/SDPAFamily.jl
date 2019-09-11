@@ -35,7 +35,8 @@ const default_params_path = Dict(
     :sdpa_gmp =>  normpath(joinpath(@__DIR__, "..", "deps", "param_gmp.sdpa")),
     :sdpa_dd => normpath(joinpath(@__DIR__, "..", "deps", "param_dd.sdpa")),
     :sdpa_qd => normpath(joinpath(@__DIR__, "..", "deps", "param_qd.sdpa")),
-    :sdpa => normpath(joinpath(@__DIR__, "..", "deps", "param_plain.sdpa"))
+    :sdpa => normpath(joinpath(@__DIR__, "..", "deps", "param_plain.sdpa")),
+    :sdpa_gmp_float64 => normpath(joinpath(@__DIR__, "..", "deps", "param_gmp_float64.sdpa"))
 )
 
 """
