@@ -1,9 +1,5 @@
 using SparseArrays
-export presolve 
-
-struct PresolveError <: Exception
-    msg::String
-end
+export presolve
 
 """
     presolve(optimizer::SDPAFamily.Optimizer{T}) where T
@@ -30,11 +26,25 @@ function presolve(optimizer::SDPAFamily.Optimizer{T}) where T
         Set(1:length(optimizer.b)),
         Set(rowvals(reduce!(aug_mat)[:, 1:end-1]))
     ))
+    abort = 0
     for i in redundant_F
         if aug_mat[i, end] != 0
             # println(aug_mat[i, end])
-            throw(PresolveError("Inconsistency at constraint index $i. Problem is dual infeasible."))
+            abort = 1
+            @warn "Inconsistency at constraint index $i. Problem is dual infeasible."
         end
+    end
+    if abort == 1
+        optimizer.phasevalue = :pFEAS_dINF
+        optimizer.y = zeros(T, length(optimizer.b))
+        optimizer.X = PrimalSolution{T}(map(
+            n -> zeros(T, abs(n), abs(n)),
+            optimizer.blockdims
+        ))
+        optimizer.Z = VarDualSolution{T}(map(
+            n -> zeros(T, abs(n), abs(n)),
+            optimizer.blockdims
+        ))
     end
     finish = time() - start
     n = length(redundant_F)

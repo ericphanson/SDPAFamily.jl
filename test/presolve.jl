@@ -74,16 +74,14 @@ end
 
     @testset "redundant constraints" begin
         for n in 2:5
-            opt = SDPAFamily.Optimizer{Float64}(;silent = true, variant = :sdpa)
+            opt = SDPAFamily.Optimizer{Float64}(;silent = true, variant = :sdpa, presolve = true)
             opt.no_solve = true
             A = rand(Float64, n,n) + im*rand(Float64, n,n)
             A = A + A' # now A is hermitian
             x = ComplexVariable(n,n)
-            objective = sumsquares(A - x)
-            c1 = x in :SDP
-            problem = Problem{Float64}(:minimize, objective, c1)
+            p = minimize(sumsquares(A - x), [x in :SDP])
 
-            @test_throws BoundsError solve!(problem, opt)
+            @test_throws BoundsError solve!(p, opt)
             @test length(SDPAFamily.presolve(opt)) == n^2 - n
         end
     end
@@ -98,7 +96,7 @@ end
         m.b = [big"2.2", big"3.1", big"9.05"]
         @test length(SDPAFamily.presolve(m))==1
         m.b = [big"2.2", big"3.1", big"9.05"-eps(9.05)]
-        @test_throws SDPAFamily.PresolveError SDPAFamily.presolve(m)
+        @test_logs (:warn, "Inconsistency at constraint index 1. Problem is dual infeasible.") SDPAFamily.presolve(m)
     end
 
 end

@@ -308,12 +308,14 @@ function MOI.optimize!(m::Optimizer)
     # SDPA.initializeUpperTriangle(m.problem, false)
     redundant_F = initializeSolve(m)
     # SDPA.solve(m)
-    inputname = "input.dat-s"
-    outputname = "output.dat"
-    full_input_path = joinpath(m.tempdir, inputname)
-    full_output_path = joinpath(m.tempdir, outputname)
-	if !m.no_solve
-	    sdpa_gmp_binary_solve!(m, full_input_path, full_output_path, redundant_entries = redundant_F)
+	if m.phasevalue != :pFEAS_dINF
+	    inputname = "input.dat-s"
+	    outputname = "output.dat"
+	    full_input_path = joinpath(m.tempdir, inputname)
+	    full_output_path = joinpath(m.tempdir, outputname)
+		if !m.no_solve
+		    sdpa_gmp_binary_solve!(m, full_input_path, full_output_path, redundant_entries = redundant_F)
+		end
 	end
     m.solve_time = time() - start_time
 end

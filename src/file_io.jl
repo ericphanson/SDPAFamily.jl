@@ -182,9 +182,9 @@ function initializeSolve(optimizer::Optimizer)
         return []
     else
         redundant_F = presolve(optimizer)
-        reduced = joinpath(optimizer.tempdir, "input.dat-s")
-        file =
-            open(reduced, "w") do io
+        if optimizer.phasevalue != :pFEAS_dINF
+            reduced = joinpath(optimizer.tempdir, "input.dat-s")
+            file = open(reduced, "w") do io
                 nconstrs = length(optimizer.b) - length(redundant_F)
                 nblocks = length(optimizer.blockdims)
                 println(io, nconstrs)
@@ -205,6 +205,7 @@ function initializeSolve(optimizer::Optimizer)
                     end
                 end
             end
+        end
         return redundant_F
     end
 end
