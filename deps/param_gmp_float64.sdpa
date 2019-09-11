@@ -8,7 +8,7 @@
 0.3     double 0.0 <= betaBar  <  1.0, betaStar <= betaBar;
 0.9     double 0.0 < gammaStar  <  1.0;
 1.0E-7	double 0.0 < epsilonDash;
-64     precision
+80     precision
 %+.Fe     char*  xPrint   (default %+8.3e,   NOPRINT skips printout)
 %+.Fe     char*  XPrint   (default %+8.3e,   NOPRINT skips printout)
 %+.Fe     char*  YPrint   (default %+8.3e,   NOPRINT skips printout)
