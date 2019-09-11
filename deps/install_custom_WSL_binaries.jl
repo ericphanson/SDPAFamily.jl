@@ -31,7 +31,7 @@ function install_custom_WSL_binaries(prefix, verbose, variants)
     if :sdpa ∈ variants
         BinaryProvider.download_verify(
             "https://github.com/JiazhengZhu/sdpa/raw/master/sdpa",  # url
-            "d88bcfac22a8230b7d7c5390d519dc5c2902ac00b27e0069cd2e44f7986eb102", # hash
+            "59425468dabcf46946e7afb845ff9269d6c1d6730781b7a5ed4eb43538638fa3", # hash
             joinpath(prefix.path, "sdpa");  # destination
             verbose = verbose
         )

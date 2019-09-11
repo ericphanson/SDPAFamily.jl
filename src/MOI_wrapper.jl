@@ -74,7 +74,7 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
     no_solve::Bool
     use_WSL::Bool
 	variant::Symbol
-    function Optimizer{T}(; variant = :gmp, presolve::Bool = false, silent::Bool = false,
+    function Optimizer{T}(; variant = :sdpa_gmp, presolve::Bool = false, silent::Bool = false,
             binary_path = BB_PATHS[variant],
             use_WSL = HAS_WSL[variant],
             params_path = use_WSL ? WSLize_path(default_params_path[variant]) : default_params_path[variant]

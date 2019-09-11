@@ -19,8 +19,10 @@ function sdpa_gmp_binary_solve!(m::Optimizer, full_input_path::String, full_outp
     if m.use_WSL
         wsl_binary_path = dirname(normpath(m.binary_path))
         cd(wsl_binary_path) do
-            var = string(m.variant)
-            run(pipeline(`wsl ./$var $arg`, stdout = m.silent ? devnull : stdout))
+            withenv([prefix]) do
+                var = string(m.variant)
+                run(pipeline(`wsl ./$var $arg`, stdout = m.silent ? devnull : stdout))
+            end
         end
     else
         withenv([prefix]) do
