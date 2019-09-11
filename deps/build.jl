@@ -96,7 +96,7 @@ write_deps_file(deps_file_path, products, verbose = verbose)
 open(deps_file_path, "a") do io
     write(io, """
 
-    const HAS_WSL = $HAS_WSL
+    const HAS_WSL = Dict{Symbol,Bool}($HAS_WSL)
 
     """)
 end
