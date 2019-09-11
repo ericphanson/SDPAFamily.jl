@@ -74,7 +74,7 @@ end
 
     @testset "redundant constraints" begin
         for n in 2:5
-            opt = SDPAFamily.Optimizer{Float64}(silent = true)
+            opt = SDPAFamily.Optimizer{Float64}(;silent = true, variant = :sdpa)
             opt.no_solve = true
             A = rand(Float64, n,n) + im*rand(Float64, n,n)
             A = A + A' # now A is hermitian
@@ -89,7 +89,7 @@ end
     end
 
     @testset "inconsistent constraints" begin
-        m = SDPAFamily.Optimizer()
+        m = SDPAFamily.Optimizer(silent = true)
         m.blockdims = [3]
         m.elemdata = [(1, 1, 1, 1, big"1.0"), (1, 1, 2, 2, big"1.0"), (1, 1, 3, 3, big"1.0"),
             (2, 1, 1, 2, big"2.0"), (2, 1, 2, 1, big"2.0"),

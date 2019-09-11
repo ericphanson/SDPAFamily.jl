@@ -50,11 +50,7 @@ if haskey(ENV,"JULIA_SDPA_PLAIN_PATH")
     end
 end
 
-if custom_library[:sdpa_qd] && custom_library[:sdpa_dd]
-    products = install_bb_qd(prefix, verbose)
-else
-    products = Product[]
-end
+products = Product[]
 
 for var in [:sdpa_gmp, :sdpa_qd, :sdpa_dd, :sdpa]
     if custom_library[var]
@@ -81,8 +77,12 @@ for var in [:sdpa_gmp, :sdpa_qd, :sdpa_dd, :sdpa]
         if install_wsl_binary
             append!(products, install_custom_WSL_binaries(prefix, verbose, [var]))
         else
-            append!(products, install_bb_sdpa_high_precision(prefix, verbose))
-            append!(products, install_bb_sdpa(prefix, verbose)) # install plain SDPA binary too, for comparisons
+            if var != :sdpa
+                append!(products, install_bb_sdpa_high_precision(prefix, verbose, [var]))
+                append!(products, install_bb_qd(prefix, verbose))
+            else
+                append!(products, install_bb_sdpa(prefix, verbose)) # install plain SDPA binary too, for comparisons
+            end
         end
     end
 end
