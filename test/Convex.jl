@@ -21,7 +21,8 @@ excludes_dict = Dict(:sdpa_gmp => vcat(common_excludes,Regex[
                         r"affine_Diagonal_atom" # underflows
                     ]),
                     :sdpa => vcat(common_excludes,Regex[
-                        r"affine_Partial_transpose" # slow
+                        r"affine_Partial_transpose", # slow
+                        r"affine_Diagonal_atom" # underflows
                     ]),)
 
 @testset "Convex tests with variant $var" begin

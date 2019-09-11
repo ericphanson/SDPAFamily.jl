@@ -98,7 +98,5 @@ open(deps_file_path, "a") do io
 
     const HAS_WSL = $HAS_WSL
 
-    libsdpa = ""
-
     """)
 end
