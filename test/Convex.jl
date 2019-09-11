@@ -27,7 +27,7 @@ const excludes_dict = Dict(:sdpa_gmp => vcat(common_excludes,
                             r"lp_pos_atom" # imprecise
                         ]))
 
-const no_presolve_problems = ["affine_Diagonal_atom", "lp_min_atom", "lp_max_atom"]
+const no_presolve_problems = ["affine_Diagonal_atom", "affine_Partial_transpose", "lp_min_atom", "lp_max_atom"]
 
 @testset "Convex tests with variant $var" begin
     foreach_problem(;exclude=excludes_dict[var]) do name, problem_func
