@@ -22,7 +22,7 @@ excludes_dict = Dict(:sdpa_gmp => vcat(common_excludes,Regex[
                     ]),
                     :sdpa => vcat(common_excludes,Regex[
                         r"affine_Partial_transpose", # slow
-                        r"affine_Diagonal_atom" # underflows
+                        r"affine_Diagonal_atom", # underflows
                         r"lp_dotsort_atom" # imprecise
                     ]),)
 
