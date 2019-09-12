@@ -28,9 +28,15 @@ const variant_excludes = Dict(
                     (:sdpa_dd, Float64) =>  Regex[
                             r"affine_Partial_transpose", # underflows
                         ],
+                    (:sdpa_dd, BigFloat) =>  Regex[
+                            r"affine_Partial_transpose", # ?
+                        ],
                     (:sdpa_qd, Float64) =>  Regex[
                             r"affine_Partial_transpose", # underflows
                             r"affine_Diagonal_atom" # underflows
+                        ],
+                    (:sdpa_qd, BigFloat) =>  Regex[
+                            r"affine_Partial_transpose", # ?
                         ],
                     (:sdpa, Float64) => Regex[
                             r"lp_dotsort_atom", # imprecise
@@ -48,10 +54,10 @@ const no_presolve_problems = ["affine_Partial_transpose", "lp_min_atom", "lp_max
     foreach_problem(;exclude = excludes) do name, problem_func
         @testset "$name" begin
             problem_func(Val(true), 1e-3, 0.0, T) do p
-                @info "`solve!` called" name var T
+                # @info "`solve!` called" name var T
                 presolve = !(name ∈ no_presolve_problems)
                 time = @elapsed Convex.solve!(p, SDPAFamily.Optimizer{T}(presolve = presolve, silent = true, variant = var))
-                @info "Finished `solve!`" time
+                # @info "Finished `solve!`" time
             end
         end
     end
