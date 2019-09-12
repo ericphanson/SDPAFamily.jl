@@ -3,7 +3,7 @@ language: julia
 os:
   - osx
   - linux
-  - windows
+  # - windows
 julia:
   - 1.0
   - 1.2
