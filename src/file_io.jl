@@ -87,6 +87,9 @@ function read_results!(
                 line = getnextline(io)
             end
         end
+    if norm(optimizer.b, Inf) < eps(norm(xMatvec, Inf)) || norm(optimizer.b, Inf) < eps(norm(yMatvec, Inf))
+        @warn "Potential underflow detected. Check the results and use `BigFloat` entries if necessary."
+    end
     xVecstring = remove_brackets!(xVecstring)
     xVecstring = split(xVecstring, ",")
     xVec = parse.(T, xVecstring)
