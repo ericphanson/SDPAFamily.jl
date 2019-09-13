@@ -8,6 +8,8 @@ The main object of interest supplied by this package is `SDPAFamily.Optimizer{T}
 * `binary_path`: a string representing a path to the SDPA-GMP binary to use. The default is chosen at `build` time.
 * `params_path`: a string representing a path to a parameter file named `param.sdpa` in the same folder as the binary if present. For details please refer to the [SDPA users manual](https://sourceforge.net/projects/sdpa/files/sdpa/sdpa.7.1.1.manual.20080618.pdf). The default parameters used by SDPAFamily.jl are here: <https://github.com/ericphanson/SDPAFamily.jl/blob/master/deps/param.sdpa>.
 
+`SDPAFamily` also accepts `variant=plain` to use the non-high-precision SDPA binary. For general usage of the SDPA solver, use [SDPA.jl](https://github.com/JuliaOpt/SDPA.jl) which uses the C++ library to interface directly with the SDPA binary.
+
 ### Using a number type other than `BigFloat`
 
 SDPA-GMP.jl uses `BigFloat` for problem data and solution by default. To use, for example, `Float64` instead, simply call `SDPAFamily.Optimizer{Float64}()`. However, this may cause underflow errors when reading the solution file, particularly when `MathOptInterface` bridges are used. Note that with `MathOptInterface` all the problem data must be parametrised by the same number type, i.e. `Float64` in this case.
