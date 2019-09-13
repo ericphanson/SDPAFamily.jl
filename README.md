@@ -2,6 +2,9 @@
 
 [![Build Status](https://travis-ci.com/ericphanson/SDPAFamily.jl.svg?branch=master)](https://travis-ci.com/ericphanson/SDPAFamily.jl)
 [![Codecov](https://codecov.io/gh/ericphanson/SDPAFamily.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/ericphanson/SDPAFamily.jl)
+[![](https://img.shields.io/badge/docs-stable-blue.svg)](https://ericphanson.github.io/SDPAFamily.jl/stable)
+[![](https://img.shields.io/badge/docs-dev-blue.svg)](https://ericphanson.github.io/SDPAFamily.jl/dev)
+
 
 An interface to using SDPA-GMP, SDPA-DD, and SDPA-QD in Julia (<http://sdpa.sourceforge.net>). Call `SDPAFamily.Optimizer()` to use this wrapper via `MathOptInterface`, which is an intermediate layer between low-level solvers (such as SDPA-GMP, SDPA-QD, and SDPA-DD) and high level modelling languages, such as [JuMP.jl](https://github.com/JuliaOpt/JuMP.jl) and [Convex.jl](https://github.com/JuliaOpt/Convex.jl/).
 
