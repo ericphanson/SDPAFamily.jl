@@ -1,0 +1,7 @@
+[deps]
+Convex = "f65535da-76fb-5f13-bab9-19810c17039a"
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+SDPAFamily = "bfe18334-aefd-11e9-1109-4bf2b15a5b91"
+
+[compat]
+Documenter = "0.23"
