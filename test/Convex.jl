@@ -27,10 +27,16 @@ const variant_excludes = Dict(
                         ],
                     (:sdpa_dd, Float64) =>  Regex[
                             r"lp_dotsort_atom", # imprecise
+                            r"lp_pos_atom", # imprecise
+                            r"lp_neg_atom", # imprecise
+                            r"sdp_matrix_frac_atom", # imprecise
                             r"affine_Partial_transpose", # underflows
                         ],
                     (:sdpa_dd, BigFloat) =>  Regex[
                             r"lp_dotsort_atom", # imprecise
+                            r"lp_pos_atom", # imprecise
+                            r"lp_neg_atom", # imprecise
+                            r"sdp_matrix_frac_atom", # imprecise
                             r"affine_Diagonal_atom", # needs smaller epsilon
                             r"affine_Partial_transpose", # needs smaller epsilon
                         ],
