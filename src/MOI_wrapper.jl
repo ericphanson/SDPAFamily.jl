@@ -91,7 +91,7 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
 		if params_path == (use_WSL ? WSLize_path(default_params_path[variant]) : default_params_path[variant]) && optimizer.variant == :sdpa_gmp && T != BigFloat
 			optimizer.params_path = use_WSL ? WSLize_path(default_params_path[:sdpa_gmp_float64]) : default_params_path[:sdpa_gmp_float64]
 			if optimizer.silent == false
-				@info "Precision reduced to 64 bits on problems with Float64 entries."
+				@info "Precision reduced to 80 bits on problems with Float64 entries."
 			end
 		end
 

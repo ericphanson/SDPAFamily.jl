@@ -12,7 +12,7 @@ function sdpa_gmp_binary_solve!(m::Optimizer, full_input_path::String, full_outp
         full_input_path = WSLize_path(full_input_path)
         full_output_path = WSLize_path(full_output_path)
         if !m.silent
-            @info "Redirecting to sdpa_gmp in WSL environment."
+            @info "Redirecting to WSL environment."
         end
     end
     arg = `-ds $full_input_path -o $full_output_path -p $(m.params_path) $extra_args`
