@@ -8,7 +8,7 @@ JuMP currently only supports `Float64` numeric types, which means that problems 
 
 Convex.jl does not yet officially support MathOptInterface; this issue is tracked at [Convex.jl#262](https://github.com/JuliaOpt/Convex.jl/issues/262). However, there is a work-in-progress branch which can be added to your Julia environment via
 
-```julia
+```
 ] add https://github.com/ericphanson/Convex.jl#MathOptInterface
 ```
 
