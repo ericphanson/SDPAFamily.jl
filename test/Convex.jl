@@ -29,14 +29,14 @@ const variant_excludes = Dict(
                             r"affine_Partial_transpose", # underflows
                         ],
                     (:sdpa_dd, BigFloat) =>  Regex[
-                            r"affine_Partial_transpose", # ?
+                            r"affine_Partial_transpose", # needs smaller epsilon
                         ],
                     (:sdpa_qd, Float64) =>  Regex[
                             r"affine_Partial_transpose", # underflows
                             r"affine_Diagonal_atom" # underflows
                         ],
                     (:sdpa_qd, BigFloat) =>  Regex[
-                            r"affine_Partial_transpose", # ?
+                            r"affine_Partial_transpose", # needs smaller epsilon
                         ],
                     (:sdpa, Float64) => Regex[
                             r"lp_dotsort_atom", # imprecise

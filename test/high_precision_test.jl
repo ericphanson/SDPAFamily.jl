@@ -14,8 +14,8 @@ time = @elapsed using SDPAFamily
     error = abs(p.optval - (6 - sqrt(big"2.0"))/4)
     @info "SDPA solved the problem with an absolute error of " error time
 
-    time = @elapsed solve!(p, SDPAFamily.Optimizer(silent = true, presolve = true, variant = :sdpa_dd))
-    @test p.optval ≈ (6 - sqrt(big"2.0"))/4 atol=1e-15
+    time = @elapsed solve!(p, SDPAFamily.Optimizer(silent = false, presolve = true, variant = :sdpa_dd))
+    @test p.optval ≈ (6 - sqrt(big"2.0"))/4 atol=1e-9
     error = abs(p.optval - (6 - sqrt(big"2.0"))/4)
     @info "SDPA-dd solved the problem with an absolute error of " error time
 
