@@ -30,7 +30,7 @@ p_\text{guess} = \frac{1}{2} + \frac{1}{2 \sqrt{2}}
 Let us see to what accuracy we can recover that result using the SDPA solvers.
 
 ```@example 1
-using SDPAFamily, Printf, BenchmarkTools
+using SDPAFamily, Printf
 using Convex # ] add https://github.com/ericphanson/Convex.jl#MathOptInterface
 
 ρ₁ = [big"1.0" big"0.0"; big"0.0" big"0.0"]
@@ -43,10 +43,10 @@ problem = maximize(real((1//2)*tr(ρ₁*E₁) + (1//2)*tr(ρ₂*E₂)),
             [E₁ ⪰ 0, E₂ ⪰ 0, E₁ + E₂ == Diagonal(ones(2))]; numeric_type = BigFloat)
 p_guess = 1//2 + 1/(2*sqrt(big(2)))
 for variant in (:sdpa, :sdpa_dd, :sdpa_qd, :sdpa_gmp)
-    time = @belapsed solve!(problem, SDPAFamily.Optimizer(silent = true, presolve = true, variant = variant))
+    solve!(problem, SDPAFamily.Optimizer(silent = true, presolve = true, variant = variant))
     error = abs(problem.optval - p_guess)
     print("$variant solved the problem with an absolute error of ")
-    @printf("%.2e in %.3f seconds.\n", error, time)
+    @printf("%.2e.\n", error)
 end
 ```
 
@@ -64,9 +64,9 @@ Note that this is an example where the presolve routine is essential to getting 
 
 ```@example 1
 for variant in (:sdpa, :sdpa_dd, :sdpa_qd, :sdpa_gmp)
-    time = @belapsed solve!(problem, SDPAFamily.Optimizer(silent = true, presolve = false, variant = variant))
+    solve!(problem, SDPAFamily.Optimizer(silent = true, presolve = false, variant = variant))
     error = abs(problem.optval - p_guess)
     print("$variant solved the problem with an absolute error of ")
-    @printf("%.2e in %.3f seconds.\n", error, time)
+    @printf("%.2e.\n", error)
 end
 ```
