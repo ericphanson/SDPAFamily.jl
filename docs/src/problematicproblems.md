@@ -1,12 +1,10 @@
 # Possible Issues and Troubleshooting
 
-We now demonstrate some current limitations of this package. 
+We now demonstrate some current limitations of this package via [`Convex.jl#MathOptInterface`](https://github.com/ericphanson/Convex.jl/tree/MathOptInterface)'s `Problem Deopt`. This is run with `TEST=true`, meaning the solution returned by the solver will be tested against the true solution. 
 
 ## Underflows
 
-This occurs when the precision used to represent the solution is not high enough compared to the internal precision used by the solver. This lack of precision can lead to catastrophic cancellation. 
-
-We now demonstrate this via [`Convex.jl#MathOptInterface`](https://github.com/ericphanson/Convex.jl/tree/MathOptInterface)'s `Problem Deopt`. This is run with `TEST=true`, meaning the solution returned by the solver will be tested against the true solution. In the following, SDPA-QD is used to solve the problem, and `Float64` numbers are used to represent the obtained solution, and the test fails.
+This occurs when the precision used to represent the solution is not high enough compared to the internal precision used by the solver. This lack of precision can lead to catastrophic cancellation. In the following, SDPA-QD is used to solve the problem, and `Float64` numbers are used to represent the obtained solution, and the test fails.
 
 ```@setup convex
 using SDPAFamily, Test, SparseArrays
@@ -22,7 +20,7 @@ test_problem(Val(TEST), atol, rtol, Float64) do problem
 end
 ```
 
-We try to automatically detect underflows and warn against them; in this case, the warning is issued.
+We try to automatically detect underflows and warn against them; in this case, the warning is issued. Sometimes this can be avoided by choosing a better set of parameters. See [Choice of parameters](@ref).
 
 ## Presolve
 
@@ -32,17 +30,48 @@ This is demonstrated in the following example. For a ``1500 \times 100`` matrix 
 
 ```@repl convex
 A = sprandn(1500, 101, 0.1);
-redundant_F = collect(setdiff!(Set(1:150), Set(rowvals(SDPAFamily.reduce!(A)[:, 1:end-1]))));
+redundant_F = collect(setdiff!(Set(1:1500), Set(rowvals(SDPAFamily.reduce!(A)[:, 1:end-1]))));
 length(redundant_F)
 ```
 
-## Troubleshooting
+## Choice of parameters
 
-`SDPAFamily` solvers have their own limitations too. Unfortunately, we have not been able to successfully solve every problem that we have tried with one choice of parameters. We have chosen default parameter settings that we hope will work with a wide variety of problems. 
+Unfortunately, we have not been able to successfully solve every problem that we have tried with one choice of parameters. We have chosen default parameter settings that we hope will work with a wide variety of problems. See [Usage](@ref) for details on switching to two other sets of parameters provided by the solvers. 
+
+This is an example where a better choice of parameters can help. 
+
+```@repl convex
+test_problem = Convex.ProblemDepot.PROBLEMS["lp"]["lp_dotsort_atom"];
+TEST = true; atol = 1e-3; rtol = 0.0;
+test_problem(Val(TEST), atol, rtol, Float64) do problem
+    solve!(problem, SDPAFamily.Optimizer{Float64}(variant=:sdpa_dd, silent=true))
+end
+```
+```@repl convex
+test_problem = Convex.ProblemDepot.PROBLEMS["lp"]["lp_dotsort_atom"];
+TEST = true; atol = 1e-3; rtol = 0.0;
+test_problem(Val(TEST), atol, rtol, Float64) do problem
+    solve!(problem, SDPAFamily.Optimizer{Float64}(variant=:sdpa_dd, silent=true, params_path = "-pt 1"))
+end
+```
+
+## Summary of problematic problems
+
+Due to the above reasons, we have excluded the following tests from `Convex.jl`'s `Problem Depot'.
+
+| Solver      | Underflow                                         | Need to use `params_path = "-pt 1"`                          | Presolve disabled due to long runtime                  |
+| :---------- | :------------------------------------------------ | :----------------------------------------------------------- | :----------------------------------------------------- |
+| `:sdpa_dd`  | `affine_Partial_transpose`                        | `affine_Partial_transpose` `lp_pos_atom` `lp_neg_atom` `sdp_matrix_frac_atom` `lp_dotsort_atom` | `affine_Partial_transpose` `lp_min_atom` `lp_max_atom` |
+| `:sdpa_qd`  | `affine_Partial_transpose` `affine_Diagonal_atom` | `affine_Partial_transpose` `affine_Diagonal_atom`            | `affine_Partial_transpose` `lp_min_atom` `lp_max_atom` |
+| `:sdpa_gmp` | `affine_Partial_transpose`                        | `affine_Partial_transpose`                                   | `affine_Partial_transpose` `lp_min_atom` `lp_max_atom` |
+
+Note that here all underflowing test cases will pass when using `params_path = "-pt 1"`. In addition, we have excluded `lp_dotsort_atom` and `lp_pos_atom` when testing `:sdpa` due to imprecise solution using default parameters.
+
+## Troubleshooting
 
 When the solvers fail to return a solution, we recommend trying out the following troubleshoot steps.
 
-1. Set `silent=false` and look for warnings and error messages. If necessary, check the output file. The path is printed by the solver output and is also accessible via `Optimizer.tempdir`.
+1. Set `silent=false` and look for warnings and error messages. If necessary, check the output file. Its path is printed by the solver output and can also be retrieved via `Optimizer.tempdir`.
 2. Set `presolve=true` to remove redundant constraints. Typically, redundant constraints are indicated by a premature `cholesky miss` error as shown above.
 3. Use `BigFloat` (the default) or `Double64` (from the [DoubleFloats](https://github.com/JuliaMath/DoubleFloats.jl) package) precision instead of `Float64` (e.g. `SDPAFamily.Optimizer{Double64}(...)`). This will reduce the chance of having underflow errors when reading back the results. 
 4. Change the parameters by passing a custom parameter file (i.e. `SDPAFamily.Optimizer(params_path=...)`). [SDPA users manual](https://sourceforge.net/projects/sdpa/files/sdpa/sdpa.7.1.1.manual.20080618.pdf) contains two other sets of parameters, `UNSTABLE_BUT_FAST` and `STABLE_BUT_SLOW`. It might also be helpful to use a tighter `epsilonDash` and `epsilonStar` tolerance.

@@ -23,14 +23,14 @@ const type_excludes = Dict( Float64 => Regex[],
 # (often due to things like underflow).
 const variant_excludes = Dict(
                     (:sdpa_gmp, Float64) => Regex[
-                            r"affine_Partial_transpose", # underflows
+                            r"affine_Partial_transpose", # -pt 1
                         ],
                     (:sdpa_dd, Float64) =>  Regex[
-                            r"lp_dotsort_atom", # imprecise
-                            r"lp_pos_atom", # imprecise
-                            r"lp_neg_atom", # imprecise
-                            r"sdp_matrix_frac_atom", # imprecise
-                            r"affine_Partial_transpose", # underflows
+                            r"lp_dotsort_atom", # -pt 1
+                            r"lp_pos_atom", # -pt 1
+                            r"lp_neg_atom", # -pt 1
+                            r"sdp_matrix_frac_atom", # -pt 1
+                            r"affine_Partial_transpose", # -pt 1
                         ],
                     (:sdpa_dd, BigFloat) =>  Regex[
                             r"lp_dotsort_atom", # imprecise
@@ -41,8 +41,8 @@ const variant_excludes = Dict(
                             r"affine_Partial_transpose", # needs smaller epsilon
                         ],
                     (:sdpa_qd, Float64) =>  Regex[
-                            r"affine_Partial_transpose", # underflows
-                            r"affine_Diagonal_atom" # underflows
+                            r"affine_Partial_transpose", # -pt 1
+                            r"affine_Diagonal_atom" # -pt 1
                         ],
                     (:sdpa_qd, BigFloat) =>  Regex[
                             r"affine_Diagonal_atom", # needs smaller epsilon

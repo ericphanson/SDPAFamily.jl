@@ -6,7 +6,7 @@ The main object of interest supplied by this package is `SDPAFamily.Optimizer{T}
 * `silent`: a boolean to indicate whether or not to print output. Defaults to `true`.
 * `presolve`: whether or not to run a presolve routine to remove linearly dependent constraints. See below for more details. Defaults to `false`. Note, `presolve=true` is required to pass many of the tests for this package; linearly independent constraints are an assumption of the SDPA-family, but constraints generated from high level modelling languages often do have linear dependence between them.
 * `binary_path`: a string representing a path to the SDPA-GMP binary to use. The default is chosen at `build` time. To change the default binaries, see [Custom binary](@ref).
-* `params_path`: a string representing a path to a parameter file named `param.sdpa` in the same folder as the binary if present. For details please refer to the [SDPA users manual](https://sourceforge.net/projects/sdpa/files/sdpa/sdpa.7.1.1.manual.20080618.pdf). The default parameters used by `SDPAFamily.jl` are here: <https://github.com/ericphanson/SDPAFamily.jl/blob/master/deps/>.
+* `params_path`: a string representing a path to a parameter file named `param.sdpa` in the same folder as the binary if present. The default parameters used by `SDPAFamily.jl` are listed [here](https://github.com/ericphanson/SDPAFamily.jl/blob/master/deps/). There are two other sets of parameters, `UNSTABLE_BUT_FAST` and `STABLE_BUT_SLOW`, called by `params_path = "-pt 1"` and `params_path = "-pt 2"` respectively. For details please refer to the [SDPA users manual](https://sourceforge.net/projects/sdpa/files/sdpa/sdpa.7.1.1.manual.20080618.pdf). 
 
 `SDPAFamily.Optimizer()` also accepts `variant = :sdpa` to use the non-high-precision SDPA binary. For general usage of the SDPA solver, use [SDPA.jl](https://github.com/JuliaOpt/SDPA.jl) which uses the C++ library to interface directly with the SDPA binary.
 
@@ -29,7 +29,7 @@ p = Problem{BigFloat}(:minimize, real(tr(E12 * (s1 + 2 * s2) + E21 * (s2 + 2 * s
 opt = SDPAFamily.Optimizer(presolve = true, variant = :sdpa_gmp, silent = true);
 
 ```
-We demonstrate `presolve` using the problem defined in [Examples](@ref). When `presolve` is disabled, SDPA solvers will terminate prematurely due to linear dependence in the input constraints. Note, however, that this does not necessarily happen. Empirically, for our test cases, solvers' intolerance increases from `:sdpa` to `:sdpa_gmp`.
+We demonstrate `presolve` using the problem defined in [Optimal guessing probability for a pair of quantum states](@ref). When `presolve` is disabled, SDPA solvers will terminate prematurely due to linear dependence in the input constraints. Note, however, that this does not necessarily happen. Empirically, for our test cases, solvers' intolerance increases from `:sdpa` to `:sdpa_gmp`.
 ```@repl convexquantum
 opt = SDPAFamily.Optimizer(presolve = false)
 solve!(p, SDPAFamily.Optimizer())
