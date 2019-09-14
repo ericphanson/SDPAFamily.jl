@@ -1,6 +1,6 @@
 # Usage
 
-The main object of interest supplied by this package is `SDPAFamily.Optimizer{T}()`. Here, `T` is a numeric type which defaults to `BigFloat`. Keyword arguments may also be passed to `SDPAFamily.Optimizer`:
+The main object of interest supplied by this package is `SDPAFamily.Optimizer{T}()`. Here, `T` is a numeric type which defaults to `BigFloat`. Keyword arguments may also be passed to `SDPAFamily.Optimizer()`:
 
 * `variant`: either `:sdpa_gmp`, `:sdpa_qd`, or `:sdpa_dd`, to use SDPA-GMP, SDPA-QD, or SDPA-DD, respectively. Defaults to `:sdpa_gmp`.
 * `silent`: a boolean to indicate whether or not to print output. Defaults to `true`.
@@ -12,7 +12,7 @@ The main object of interest supplied by this package is `SDPAFamily.Optimizer{T}
 
 ### Using a number type other than `BigFloat`
 
-SDPA-GMP.jl uses `BigFloat` for problem data and solution by default. To use, for example, `Float64` instead, simply call `SDPAFamily.Optimizer{Float64}()`. However, this may cause underflow errors when reading the solution file, particularly when `MathOptInterface` bridges are used. Note that with `MathOptInterface` all the problem data must be parametrised by the same number type, i.e. `Float64` in this case.
+`SDPAFamily.Optimizer()` uses `BigFloat` for problem data and solution by default. To use, for example, `Float64` instead, simply call `SDPAFamily.Optimizer{Float64}()`. However, this may cause underflow errors when reading the solution file, particularly when `MathOptInterface` bridges are used. Note that with `MathOptInterface` all the problem data must be parametrised by the same number type, i.e. `Float64` in this case.
 
 ### Using presolve
 

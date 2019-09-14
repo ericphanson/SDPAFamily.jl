@@ -9,7 +9,7 @@ makedocs(;
         "Usage" => "usage.md",
         "Examples" => "examples.md",
         "Benchmarks" => "benchmarks.md",
-        "Problematic problems & troubleshooting" => "problematicproblems.md",
+        "Possible Issues & Troubleshooting" => "problematicproblems.md",
         "Developer reference" => "reference.md"
     ],
     repo = "https://github.com/ericphanson/SDPAFamily.jl/blob/{commit}{path}#L{line}",

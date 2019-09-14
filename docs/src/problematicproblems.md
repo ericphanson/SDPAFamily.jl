@@ -1,12 +1,12 @@
-# Problematic Problems
+# Possible Issues and Troubleshooting
 
-Unfortunately, we have not been able to successfully solve every problem that we have tried with one choice of parameters. We have chosen default parameter settings that we hope will work with a wide variety of problems.
-
-We now demonstrate some common problems using [`Convex.jl#MathOptInterface`](https://github.com/ericphanson/Convex.jl/tree/MathOptInterface).
+We now demonstrate some current limitations of this package. 
 
 ## Underflows
 
-This occurs when the precision used to represent the solution is not high enough compared to the internal precision used by the solver. This lack of precision can lead to catastrophic cancellation. For example, the following problem is taken from the `Convex.jl Problem Depot`, and is run with `TEST=true`, meaning the solution returned by the solver will be tested against the true solution. In the following, SDPA-QD is used to solve the problem, and `Float64` numbers are used to represent the obtained solution, and the test fails.
+This occurs when the precision used to represent the solution is not high enough compared to the internal precision used by the solver. This lack of precision can lead to catastrophic cancellation. 
+
+We now demonstrate this via [`Convex.jl#MathOptInterface`](https://github.com/ericphanson/Convex.jl/tree/MathOptInterface)'s `Problem Deopt`. This is run with `TEST=true`, meaning the solution returned by the solver will be tested against the true solution. In the following, SDPA-QD is used to solve the problem, and `Float64` numbers are used to represent the obtained solution, and the test fails.
 
 ```@setup convex
 using SDPAFamily, Test, SparseArrays
@@ -38,9 +38,11 @@ length(redundant_F)
 
 ## Troubleshooting
 
-Try:
+`SDPAFamily` solvers have their own limitations too. Unfortunately, we have not been able to successfully solve every problem that we have tried with one choice of parameters. We have chosen default parameter settings that we hope will work with a wide variety of problems. 
 
-1. Set `silent=false` and look for warnings and error messages
-2. Set `presolve=true` to remove redundant constraints
-3. Use `BigFloat` (the default) or `Double64` (from the [DoubleFloats](https://github.com/JuliaMath/DoubleFloats.jl) package) precision instead of `Float64` (e.g. `SDPAFamily.Optimizer{Double64}(...)`)
-4. Change the parameters by passing a custom parameter file (i.e. `SDPAFamily(params_path=...)`).
+When the solvers fail to return a solution, we recommend trying out the following troubleshoot steps.
+
+1. Set `silent=false` and look for warnings and error messages. If necessary, check the output file. The path is printed by the solver output and is also accessible via `Optimizer.tempdir`.
+2. Set `presolve=true` to remove redundant constraints. Typically, redundant constraints are indicated by a premature `cholesky miss` error as shown above.
+3. Use `BigFloat` (the default) or `Double64` (from the [DoubleFloats](https://github.com/JuliaMath/DoubleFloats.jl) package) precision instead of `Float64` (e.g. `SDPAFamily.Optimizer{Double64}(...)`). This will reduce the chance of having underflow errors when reading back the results. 
+4. Change the parameters by passing a custom parameter file (i.e. `SDPAFamily.Optimizer(params_path=...)`). [SDPA users manual](https://sourceforge.net/projects/sdpa/files/sdpa/sdpa.7.1.1.manual.20080618.pdf) contains two other sets of parameters, `UNSTABLE_BUT_FAST` and `STABLE_BUT_SLOW`. It might also be helpful to use a tighter `epsilonDash` and `epsilonStar` tolerance.

@@ -1,3 +1,5 @@
+# Examples
+
 ```@setup 1
 # This setup block is not shown in the final output
 # Install the right branch of Convex
