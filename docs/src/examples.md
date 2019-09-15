@@ -75,4 +75,4 @@ for variant in (:sdpa, :sdpa_dd, :sdpa_qd, :sdpa_gmp)
 end
 ```
 
-We can see that without the presolve rountine, we have only recovered the true solution up to errors of size $\sim 10^{-1}$.
+We can see that without the presolve rountine, we have only recovered the true solution up to errors of size $\sim 10^{-1}$ for `:sdpa` variant. All other variants have failed to produce a result due to redundant constraints and returned with default value 0.

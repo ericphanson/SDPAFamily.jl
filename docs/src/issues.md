@@ -66,7 +66,7 @@ Due to the above reasons, we have excluded the following tests from `Convex.jl`'
 | `:sdpa_qd`  | `affine_Partial_transpose` `affine_Diagonal_atom` | `affine_Partial_transpose` `affine_Diagonal_atom`            | `affine_Partial_transpose` `lp_min_atom` `lp_max_atom` |
 | `:sdpa_gmp` | `affine_Partial_transpose`                        | `affine_Partial_transpose`                                   | `affine_Partial_transpose` `lp_min_atom` `lp_max_atom` |
 
-Note that here all underflowing test cases will pass when using `params_path = "-pt 1"`. In addition, we have excluded `lp_dotsort_atom` and `lp_pos_atom` when testing `:sdpa` due to imprecise solution using default parameters.
+Note that here all underflowing test cases will pass when using `params_path = "-pt 1"`. In addition, we have excluded `lp_dotsort_atom` and `lp_pos_atom` when testing `:sdpa` due to imprecise solutions using default parameters.
 
 ## Troubleshooting
 
