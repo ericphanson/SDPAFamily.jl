@@ -22,12 +22,6 @@ const type_excludes = Dict( Float64 => Regex[],
 # Problems that cannot be handled with a specific combination of variant and numeric type
 # (often due to things like underflow).
 const variant_excludes = Dict(
-                    (:sdpa_dd, BigFloat) =>  Regex[
-                            r"affine_Diagonal_atom", # needs smaller epsilon
-                        ],
-                    (:sdpa_qd, BigFloat) =>  Regex[
-                            r"affine_Diagonal_atom", # needs smaller epsilon
-                        ],
                     (:sdpa, Float64) => Regex[
                             r"lp_dotsort_atom", # imprecise, cholesky miss
                             r"lp_pos_atom" # imprecise
@@ -59,6 +53,7 @@ const params_options = Dict(
                         "lp_neg_atom" => "-pt 1",
                         "sdp_matrix_frac_atom" => "-pt 1",
                         "affine_Partial_transpose" => "-pt 1",
+                        "affine_Diagonal_atom" => "-pt 1",
                         ),
                     (:sdpa_qd, Float64) =>  Dict(
                             "affine_Partial_transpose" => "-pt 1",
@@ -66,6 +61,7 @@ const params_options = Dict(
                         ),
                     (:sdpa_qd, BigFloat) =>  Dict(
                             "affine_Partial_transpose" => "-pt 1",
+                            "affine_Diagonal_atom" => "-pt 1",
                         ))
 
 @testset "Convex tests with variant $var and type $T" for T in (Float64, BigFloat)
