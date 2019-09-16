@@ -1,4 +1,4 @@
-using Test, SDPAFamily
+using Test, SDPAFamily, DoubleFloats
 using Convex: Convex
 using Convex.ProblemDepot: run_tests, foreach_problem
 using GenericLinearAlgebra
@@ -17,6 +17,10 @@ const type_excludes = Dict( Float64 => Regex[],
                             BigFloat => Regex[
                                 r"sdp_lambda_max_atom", # GenericLinearAlgebra#47
                                 r"socp", # MathOptInterface.jl#876
+                        ],
+                        Double64 => Regex[
+                                r"sdp_lambda_max_atom", # GenericLinearAlgebra#47
+                                r"socp", # MathOptInterface.jl#876
                         ])
 
 # Problems that cannot be handled with a specific combination of variant and numeric type
@@ -27,6 +31,10 @@ const variant_excludes = Dict(
                             r"lp_pos_atom" # imprecise
                         ],
                     (:sdpa, BigFloat) => Regex[
+                            r"lp_dotsort_atom", # imprecise, cholesky miss
+                            r"lp_pos_atom" # imprecise
+                        ],
+                    (:sdpa, Double64) => Regex[
                             r"lp_dotsort_atom", # imprecise, cholesky miss
                             r"lp_pos_atom" # imprecise
                         ])
@@ -55,6 +63,14 @@ const params_options = Dict(
                         "affine_Partial_transpose" => "-pt 1",
                         "affine_Diagonal_atom" => "-pt 1",
                         ),
+                    (:sdpa_dd, Double64) =>  Dict(
+                            "lp_dotsort_atom" => "-pt 1",
+                            "lp_pos_atom" => "-pt 1",
+                            "lp_neg_atom" => "-pt 1",
+                            "sdp_matrix_frac_atom" => "-pt 1",
+                            "affine_Partial_transpose" => "-pt 1",
+                            "affine_Diagonal_atom" => "-pt 1",
+                            ),
                     (:sdpa_qd, Float64) =>  Dict(
                             "affine_Partial_transpose" => "-pt 1",
                             "affine_Diagonal_atom" => "-pt 1",
@@ -62,9 +78,13 @@ const params_options = Dict(
                     (:sdpa_qd, BigFloat) =>  Dict(
                             "affine_Partial_transpose" => "-pt 1",
                             "affine_Diagonal_atom" => "-pt 1",
+                        ),
+                    (:sdpa_qd, Double64) =>  Dict(
+                            "affine_Partial_transpose" => "-pt 1",
+                            "affine_Diagonal_atom" => "-pt 1",
                         ))
 
-@testset "Convex tests with variant $var and type $T" for T in (Float64, BigFloat)
+@testset "Convex tests with variant $var and type $T" for T in (Float64, Double64, BigFloat)
     excludes = vcat(common_excludes, get(variant_excludes, (var, T), Regex[]), type_excludes[T])
     foreach_problem(;exclude = excludes) do name, problem_func
         @testset "$name" begin
