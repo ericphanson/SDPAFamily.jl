@@ -1,13 +1,24 @@
 # Examples
 
-## Optimal guessing probability for a pair of quantum states
-
 ```@setup 1
 # This setup block is not shown in the final output
 # Install the right branch of Convex
 using Pkg
 Pkg.add(PackageSpec(name="Convex", url="https://github.com/ericphanson/Convex.jl", rev="MathOptInterface"));
 ```
+
+Here is a simple optimization problem formulated with Convex.jl:
+
+```@example 1
+using SDPAFamily, LinearAlgebra
+using Convex # ] add https://github.com/ericphanson/Convex.jl#MathOptInterface
+y = Semidefinite(3)
+p = maximize(lambdamin(y), tr(y) <= 5; numeric_type = BigFloat)
+solve!(p, SDPAFamily.Optimizer(presolve=true))
+@show p.optval
+```
+
+## Optimal guessing probability for a pair of quantum states
 
 In physics, a *state* represents a possible configuration of a physical system. In quantum mechanical systems with finitely many degrees of freedom, states are represented by *density matrices*, which are $d\times d$ matrices with complex entries that are positive semi-definite and have trace equal to one. States can be *measured*; mathematically, a measurement with $n$ possible outcomes is represented by a set of measurement operators $\{E_j\}_{j=1}^n$, where each $E_j$ is a $d\times d$ matrix. For example, imagine an experiment in which a charged particle is released in a magnetic field such that it will hit either a detector on the left or a detector on the right. This corresponds to a measurement of the particle with two outcomes, and hence two measurement operators $\{E_1, E_2\}$, which to the left and right detector.
 
@@ -23,7 +34,7 @@ p_\text{guess}(E_1, E_2) = \frac{1}{2}\operatorname{tr}(\rho_1  E_1) + \frac{1}{
 
 since there is a 50% chance of the system being in state $\rho_1$, in which case we guess correctly when we get outcome 1 (which occurs with probability $\operatorname{tr}(\rho_1 E_1)$), and a 50% chance of the system being in state $\rho_2$, in which case we guess correctly when we get outcome $2$.
 
-Our goal now is to choose the optimal measurement operators to have the the best chance of guessing correctly. That is, we aim to maximize the above expression over all choices of $E_1$ and $E_2$ such that $\{E_1, E_2\}$ is a valid set of measurement operators. This is a semidefinite program, which can be solved e.g. with SDPAFamily.jl In this simple example, the problem can be solved analytically; in fact, this problem is Example 3.2.1 of the [edX Quantum Cryptography notes by Thomas Vidick](http://users.cms.caltech.edu/~vidick/teaching/120_qcrypto/LN_Week3.pdf), from which it can be seen that the correct answer is
+Our goal now is to choose the optimal measurement operators to have the the best chance of guessing correctly. That is, we aim to maximize the above expression over all choices of $E_1$ and $E_2$ such that $\{E_1, E_2\}$ is a valid set of measurement operators. This is a semidefinite program, which can be solved e.g. with SDPAFamily.jl In this simple example with only two states to discriminate between, the problem can be solved analytically, and the solution is related to the trace distance between the two states. This problem specifically is Example 3.2.1 of the [edX Quantum Cryptography notes by Thomas Vidick](http://users.cms.caltech.edu/~vidick/teaching/120_qcrypto/LN_Week3.pdf). It can be seen that the optimal guessing probability is
 
 ```math
 p_\text{guess} = \frac{1}{2} + \frac{1}{2 \sqrt{2}}
