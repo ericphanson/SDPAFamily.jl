@@ -6,6 +6,12 @@ const MOI = MathOptInterface
 const MOIB = MOI.Bridges
 using BinaryProvider
 
+"""
+Set the verbosity level of an `SDPAFamily.Optimizer`.
+
+Options are `SILENT`, `WARN`, or `VERBOSE`.
+"""
+@enum Verbosity SILENT WARN VERBOSE
 
 # The `deps.jl` file defines `HAS_WSL::Bool` and `sdpa_gmp::String`.
 #

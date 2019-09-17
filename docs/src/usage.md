@@ -36,7 +36,7 @@ solve!(p, SDPAFamily.Optimizer())
 ```
 Applying presolve helps by removing 8 redundant constraints from the final input file.
 ```@repl convexquantum
-opt.presolve = true; opt.silent = true;
+opt.presolve = true; opt.verbosity = SDPAFamily.SILENT;
 solve!(p, opt)
 @test p.optval ≈ (6 - sqrt(big"2.0"))/4 atol=1e-30
 SDPAFamily.presolve(opt)

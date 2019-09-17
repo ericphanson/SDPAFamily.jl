@@ -48,7 +48,7 @@ function presolve(optimizer::SDPAFamily.Optimizer{T}) where T
     end
     finish = time() - start
     n = length(redundant_F)
-    if !optimizer.silent
+    if optimizer.verbosity != SILENT
         @info "Presolve finished in $finish seconds. $n constraint(s) eliminated."
     end
     return sort!(redundant_F)

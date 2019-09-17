@@ -58,7 +58,7 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
     varmap::Vector{Tuple{Int, Int, Int}} # Variable Index vi -> blk, i, j
     b::Vector{T}
     solve_time::Float64
-    silent::Bool
+    verbosity::Verbosity
     options::Dict{Symbol, Any}
     y::Vector{T}
     X::PrimalSolution{T}
@@ -74,7 +74,9 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
     no_solve::Bool
     use_WSL::Bool
 	variant::Symbol
-    function Optimizer{T}(; variant = :sdpa_gmp, presolve::Bool = false, silent::Bool = false,
+    function Optimizer{T}(; variant = :sdpa_gmp, presolve::Bool = false, 
+            silent::Bool = false,
+            verbose::Verbosity = silent ? SILENT : WARN,
             binary_path = BB_PATHS[variant],
             use_WSL = HAS_WSL[variant],
             params_path = use_WSL ? WSLize_path(default_params_path[variant]) : default_params_path[variant]
@@ -82,15 +84,20 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
 
 		optimizer = new(
             zero(T), 1, Int[], Tuple{Int, Int, Int}[], T[],
-            NaN, silent, Dict{Symbol, Any}(), T[], PrimalSolution{T}(Matrix{T}[]), VarDualSolution{T}(Matrix{T}[]), zero(T), zero(T), :noINFO, mktempdir(), [], presolve, binary_path, params_path, false, use_WSL, variant)
+            NaN, verbose, Dict{Symbol, Any}(), T[], PrimalSolution{T}(Matrix{T}[]), VarDualSolution{T}(Matrix{T}[]), zero(T), zero(T), :noINFO, mktempdir(), [], presolve, binary_path, params_path, false, use_WSL, variant)
 
-		if T != BigFloat && !optimizer.silent
+        if silent && verbose != SILENT
+            throw(ArgumentError("Cannot set both `silent=true` and `verbose != SILENT`."))
+        end
+
+		if T != BigFloat && optimizer.verbosity != SILENT
 			@warn "Not using BigFloat entries may cause underflow errors."
         end
 
 		if params_path == (use_WSL ? WSLize_path(default_params_path[variant]) : default_params_path[variant]) && optimizer.variant == :sdpa_gmp && T != BigFloat
-			optimizer.params_path = use_WSL ? WSLize_path(default_params_path[:sdpa_gmp_float64]) : default_params_path[:sdpa_gmp_float64]
-			if optimizer.silent == false
+            optimizer.params_path = use_WSL ? WSLize_path(default_params_path[:sdpa_gmp_float64]) : default_params_path[:sdpa_gmp_float64]
+            
+			if optimizer.verbosity == SILENT
 				@info "Precision reduced to 80 bits on problems with Float64 entries."
 			end
 		end
@@ -119,11 +126,16 @@ end
 
 MOI.supports(::Optimizer, ::MOI.Silent) = true
 function MOI.set(optimizer::Optimizer, ::MOI.Silent, value::Bool)
-	optimizer.silent = value
+    if value
+        optimizer.verbosity = SILENT
+    else
+        optimizer.verbosity = WARN
+    end
 end
-MOI.get(optimizer::Optimizer, ::MOI.Silent) = optimizer.silent
 
-MOI.get(::Optimizer, ::MOI.SolverName) = "SDPA-GMP"
+MOI.get(optimizer::Optimizer, ::MOI.Silent) = optimizer.verbosity == SILENT
+
+MOI.get(::Optimizer, ::MOI.SolverName) = "SDPAFamily"
 
 # See https://www.researchgate.net/publication/247456489_SDPA_SemiDefinite_Programming_Algorithm_User's_Manual_-_Version_600
 # "SDPA (SemiDefinite Programming Algorithm) User's Manual — Version 6.00" Section 6.2
