@@ -52,21 +52,21 @@ end
 test_problem = Convex.ProblemDepot.PROBLEMS["lp"]["lp_dotsort_atom"];
 TEST = true; atol = 1e-3; rtol = 0.0;
 test_problem(Val(TEST), atol, rtol, Float64) do problem
-    solve!(problem, SDPAFamily.Optimizer{Float64}(variant=:sdpa_dd, silent=true, params_path = "-pt 1"))
+    solve!(problem, SDPAFamily.Optimizer{Float64}(variant=:sdpa_dd, silent=true, params = UNSTABLE_BUT_FAST))
 end
 ```
 
 ## Summary of problematic problems
 
-Due to the above reasons, we have excluded the following tests from `Convex.jl`'s `Problem Depot'.
+Due to the above reasons, we have modified the default settings for the following tests from `Convex.jl`'s `Problem Depot'.
 
-| Solver      | Underflow                                         | Need to use `params_path = "-pt 1"`                          | Presolve disabled due to long runtime                  |
+| Solver      | Underflow                                         | Need to use `params = UNSTABLE_BUT_FAST`                          | Presolve disabled due to long runtime                  |
 | :---------- | :------------------------------------------------ | :----------------------------------------------------------- | :----------------------------------------------------- |
 | `:sdpa_dd`  | `affine_Partial_transpose`                        | `affine_Partial_transpose` `lp_pos_atom` `lp_neg_atom` `sdp_matrix_frac_atom` `lp_dotsort_atom` | `affine_Partial_transpose` `lp_min_atom` `lp_max_atom` |
 | `:sdpa_qd`  | `affine_Partial_transpose` `affine_Diagonal_atom` | `affine_Partial_transpose` `affine_Diagonal_atom`            | `affine_Partial_transpose` `lp_min_atom` `lp_max_atom` |
 | `:sdpa_gmp` | `affine_Partial_transpose`                        | `affine_Partial_transpose`                                   | `affine_Partial_transpose` `lp_min_atom` `lp_max_atom` |
 
-Note that here all underflowing test cases will pass when using `params_path = "-pt 1"`. In addition, we have excluded `lp_dotsort_atom` and `lp_pos_atom` when testing `:sdpa` due to imprecise solutions using default parameters.
+In addition, we have excluded `lp_dotsort_atom` and `lp_pos_atom` when testing `:sdpa` due to imprecise solutions using default parameters. We have also excluded all second-order cone problems when using `BigFloat` or `Double64` numeric types, due to MathOptInterface.jl#876, as well as the `sdp_lambda_max_atom` problem due to GenericLinearAlgebra#47.
 
 ## Troubleshooting
 
@@ -75,4 +75,4 @@ When the solvers fail to return a solution, we recommend trying out the followin
 1. Set `silent=false` and look for warnings and error messages. If necessary, check the output file. Its path is printed by the solver output and can also be retrieved via `Optimizer.tempdir`.
 2. Set `presolve=true` to remove redundant constraints. Typically, redundant constraints are indicated by a premature `cholesky miss` error as shown above.
 3. Use `BigFloat` (the default) or `Double64` (from the [DoubleFloats](https://github.com/JuliaMath/DoubleFloats.jl) package) precision instead of `Float64` (e.g. `SDPAFamily.Optimizer{Double64}(...)`). This will reduce the chance of having underflow errors when reading back the results.
-4. Change the parameters by passing a custom parameter file (i.e. `SDPAFamily.Optimizer(params_path=...)`). [SDPA users manual](https://sourceforge.net/projects/sdpa/files/sdpa/sdpa.7.1.1.manual.20080618.pdf) contains two other sets of parameters, `UNSTABLE_BUT_FAST` and `STABLE_BUT_SLOW`. It might also be helpful to use a tighter `epsilonDash` and `epsilonStar` tolerance.
+4. Change the parameters by passing a custom parameter file (i.e. `SDPAFamily.Optimizer(params=...)`). [SDPA users manual](https://sourceforge.net/projects/sdpa/files/sdpa/sdpa.7.1.1.manual.20080618.pdf) contains two other sets of parameters, `UNSTABLE_BUT_FAST` and `STABLE_BUT_SLOW`, which can be set by the `params` argument. It might also be helpful to use a tighter `epsilonDash` and `epsilonStar` tolerance in a custom params file.

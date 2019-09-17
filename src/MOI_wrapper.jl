@@ -70,7 +70,7 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
     elemdata::Vector{Any}
 	presolve::Bool
 	binary_path::String
-	params_path::String
+    params::Union{ParamsSetting, String}
     no_solve::Bool
     use_WSL::Bool
 	variant::Symbol
@@ -79,12 +79,12 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
             verbose::Verbosity = silent ? SILENT : WARN,
             binary_path = BB_PATHS[variant],
             use_WSL = HAS_WSL[variant],
-            params_path = use_WSL ? WSLize_path(default_params_path[variant]) : default_params_path[variant]
+            params::Union{ParamsSetting, String} = DEFAULT
             ) where T
 
 		optimizer = new(
             zero(T), 1, Int[], Tuple{Int, Int, Int}[], T[],
-            NaN, verbose, Dict{Symbol, Any}(), T[], PrimalSolution{T}(Matrix{T}[]), VarDualSolution{T}(Matrix{T}[]), zero(T), zero(T), :noINFO, mktempdir(), [], presolve, binary_path, params_path, false, use_WSL, variant)
+            NaN, verbose, Dict{Symbol, Any}(), T[], PrimalSolution{T}(Matrix{T}[]), VarDualSolution{T}(Matrix{T}[]), zero(T), zero(T), :noINFO, mktempdir(), [], presolve, binary_path, params, false, use_WSL, variant)
 
         if silent && verbose != SILENT
             throw(ArgumentError("Cannot set both `silent=true` and `verbose != SILENT`."))
@@ -94,13 +94,6 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
 			@warn "Not using BigFloat entries may cause underflow errors."
         end
 
-		if params_path == (use_WSL ? WSLize_path(default_params_path[variant]) : default_params_path[variant]) && optimizer.variant == :sdpa_gmp && T != BigFloat
-            optimizer.params_path = use_WSL ? WSLize_path(default_params_path[:sdpa_gmp_float64]) : default_params_path[:sdpa_gmp_float64]
-            
-			if optimizer.verbosity == VERBOSE
-				@info "Precision reduced to 80 bits on problems with Float64 entries."
-			end
-		end
 
 		return optimizer
     end

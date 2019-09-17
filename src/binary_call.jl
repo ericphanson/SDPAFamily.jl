@@ -15,10 +15,13 @@ function sdpa_gmp_binary_solve!(m::Optimizer, full_input_path::String, full_outp
             @info "Redirecting to WSL environment."
         end
     end
-    if startswith(m.params_path, "-pt ") && length(m.params_path) == 5
-        arg = `-ds $full_input_path -o $full_output_path $(split(m.params_path))`
+    if m.params == UNSTABLE_BUT_FAST
+        arg = `-ds $full_input_path -o $full_output_path -pt 1`
+    elseif m.params == STABLE_BUT_SLOW
+        arg = `-ds $full_input_path -o $full_output_path -pt 2`
     else
-        arg = `-ds $full_input_path -o $full_output_path -p $(m.params_path)`
+        params_path = get_params_path(m)
+        arg = `-ds $full_input_path -o $full_output_path -p $(params_path)`
     end
     if m.use_WSL
         wsl_binary_path = dirname(normpath(m.binary_path))
@@ -50,6 +53,33 @@ function sdpa_gmp_binary_solve!(m::Optimizer, full_input_path::String, full_outp
     read_results!(m, read_path, redundant_entries);
 end
 
+
+function get_params_path(optimizer::Optimizer{T}) where {T}
+    @assert optimizer.params == DEFAULT || optimizer.params isa String
+
+    # use custom params
+    if optimizer.params isa String
+        return optimizer.params
+    end
+
+    if optimizer.variant == :sdpa_gmp && T == Float64
+        if optimizer.use_WSL
+            return WSLize_path(default_params_path[:sdpa_gmp_float64])
+        else 
+            return default_params_path[:sdpa_gmp_float64]
+        end
+        
+        if optimizer.verbosity == VERBOSE
+            @info "Precision reduced to 80 bits on problems with Float64 entries."
+        end
+    else
+        if optimizer.use_WSL
+            return WSLize_path(default_params_path[optimizer.variant])
+        else 
+            return default_params_path[optimizer.variant]
+        end
+    end
+end
 
 function run_binary(cmd::Cmd, verbosity)
     if verbosity == SILENT
