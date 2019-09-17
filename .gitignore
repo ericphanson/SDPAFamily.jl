@@ -2,10 +2,10 @@
 *.jl.cov
 *.jl.mem
 .DS_Store
-Manifest.toml
 /dev/
 deps/usr
 deps/build.log
 deps/deps.jl
 docs/build
 .vscode
+docs/Manifest.toml

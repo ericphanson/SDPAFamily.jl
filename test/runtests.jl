@@ -1,12 +1,4 @@
-# Make sure we get the MOI branch of Convex. This can be removed once Convex.jl proper supports MOI.
-using Pkg
-Pkg.add(PackageSpec(name="Convex", url="https://github.com/ericphanson/Convex.jl", rev="MathOptInterface"))
-using Convex
-
-Pkg.add(PackageSpec(name="MathOptInterface", url="https://github.com/JuliaOpt/MathOptInterface.jl", rev="master"))
-using MathOptInterface
-
-using SDPAFamily
+using Convex, MathOptInterface, SDPAFamily
 using Test
 
 const variants = (:sdpa, :sdpa_dd, :sdpa_qd, :sdpa_gmp)

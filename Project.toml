@@ -5,6 +5,7 @@ version = "0.1.0"
 
 [deps]
 BinaryProvider = "b99e7846-7c00-51b0-8f62-c81ae34c0232"
+Convex = "f65535da-76fb-5f13-bab9-19810c17039a"
 DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
 Libdl = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
@@ -13,9 +14,9 @@ SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 
 [compat]
 BinaryProvider = "0.5"
+DoubleFloats = "0.9, ≥ 0.9.9"
 MathOptInterface = "0.9"
 julia = "1"
-DoubleFloats = "0.9, ≥ 0.9.9"
 
 [extras]
 DoubleFloats = "497a8b3b-efae-58df-a0af-a86822472b78"
