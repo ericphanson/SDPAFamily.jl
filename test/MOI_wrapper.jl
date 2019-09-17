@@ -16,7 +16,7 @@ import SDPAFamily
     MOI.set(optimizer, MOI.Silent(), true)
 
     @testset "SolverName" begin
-        @test MOI.get(optimizer, MOI.SolverName()) == "SDPA-GMP"
+        @test MOI.get(optimizer, MOI.SolverName()) == "SDPAFamily"
     end
 
     @testset "supports_default_copy_to" begin
