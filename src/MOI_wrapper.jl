@@ -90,14 +90,14 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
             throw(ArgumentError("Cannot set both `silent=true` and `verbose != SILENT`."))
         end
 
-		if T != BigFloat && optimizer.verbosity != SILENT
+		if T != BigFloat && optimizer.verbosity == VERBOSE
 			@warn "Not using BigFloat entries may cause underflow errors."
         end
 
 		if params_path == (use_WSL ? WSLize_path(default_params_path[variant]) : default_params_path[variant]) && optimizer.variant == :sdpa_gmp && T != BigFloat
             optimizer.params_path = use_WSL ? WSLize_path(default_params_path[:sdpa_gmp_float64]) : default_params_path[:sdpa_gmp_float64]
             
-			if optimizer.verbosity == SILENT
+			if optimizer.verbosity == VERBOSE
 				@info "Precision reduced to 80 bits on problems with Float64 entries."
 			end
 		end

@@ -83,23 +83,24 @@ const params_options = Dict(
                             "affine_Partial_transpose" => "-pt 1",
                             "affine_Diagonal_atom" => "-pt 1",
                         ))
+@testset "Convex tests" for var in variants
+    @testset "Convex tests with variant $var and type $T" for T in (Float64, Double64, BigFloat)
+        excludes = vcat(common_excludes, get(variant_excludes, (var, T), Regex[]), type_excludes[T])
+        foreach_problem(;exclude = excludes) do name, problem_func
+            @testset "$name" begin
+                problem_func(Val(true), 1e-3, 0.0, T) do p
+                    # @info "`solve!` called" name var T
+                    presolve = !(name ∈ no_presolve_problems)
+                    settings = (presolve = presolve, variant = var)
 
-@testset "Convex tests with variant $var and type $T" for T in (Float64, Double64, BigFloat)
-    excludes = vcat(common_excludes, get(variant_excludes, (var, T), Regex[]), type_excludes[T])
-    foreach_problem(;exclude = excludes) do name, problem_func
-        @testset "$name" begin
-            problem_func(Val(true), 1e-3, 0.0, T) do p
-                # @info "`solve!` called" name var T
-                presolve = !(name ∈ no_presolve_problems)
-                settings = (presolve = presolve, silent = true, variant = var)
+                    params = get(get(params_options, (var, T), Dict()), name, nothing)
+                    if params !== nothing
+                        settings = (params_path = params, settings...)
+                    end
 
-                params = get(get(params_options, (var, T), Dict()), name, nothing)
-                if params !== nothing
-                    settings = (params_path = params, settings...)
+                    Convex.solve!(p, SDPAFamily.Optimizer{T}(; settings...))
+
                 end
-
-                Convex.solve!(p, SDPAFamily.Optimizer{T}(; settings...))
-
             end
         end
     end

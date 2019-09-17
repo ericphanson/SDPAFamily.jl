@@ -87,7 +87,7 @@ end
     end
 
     @testset "inconsistent constraints" begin
-        m = SDPAFamily.Optimizer(silent = true)
+        m = SDPAFamily.Optimizer(verbose = SDPAFamily.WARN)
         m.blockdims = [3]
         m.elemdata = [(1, 1, 1, 1, big"1.0"), (1, 1, 2, 2, big"1.0"), (1, 1, 3, 3, big"1.0"),
             (2, 1, 1, 2, big"2.0"), (2, 1, 2, 1, big"2.0"),
