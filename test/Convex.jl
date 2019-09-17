@@ -16,11 +16,9 @@ const common_excludes = Regex[
 const type_excludes = Dict( Float64 => Regex[],
                             BigFloat => Regex[
                                 r"sdp_lambda_max_atom", # GenericLinearAlgebra#47
-                                r"socp", # MathOptInterface.jl#876
                         ],
                         Double64 => Regex[
                                 r"sdp_lambda_max_atom", # GenericLinearAlgebra#47
-                                r"socp", # MathOptInterface.jl#876
                         ])
 
 # Problems that cannot be handled with a specific combination of variant and numeric type
