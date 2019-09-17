@@ -6,6 +6,22 @@ const MOI = MathOptInterface
 const MOIB = MOI.Bridges
 using BinaryProvider
 
+"""
+Possible verbosity levels of an `SDPAFamily.Optimizer`.
+
+Options are `SILENT`, `WARN`, or `VERBOSE`.
+"""
+@enum Verbosity SILENT WARN VERBOSE
+
+"""
+Possible the parameter settings of an `SDPAFamily.Optimizer`.
+One can also pass a path to the `params` keyword argument to use
+a custom parameter file.
+
+Options are `DEFAULT`, `UNSTABLE_BUT_FAST`, or `STABLE_BUT_SLOW`.
+"""
+@enum ParamsSetting DEFAULT UNSTABLE_BUT_FAST STABLE_BUT_SLOW
+
 
 # The `deps.jl` file defines `HAS_WSL::Bool` and `sdpa_gmp::String`.
 #

@@ -46,60 +46,64 @@ const no_presolve_problems = ["affine_Partial_transpose", "lp_min_atom", "lp_max
 # Some problems need a different choice of parameters to pass the tests
 const params_options = Dict(
                     (:sdpa_gmp, Float64) => Dict(
-                            "affine_Partial_transpose" => "-pt 1",
+                            "affine_Partial_transpose" => SDPAFamily.UNSTABLE_BUT_FAST,
+                        ),
+                    (:sdpa_gmp, Double64) => Dict(
+                            "affine_Partial_transpose" => SDPAFamily.UNSTABLE_BUT_FAST,
                         ),
                     (:sdpa_dd, Float64) =>  Dict(
-                            "lp_dotsort_atom" => "-pt 1",
-                            "lp_pos_atom" => "-pt 1",
-                            "lp_neg_atom" => "-pt 1",
-                            "sdp_matrix_frac_atom" => "-pt 1",
-                            "affine_Partial_transpose" => "-pt 1",
+                            "lp_dotsort_atom" => SDPAFamily.UNSTABLE_BUT_FAST,
+                            "lp_pos_atom" => SDPAFamily.UNSTABLE_BUT_FAST,
+                            "lp_neg_atom" => SDPAFamily.UNSTABLE_BUT_FAST,
+                            "sdp_matrix_frac_atom" => SDPAFamily.UNSTABLE_BUT_FAST,
+                            "affine_Partial_transpose" => SDPAFamily.UNSTABLE_BUT_FAST,
                         ),
                     (:sdpa_dd, BigFloat) =>  Dict(
-                        "lp_dotsort_atom" => "-pt 1",
-                        "lp_pos_atom" => "-pt 1",
-                        "lp_neg_atom" => "-pt 1",
-                        "sdp_matrix_frac_atom" => "-pt 1",
-                        "affine_Partial_transpose" => "-pt 1",
-                        "affine_Diagonal_atom" => "-pt 1",
+                        "lp_dotsort_atom" => SDPAFamily.UNSTABLE_BUT_FAST,
+                        "lp_pos_atom" => SDPAFamily.UNSTABLE_BUT_FAST,
+                        "lp_neg_atom" => SDPAFamily.UNSTABLE_BUT_FAST,
+                        "sdp_matrix_frac_atom" => SDPAFamily.UNSTABLE_BUT_FAST,
+                        "affine_Partial_transpose" => SDPAFamily.UNSTABLE_BUT_FAST,
+                        "affine_Diagonal_atom" => SDPAFamily.UNSTABLE_BUT_FAST,
                         ),
                     (:sdpa_dd, Double64) =>  Dict(
-                            "lp_dotsort_atom" => "-pt 1",
-                            "lp_pos_atom" => "-pt 1",
-                            "lp_neg_atom" => "-pt 1",
-                            "sdp_matrix_frac_atom" => "-pt 1",
-                            "affine_Partial_transpose" => "-pt 1",
-                            "affine_Diagonal_atom" => "-pt 1",
+                            "lp_dotsort_atom" => SDPAFamily.UNSTABLE_BUT_FAST,
+                            "lp_pos_atom" => SDPAFamily.UNSTABLE_BUT_FAST,
+                            "lp_neg_atom" => SDPAFamily.UNSTABLE_BUT_FAST,
+                            "sdp_matrix_frac_atom" => SDPAFamily.UNSTABLE_BUT_FAST,
+                            "affine_Partial_transpose" => SDPAFamily.UNSTABLE_BUT_FAST,
+                            "affine_Diagonal_atom" => SDPAFamily.UNSTABLE_BUT_FAST,
                             ),
                     (:sdpa_qd, Float64) =>  Dict(
-                            "affine_Partial_transpose" => "-pt 1",
-                            "affine_Diagonal_atom" => "-pt 1",
+                            "affine_Partial_transpose" => SDPAFamily.UNSTABLE_BUT_FAST,
+                            "affine_Diagonal_atom" => SDPAFamily.UNSTABLE_BUT_FAST,
                         ),
                     (:sdpa_qd, BigFloat) =>  Dict(
-                            "affine_Partial_transpose" => "-pt 1",
-                            "affine_Diagonal_atom" => "-pt 1",
+                            "affine_Partial_transpose" => SDPAFamily.UNSTABLE_BUT_FAST,
+                            "affine_Diagonal_atom" => SDPAFamily.UNSTABLE_BUT_FAST,
                         ),
                     (:sdpa_qd, Double64) =>  Dict(
-                            "affine_Partial_transpose" => "-pt 1",
-                            "affine_Diagonal_atom" => "-pt 1",
+                            "affine_Partial_transpose" => SDPAFamily.UNSTABLE_BUT_FAST,
+                            "affine_Diagonal_atom" => SDPAFamily.UNSTABLE_BUT_FAST,
                         ))
+@testset "Convex tests" for var in variants
+    @testset "Convex tests with variant $var and type $T" for T in (Float64, Double64, BigFloat)
+        excludes = vcat(common_excludes, get(variant_excludes, (var, T), Regex[]), type_excludes[T])
+        foreach_problem(;exclude = excludes) do name, problem_func
+            @testset "$name" begin
+                problem_func(Val(true), 1e-3, 0.0, T) do p
+                    # @info "`solve!` called" name var T
+                    presolve = !(name ∈ no_presolve_problems)
+                    settings = (presolve = presolve, variant = var)
 
-@testset "Convex tests with variant $var and type $T" for T in (Float64, Double64, BigFloat)
-    excludes = vcat(common_excludes, get(variant_excludes, (var, T), Regex[]), type_excludes[T])
-    foreach_problem(;exclude = excludes) do name, problem_func
-        @testset "$name" begin
-            problem_func(Val(true), 1e-3, 0.0, T) do p
-                # @info "`solve!` called" name var T
-                presolve = !(name ∈ no_presolve_problems)
-                settings = (presolve = presolve, silent = true, variant = var)
+                    params = get(get(params_options, (var, T), Dict()), name, nothing)
+                    if params !== nothing
+                        settings = (params = params, settings...)
+                    end
 
-                params = get(get(params_options, (var, T), Dict()), name, nothing)
-                if params !== nothing
-                    settings = (params_path = params, settings...)
+                    Convex.solve!(p, SDPAFamily.Optimizer{T}(; settings...))
+
                 end
-
-                Convex.solve!(p, SDPAFamily.Optimizer{T}(; settings...))
-
             end
         end
     end

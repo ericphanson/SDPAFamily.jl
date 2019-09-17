@@ -31,7 +31,9 @@ function presolve(optimizer::SDPAFamily.Optimizer{T}) where T
         if aug_mat[i, end] != 0
             # println(aug_mat[i, end])
             abort = 1
-            @warn "Inconsistency at constraint index $i. Problem is dual infeasible."
+            if optimizer.verbosity != SILENT
+                @warn "Inconsistency at constraint index $i. Problem is dual infeasible."
+            end
         end
     end
     if abort == 1
@@ -48,7 +50,7 @@ function presolve(optimizer::SDPAFamily.Optimizer{T}) where T
     end
     finish = time() - start
     n = length(redundant_F)
-    if !optimizer.silent
+    if optimizer.verbosity == VERBOSE
         @info "Presolve finished in $finish seconds. $n constraint(s) eliminated."
     end
     return sort!(redundant_F)
