@@ -11,7 +11,7 @@ function sdpa_gmp_binary_solve!(m::Optimizer, full_input_path::String, full_outp
     if m.use_WSL
         full_input_path = WSLize_path(full_input_path)
         full_output_path = WSLize_path(full_output_path)
-        if !m.verbosity != SILENT
+        if m.verbosity != SILENT
             @info "Redirecting to WSL environment."
         end
     end
@@ -42,7 +42,7 @@ function sdpa_gmp_binary_solve!(m::Optimizer, full_input_path::String, full_outp
 
     if m.verbosity != SILENT
         if m.verbosity == VERBOSE && error_messages != ""
-            println("error log: $error_log_path") 
+            println("error log: $error_log_path")
         end
 
         if miss
@@ -65,17 +65,17 @@ function get_params_path(optimizer::Optimizer{T}) where {T}
     if optimizer.variant == :sdpa_gmp && T == Float64
         if optimizer.use_WSL
             return WSLize_path(default_params_path[:sdpa_gmp_float64])
-        else 
+        else
             return default_params_path[:sdpa_gmp_float64]
         end
-        
+
         if optimizer.verbosity == VERBOSE
             @info "Precision reduced to 80 bits on problems with Float64 entries."
         end
     else
         if optimizer.use_WSL
             return WSLize_path(default_params_path[optimizer.variant])
-        else 
+        else
             return default_params_path[optimizer.variant]
         end
     end
