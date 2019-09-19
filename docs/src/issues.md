@@ -12,6 +12,7 @@ using Pkg
 Pkg.add(PackageSpec(name="Convex", url="https://github.com/ericphanson/Convex.jl", rev="MathOptInterface"));
 using Convex
 ```
+
 ```@repl convex
 test_problem = Convex.ProblemDepot.PROBLEMS["affine"]["affine_Diagonal_atom"];
 TEST = true; atol = 1e-3; rtol = 0.0;
@@ -24,9 +25,9 @@ We try to automatically detect underflows and warn against them; in this case, t
 
 ## Presolve
 
-The usefulness of our `presolve` routine is demonstrated in [Using presolve](@ref). However, our `presolve` subroutine does not utilize any tools more powerful than naïve Gaussian elimination and it has limitations. At its core, the `reduce!` method takes in a sparse matrix where each row is a linearized constraint matrix and apply Gaussian elimination with pivoting to identify the linear independence. This process is not numerically stable as the rounding errors accumulate as we progress. Therefore, we cannot guarantee that all linear dependent entries will be identified. 
+The usefulness of our `presolve` routine is demonstrated in [Using presolve](@ref). However, our `presolve` subroutine simply uses naïve Gaussian elimination and has its limitations. At its core, the `reduce!` method takes in a sparse matrix where each row is a linearized constraint matrix and apply Gaussian elimination with pivoting to identify the linear independence. This process is not numerically stable, and we cannot guarantee that all linear dependent entries will be identified.
 
-This is demonstrated in the following example. We explicitly construct a matrix with linearly dependent rows. However, due to its numerical instability, we can only identify a subset of them. 
+This is demonstrated in the following example. We explicitly construct a matrix with linearly dependent rows. However, due to its numerical instability, we can only identify a subset of them.
 
 ```@repl convex
 M = sprand(100, 20000, 0.03);
@@ -55,7 +56,7 @@ end
 test_problem = Convex.ProblemDepot.PROBLEMS["lp"]["lp_dotsort_atom"];
 TEST = true; atol = 1e-3; rtol = 0.0;
 test_problem(Val(TEST), atol, rtol, Float64) do problem
-    solve!(problem, SDPAFamily.Optimizer{Float64}(variant=:sdpa_dd, silent=true, params = UNSTABLE_BUT_FAST))
+    solve!(problem, SDPAFamily.Optimizer{Float64}(variant=:sdpa_dd, silent=true, params = SDPAFamily.UNSTABLE_BUT_FAST))
 end
 ```
 
@@ -63,13 +64,13 @@ end
 
 Due to the above reasons, we have modified the default settings for the following tests from `Convex.jl`'s `Problem Depot'.
 
-| Solver      | Underflow                                         | Need to use `params = UNSTABLE_BUT_FAST`                          | Presolve disabled due to long runtime                  |
+| Solver      | Underflow                                         | Need to use `params = SDPAFamily.UNSTABLE_BUT_FAST`                          | Presolve disabled due to long runtime                  |
 | :---------- | :------------------------------------------------ | :----------------------------------------------------------- | :----------------------------------------------------- |
 | `:sdpa_dd`  | `affine_Partial_transpose`                        | `affine_Partial_transpose` `lp_pos_atom` `lp_neg_atom` `sdp_matrix_frac_atom` `lp_dotsort_atom` | `affine_Partial_transpose` `lp_min_atom` `lp_max_atom` |
 | `:sdpa_qd`  | `affine_Partial_transpose` `affine_Diagonal_atom` | `affine_Partial_transpose` `affine_Diagonal_atom`            | `affine_Partial_transpose` `lp_min_atom` `lp_max_atom` |
 | `:sdpa_gmp` | `affine_Partial_transpose`                        | `affine_Partial_transpose`                                   | `affine_Partial_transpose` `lp_min_atom` `lp_max_atom` |
 
-In addition, we have excluded `lp_dotsort_atom` and `lp_pos_atom` when testing `:sdpa` due to imprecise solutions using default parameters. We have also excluded all second-order cone problems when using `BigFloat` or `Double64` numeric types, due to MathOptInterface.jl#876, as well as the `sdp_lambda_max_atom` problem due to GenericLinearAlgebra#47.
+In addition, we have excluded `lp_dotsort_atom` and `lp_pos_atom` when testing `:sdpa` due to imprecise solutions using default parameters. We have also excluded all second-order cone problems when using `BigFloat` or `Double64` numeric types, due to [MathOptInterface.jl#876](https://github.com/JuliaOpt/MathOptInterface.jl/issues/876), as well as the `sdp_lambda_max_atom` problem due to [GenericLinearAlgebra#47](https://github.com/JuliaLinearAlgebra/GenericLinearAlgebra.jl/issues/47). Both these issues have been fixed on the master branches of the respective packages, so these exclusions will be removed once new versions are released.
 
 ## Troubleshooting
 

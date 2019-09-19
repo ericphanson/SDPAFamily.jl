@@ -16,7 +16,7 @@ SDPA-{GMP, QD, DD} are each available under a GPLv2 license, which can be found 
 
 ### Custom binary
 
-If you would like to use a different binary, set the enviromental variable `JULIA_SDPA_GMP_PATH` (similarly for `JULIA_SDPA_QD_PATH` or `JULIA_SDPA_DD_PATH`) to the folder containing the binary you would like to use, and then build the package. This can be done in Julia by, e.g.,
+If you would like to use a different binary, set the environmental variable `JULIA_SDPA_GMP_PATH` (similarly for `JULIA_SDPA_QD_PATH` or `JULIA_SDPA_DD_PATH`) to the folder containing the binary you would like to use, and then build the package. This can be done in Julia by, e.g.,
 
 ```julia
 ENV["JULIA_SDPA_GMP_PATH"] = "/path/to/folder/"
