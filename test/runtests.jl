@@ -11,6 +11,7 @@ const variants = (:sdpa, :sdpa_dd, :sdpa_qd, :sdpa_gmp)
 
     @testset "General utilities" begin
         include("presolve.jl")
+        include("status_test.jl")
         include("variant_test.jl")
     end
 

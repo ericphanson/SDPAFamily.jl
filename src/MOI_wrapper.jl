@@ -83,8 +83,11 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
             ) where T
 
 		optimizer = new(
-            zero(T), 1, Int[], Tuple{Int, Int, Int}[], T[],
-            NaN, verbose, Dict{Symbol, Any}(), T[], PrimalSolution{T}(Matrix{T}[]), VarDualSolution{T}(Matrix{T}[]), zero(T), zero(T), :noINFO, mktempdir(), [], presolve, binary_path, params, false, use_WSL, variant)
+            zero(T), 1, Int[], Tuple{Int, Int, Int}[], T[], NaN, verbose,
+            Dict{Symbol, Any}(), T[], PrimalSolution{T}(Matrix{T}[]),
+            VarDualSolution{T}(Matrix{T}[]), zero(T), zero(T), :not_called,
+            mktempdir(), [], presolve, binary_path, params, false, use_WSL,
+            variant)
 
         if silent && verbose != SILENT
             throw(ArgumentError("Cannot set both `silent=true` and `verbose != SILENT`."))
@@ -133,7 +136,7 @@ MOI.get(::Optimizer, ::MOI.SolverName) = "SDPAFamily"
 # See https://www.researchgate.net/publication/247456489_SDPA_SemiDefinite_Programming_Algorithm_User's_Manual_-_Version_600
 # "SDPA (SemiDefinite Programming Algorithm) User's Manual — Version 6.00" Section 6.2
 const RAW_STATUS = Dict(
-    :noINFO        => "The iteration has exceeded the maxIteration and stopped with no informationon the primal feasibility and the dual feasibility.",
+    :noINFO => "The iteration has exceeded the maxIteration and stopped with no information on the primal feasibility and the dual feasibility.",
     :pdOPT => "The normal termination yielding both primal and dual approximate optimal solutions.",
     :pFEAS => "The primal problem got feasible but the iteration has exceeded the maxIteration and stopped.",
     :dFEAS => "The dual problem got feasible but the iteration has exceeded the maxIteration and stopped.",
@@ -168,7 +171,7 @@ function MOI.empty!(optimizer::Optimizer{T}) where T
     optimizer.X = PrimalSolution{T}(Matrix{T}[])
     optimizer.Z = VarDualSolution{T}(Matrix{T}[])
     optimizer.y = T[]
-    optimizer.phasevalue = :noINFO
+    optimizer.phasevalue = :not_called
     optimizer.tempdir = mktempdir()
     optimizer.elemdata = []
     optimizer.primalobj = zero(T)
@@ -327,8 +330,10 @@ end
 
 function MOI.get(m::Optimizer, ::MOI.TerminationStatus)
     status = m.phasevalue
-    if status == :noINFO
+    if status == :not_called
         return MOI.OPTIMIZE_NOT_CALLED
+    elseif status == :noINFO
+        return MOI.ITERATION_LIMIT
     elseif status == :pFEAS
         return MOI.SLOW_PROGRESS
     elseif status == :dFEAS
