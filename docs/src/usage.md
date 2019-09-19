@@ -25,7 +25,7 @@ The main object of interest supplied by this package is
   `SDPAFamily.UNSTABLE_BUT_FAST`, `SDPAFamily.STABLE_BUT_SLOW`, a `NamedTuple`
   giving a list of choices of parameters (e.g. `params = (maxIteration=600,)`),
   an [`SDPAFamily.Params`](@ref) object, or or a string representing a path to a
-  custom parameter file.
+  custom parameter file. See [`SDPAFamily.Params`](@ref) for the possible choices of parameters.
 
 The default parameters used by `SDPAFamily.jl` depend on the variant and numeric
 type, and can be found as the default values in the source code
@@ -111,7 +111,7 @@ opt = SDPAFamily.Optimizer(
     params = (  epsilonStar = 1e-200, # constraint tolerance
                 epsilonDash = 1e-200, # normalized duality gap tolerance
                 precision = 2000 # arithmetric precision used in sdpa_gmp
-            ))
+    ))
 
 setprecision(2000) # set Julia's global BigFloat precision to 2000
 ρ₁ = Complex{BigFloat}[1 0; 0 0]

@@ -8,7 +8,11 @@ the variant and numeric type. `variant` should be one of `:sdpa_gmp, :sdpa_qd,
 default values for unspecified parameters; they are unused in the case
 that every parameter is specified.
 
-See the SDPA manual for the meaning and range of accepted values for each parameter.
+!!! note
+
+    It is often simpler to simply pass non-default parameters directly to the
+    optimizer as a `NamedTuple`; e.g.
+    `SDPAFamily.Optimizer(params = (maxIteration = 600,))`.
 
 # Example
 
@@ -23,11 +27,25 @@ SDPAFamily.Optimizer{BigFloat}
 
 ```
 
-!!! note
+# List of parameters
 
-    It is often simpler to simply pass non-default parameters directly to the
-    optimizer as a `NamedTuple`; e.g.
-    `SDPAFamily.Optimizer(params = (maxIteration = 600,))`.
+The following is a brief summary of the parameters. See the SDPA manual for more details.
+
+* `maxIteration`: number of iterations allowed * `epsilonStar`: constraint
+tolerance * `epsilonDash`: normalized duality gap tolerance * `lambdaStar`:
+determines initial point; should have the same order of magnitude as the optimal
+solution * `omegaStar`: determines region in which SDPA searches for an optimal
+solution; must be at least 1.0. * `lowerBound`, (resp. `upperBound`): bound on
+the primal (resp. dual) optimal objective value; serves as a stopping criteria *
+`betaStar`: parameter controlling the search direction for feasible points *
+`betaBar`: parameter controlling the search direction for infeasible points *
+`gammaStar`: reduction factor for the primal and dual step lengths *
+`precision`: number of significant bits used for SDPA-GMP; if set to `b` bits,
+then `(log(2)/log(10)) * b` is approximately the number of decimal digits of
+precision. * `xPrint`, `XPrint`, `YPrint`, `infPrint`: `printf` format
+specification used for printing the results to send them from the solver binary
+to Julia.
+
 """
 struct Params{variant, T <: Number}
     maxIteration::Int
@@ -71,8 +89,12 @@ struct Params{variant, T <: Number}
     1 > gammaStar > 0 || throw(ArgumentError("1 > gammaStar > 0 violated"))
     epsilonDash > 0 || throw(ArgumentError("epsilonDash > 0 violated"))
 
-    if variant == :sdpa_gmp && precision == 0
+    if variant == :sdpa_gmp && (precision === nothing || precision < 0)
         throw(ArgumentError("precision > 0 violated for sdpa_gmp"))
+    end
+
+    if variant != :sdpa_gmp && precision !== nothing
+        throw(ArgumentError("precision should be `nothing` for variants other than `sdpa_gmp`"))
     end
 
     if any(x -> x === nothing, (xPrint, XPrint, YPrint, infPrint)) != all(x -> x === nothing, (xPrint, XPrint, YPrint, infPrint))
