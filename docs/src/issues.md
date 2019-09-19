@@ -118,10 +118,7 @@ following troubleshoot steps.
    precision instead of `Float64` (e.g. `SDPAFamily.Optimizer{Double64}(...)`).
    This will reduce the chance of having underflow errors when reading back the
    results.
-4. Change the parameters by passing a custom parameter file (i.e.
-   `SDPAFamily.Optimizer(params=...)`). [SDPA users
-   manual](https://sourceforge.net/projects/sdpa/files/sdpa/sdpa.7.1.1.manual.20080618.pdf)
-   contains two other sets of parameters, `UNSTABLE_BUT_FAST` and
-   `STABLE_BUT_SLOW`, which can be set by the `params` argument. It might also
-   be helpful to use a tighter `epsilonDash` and `epsilonStar` tolerance in a
-   custom params file.
+4. Change the parameters by passing choices of parameters, e.g.
+    `SDPAFamily.Optimizer(params=(SDPAFamily.UNSTABLE_BUT_FAST))`, or
+   `SDPAFamily.Optimizer(params=(epsilonDash=1e-40,))`. It might
+   be helpful to use a tighter choice of the `epsilonDash` and `epsilonStar` parameters. See [Usage](@ref) and [Changing parameters & solving at very high precision](@ref) for more options and examples.

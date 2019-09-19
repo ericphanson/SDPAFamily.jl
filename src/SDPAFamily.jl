@@ -62,6 +62,7 @@ This function converts Windows paths for use via WSL.
 """
 WSLize_path(path) = replace(path, ":" => "") |> x -> replace(x, "\\" => "/") |> x -> "/mnt/"*x |> lowercase
 
+include("params.jl")
 include("MOI_wrapper.jl")
 include("file_io.jl")
 include("presolve.jl")

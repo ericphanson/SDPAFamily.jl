@@ -22,13 +22,23 @@ The main object of interest supplied by this package is
   default is chosen at `build` time. To change the default binaries, see [Custom
   binary](@ref).
 * `params`: either `SDPAFamily.DEFAULT` (the default option),
-  `SDPAFamily.UNSTABLE_BUT_FAST`, `SDPAFamily.STABLE_BUT_SLOW`, or a string
-  representing a path to a parameter file. The default parameters used by
-  `SDPAFamily.jl` are listed
-  [here](https://github.com/ericphanson/SDPAFamily.jl/blob/master/deps/). There
-  are two other choices of parameters, `UNSTABLE_BUT_FAST` and `STABLE_BUT_SLOW`
-  are documented in the [SDPA users
-  manual](https://sourceforge.net/projects/sdpa/files/sdpa/sdpa.7.1.1.manual.20080618.pdf).
+  `SDPAFamily.UNSTABLE_BUT_FAST`, `SDPAFamily.STABLE_BUT_SLOW`, a `NamedTuple`
+  giving a list of choices of parameters (e.g. `params = (maxIteration=600,)`),
+  an [`SDPAFamily.Params`](@ref) object, or or a string representing a path to a
+  custom parameter file. See [`SDPAFamily.Params`](@ref) for the possible choices of parameters.
+
+The default parameters used by `SDPAFamily.jl` depend on the variant and numeric
+type, and can be found as the default values in the source code
+[here](https://github.com/ericphanson/SDPAFamily.jl/tree/master/src/params.jl).
+The choices choices of parameters `UNSTABLE_BUT_FAST` and `STABLE_BUT_SLOW` are
+documented in the [SDPA users
+manual](https://sourceforge.net/projects/sdpa/files/sdpa/sdpa.7.1.1.manual.20080618.pdf),
+as well as the meaning of each parameter. A new parameter file is generated for
+each optimizer instance `opt` (and is regenerated for each solve), and can be
+found in the directory `opt.tempdir`, along with the SDPA-format input and
+output files for the problem, assuming a custom parameter file has not been
+passed to the optimizer. See [Changing parameters & solving at very high
+precision](@ref) below for an example.
 
 `SDPAFamily.Optimizer()` also accepts `variant = :sdpa` to use the
 non-high-precision SDPA binary. For general usage of the SDPA solver, use
@@ -60,9 +70,13 @@ using SDPAFamily, Test
 using Pkg
 Pkg.add(PackageSpec(name="Convex", url="https://github.com/ericphanson/Convex.jl", rev="MathOptInterface"));
 using Convex
-E12, E21 = ComplexVariable(2, 2), ComplexVariable(2, 2);
-s1, s2 = [big"0.25" big"-0.25"*im; big"0.25"*im big"0.25"], [big"0.5" big"0.0"; big"0.0" big"0.0"];
-p = Problem{BigFloat}(:minimize, real(tr(E12 * (s1 + 2 * s2) + E21 * (s2 + 2 * s1))), [E12 ⪰ 0, E21 ⪰ 0, E12 + E21 == Diagonal(ones(2)) ]);
+ρ₁ = Complex{BigFloat}[1 0; 0 0]
+ρ₂ = (1//2)*Complex{BigFloat}[1 -im; im 1]
+E₁ = ComplexVariable(2, 2);
+E₂ = ComplexVariable(2, 2);
+problem = maximize( real((1//2)*tr(ρ₁*E₁) + (1//2)*tr(ρ₂*E₂)),
+                    [E₁ ⪰ 0, E₂ ⪰ 0, E₁ + E₂ == Diagonal(ones(2))];
+                    numeric_type = BigFloat );
 opt = SDPAFamily.Optimizer(presolve = true, variant = :sdpa_gmp, silent = true);
 ```
 
@@ -70,19 +84,64 @@ We demonstrate `presolve` using the problem defined in [Optimal guessing
 probability for a pair of quantum states](@ref). When `presolve` is disabled,
 SDPA solvers will terminate prematurely due to linear dependence in the input
 constraints. Note, however, that this does not necessarily happen. Empirically,
-for our test cases, solvers' intolerance increases from `:sdpa` to `:sdpa_gmp`.
+for our test cases, solvers' intolerance to redundant constraints increases from
+`:sdpa` to `:sdpa_gmp`.
 
 ```@repl convexquantum
-opt = SDPAFamily.Optimizer(presolve = false)
-solve!(p, SDPAFamily.Optimizer())
+solve!(problem, SDPAFamily.Optimizer(presolve = false))
 ```
 
 Applying presolve helps by removing 8 redundant constraints from the final input
 file.
 
 ```@repl convexquantum
-opt.presolve = true; opt.verbosity = SDPAFamily.SILENT;
-solve!(p, opt)
-@test p.optval ≈ (6 - sqrt(big"2.0"))/4 atol=1e-30
-SDPAFamily.presolve(opt)
+solve!(problem, SDPAFamily.Optimizer(presolve = true))
+@test problem.optval ≈ 1//2 + 1/(2*sqrt(big(2))) atol=1e-30
 ```
+
+We see we have recovered the true answer to a tolerance of $10^{-30}$.
+
+## Changing parameters & solving at very high precision
+
+Continuing the above example, we can also increase the precision by changing the default parameters:
+
+```@repl convexquantum
+opt = SDPAFamily.Optimizer(
+    presolve = true,
+    params = (  epsilonStar = 1e-200, # constraint tolerance
+                epsilonDash = 1e-200, # normalized duality gap tolerance
+                precision = 2000 # arithmetric precision used in sdpa_gmp
+    ))
+
+setprecision(2000) # set Julia's global BigFloat precision to 2000
+ρ₁ = Complex{BigFloat}[1 0; 0 0]
+ρ₂ = (1//2)*Complex{BigFloat}[1 -im; im 1]
+E₁ = ComplexVariable(2, 2);
+E₂ = ComplexVariable(2, 2);
+problem = maximize( real((1//2)*tr(ρ₁*E₁) + (1//2)*tr(ρ₂*E₂)),
+                    [E₁ ⪰ 0, E₂ ⪰ 0, E₁ + E₂ == Diagonal(ones(2))];
+                    numeric_type = BigFloat );
+solve!(problem, opt)
+p_guess = 1//2 + 1/(2*sqrt(big(2)))
+@test problem.optval ≈ p_guess atol=1e-200
+```
+
+With these parameters, we have recovered the true answer to a tolerance of $10^{-200}$.
+
+Note that we called `setprecision(2000)` at the start. This is so that the `BigFloat` objects used to construct `ρ₁`, `ρ₂`, the internals of the `Convex.Problem` instance are constructed to such a precision, as well as the BigFloat objects used to store the output of SDPA-GMP. The default, `256`, is not sufficient in this case. Testing this can be a little bit subtle: for example, if `setprecision(2000)` was not called (or equivalently, `setprecision(256)` called instead), then the test
+
+```julia
+@test problem.optval ≈ p_guess atol=1e-200
+```
+
+would still pass. However, that is because `p_guess` is only constructed at approximately 77 digits of precision, and `problem.optval` is only read back from SDPA-GMP at the same precision. So in that case, the test isn't truly testing that the solution is accurate to 200 digits of precision.
+
+In this case, since `1` and `1/2` are exactly representable by floating point numbers, it is enough to specify `setprecision(2000)` before the `solve!` call (so the `ρ₁` and `ρ₂` are only constructed at 256 bits of high precision), but it is good practice to set the precision at the start for the whole problem. Moreover, since the precision is mutable global state, it is best to set it once at the start of a session and not change it, to avoid any potentially confusing behavior, or setup and solve problems within a single
+
+```julia
+setprecision(2000) do
+    ...
+end
+```
+
+block.

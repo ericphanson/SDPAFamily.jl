@@ -70,7 +70,7 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
     elemdata::Vector{Any}
 	presolve::Bool
 	binary_path::String
-    params::Union{ParamsSetting, String}
+    params::Union{Params, ParamsSetting, String}
     no_solve::Bool
     use_WSL::Bool
 	variant::Symbol
@@ -79,14 +79,20 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
             verbose::Verbosity = silent ? SILENT : WARN,
             binary_path = BB_PATHS[variant],
             use_WSL = HAS_WSL[variant],
-            params::Union{ParamsSetting, String} = DEFAULT
+            params::Union{Params, ParamsSetting, String, NamedTuple} = Params{variant, T}()
             ) where T
+
+        if params isa NamedTuple
+            P = Params{variant, T}(; params...)
+        else
+            P = params
+        end
 
 		optimizer = new(
             zero(T), 1, Int[], Tuple{Int, Int, Int}[], T[], NaN, verbose,
             Dict{Symbol, Any}(), T[], PrimalSolution{T}(Matrix{T}[]),
             VarDualSolution{T}(Matrix{T}[]), zero(T), zero(T), :not_called,
-            mktempdir(), [], presolve, binary_path, params, false, use_WSL,
+            mktempdir(), [], presolve, binary_path, P, false, use_WSL,
             variant)
 
         if silent && verbose != SILENT
@@ -96,7 +102,6 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
 		if T != BigFloat && optimizer.verbosity == VERBOSE
 			@warn "Not using BigFloat entries may cause underflow errors."
         end
-
 
 		return optimizer
     end
