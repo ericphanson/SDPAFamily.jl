@@ -55,30 +55,20 @@ end
 
 
 function get_params_path(optimizer::Optimizer{T}) where {T}
-    @assert optimizer.params == DEFAULT || optimizer.params isa String
-
     # use custom params
     if optimizer.params isa String
         return optimizer.params
     end
 
-    if optimizer.variant == :sdpa_gmp && T == Float64
-        if optimizer.use_WSL
-            return WSLize_path(default_params_path[:sdpa_gmp_float64])
-        else
-            return default_params_path[:sdpa_gmp_float64]
-        end
-
-        if optimizer.verbosity == VERBOSE
-            @info "Precision reduced to 80 bits on problems with Float64 entries."
-        end
+    if optimizer.params == DEFAULT
+        P = Params{optimizer.variant, T}()
     else
-        if optimizer.use_WSL
-            return WSLize_path(default_params_path[optimizer.variant])
-        else
-            return default_params_path[optimizer.variant]
-        end
+        P::Params = optimizer.params
     end
+
+    path = joinpath(optimizer.tempdir, "params.sdpa")
+    write_params(P, path)
+    return optimizer.use_WSL ? WSLize_path(path) : path
 end
 
 function run_binary(cmd::Cmd, verbosity)
