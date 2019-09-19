@@ -1,7 +1,7 @@
 ## Installation
 
 This package is not yet registered in the General registry. To install, type `]`
-in the julia command prompt, then execute
+in the Julia command prompt, then execute
 
 ```julia
 pkg> add https://github.com/ericphanson/SDPAFamily.jl
