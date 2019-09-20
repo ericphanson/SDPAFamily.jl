@@ -46,7 +46,7 @@ custom location is via WSL on Windows, then also set `ENV["JULIA_SDPA_GMP_WSL"]
 = "TRUE"` (similarly for `ENV["JULIA_SDPA_QD_WSL"]` or
 `ENV["JULIA_SDPA_DD_WSL"]`) so that SDPAFamily.jl knows to adjust the paths to
 the right format. Note that the binary must be named `sdpa_gmp`, `sdpa_qd` and
-`sdpa_dd`. 
+`sdpa_dd`.
 
 It is recommended to patch SDPA-{GMP, QD, DD} (as was done in
 <https://github.com/ericphanson/sdpa-gmp>) in order to allow printing more
@@ -62,4 +62,4 @@ digits. To do this for SDPA-GMP, and similarly for -QD and -DD,
   manual](https://sourceforge.net/projects/sdpa/files/sdpa/sdpa.7.1.1.manual.20080618.pdf).
 
 Other information about compiling SDPA solvers can be found
-[here](http://sdpa.sourceforge.net/download.html). 
+[here](http://sdpa.sourceforge.net/download.html).

@@ -136,7 +136,7 @@ Note that we called `setprecision(2000)` at the start. This is so that the `BigF
 
 would still pass. However, that is because `p_guess` is only constructed at approximately 77 digits of precision, and `problem.optval` is only read back from SDPA-GMP at the same precision. So in that case, the test isn't truly testing that the solution is accurate to 200 digits of precision.
 
-In this case, since `1` and `1/2` are exactly representable by floating point numbers, it is enough to specify `setprecision(2000)` before the `solve!` call (so the `ρ₁` and `ρ₂` are only constructed at 256 bits of high precision), but it is good practice to set the precision at the start for the whole problem. Moreover, since the precision is mutable global state, it is best to set it once at the start of a session and not change it, to avoid any potentially confusing behavior, or setup and solve problems within a single
+In this case, since `1` and `1/2` are exactly representable by floating point numbers, it is enough to specify `setprecision(2000)` before the `solve!` call (so the `ρ₁` and `ρ₂` are only constructed at 256 bits of high precision), but it is good practice to set the precision at the start for the whole problem. Moreover, since the precision is mutable global state, it is best to set it once at the start of a session and not change it, or to setup and solve a problem within a single
 
 ```julia
 setprecision(2000) do
@@ -144,4 +144,4 @@ setprecision(2000) do
 end
 ```
 
-block.
+block, to avoid any potentially confusing behavior caused by mixing precisions.
