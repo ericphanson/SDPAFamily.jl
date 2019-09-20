@@ -7,11 +7,11 @@ Status](https://travis-ci.com/ericphanson/SDPAFamily.jl.svg?branch=master)](http
 [![](https://img.shields.io/badge/docs-dev-blue.svg)](https://ericphanson.github.io/SDPAFamily.jl/dev)
 
 An interface to using SDPA-GMP, SDPA-DD, and SDPA-QD in Julia
-(<http://sdpa.sourceforge.net>). This package is not yet registered in the
-General registry. To install, type `]` in the Julia command prompt, then execute
+(<http://sdpa.sourceforge.net>). This package is registered in the
+General registry; to install, type `]` in the Julia command prompt, then enter
 
 ```julia
-pkg> add https://github.com/ericphanson/SDPAFamily.jl
+pkg> add SDPAFamily
 ```
 
 Call `SDPAFamily.Optimizer()` to use this wrapper via `MathOptInterface`, which
