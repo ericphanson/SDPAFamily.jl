@@ -67,8 +67,8 @@ import SDPAFamily
                 "lin3", "soc3", "norminf2", "normone2",
                 # Missing bridges
                 "rootdets",
-                # Does not support power and exponential cone
-                "pow", "logdet", "exp"])
+                # Does not support power and exponential cone, or their dual cones
+                "pow", "dualpow", "logdet", "exp", "dualexp" ])
         end
     end
 end
