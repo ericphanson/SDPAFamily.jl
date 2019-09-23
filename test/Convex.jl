@@ -14,14 +14,8 @@ const common_excludes = Regex[
 # Problems that cannot be handled due to issues with a certain numeric type,
 # independent of variant.
 const type_excludes = Dict( Float64 => Regex[],
-                            BigFloat => Regex[
-                                r"sdp_lambda_max_atom", # GenericLinearAlgebra#47
-                                r"socp", # MathOptInterface.jl#876
-                        ],
-                        Double64 => Regex[
-                                r"sdp_lambda_max_atom", # GenericLinearAlgebra#47
-                                r"socp", # MathOptInterface.jl#876
-                        ])
+                            BigFloat => Regex[],
+                            Double64 => Regex[])
 
 # Problems that cannot be handled with a specific combination of variant and numeric type
 # (often due to things like underflow).
