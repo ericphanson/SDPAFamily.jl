@@ -132,3 +132,72 @@ variants have failed to produce a result due to redundant constraints and
 returned with default value 0.
 
 This problem is revisited at very high precision in [Changing parameters & solving at very high precision](@ref).
+
+## Polynomial optimization
+
+The following example is adapted from an example in the
+[SumOfSquares.jl](https://github.com/JuliaOpt/SumOfSquares.jl) documentation to
+use SDPAFamily.jl. Even though the problem is only specified with `Float64`'s, since
+the entries are specified as integers, they can be sent to SDPA-GMP without a loss of
+precision.
+
+```@repl sumofsquares
+using SumOfSquares
+using DynamicPolynomials
+using SDPAFamily
+
+@polyvar x1 x2 # Create symbolic variables (not JuMP decision variables)
+
+# Create a Sum of Squares JuMP model with the SDPAFamily solver
+model = SOSModel(with_optimizer(SDPAFamily.Optimizer{Float64}, # JuMP only supports Float64
+                    variant = :sdpa_gmp, # use the arbitrary precision variant
+                    params = (  epsilonStar = 1e-30, # constraint tolerance
+                                epsilonDash = 1e-30, # normalized duality gap tolerance
+                                precision = 200 # arithmetric precision used in sdpa_gmp
+                )))
+
+@variable(model, γ) # Create a JuMP decision variable for the lower bound
+
+# f(x) is the Goldstein-Price function
+f1 = x1 + x2 + 1
+f2 = 19 - 14 * x1 + 3 * x1^2 - 14 * x2 + 6 * x1 * x2 + 3 * x2^2
+f3 = 2 * x1 - 3 * x2
+f4 = 18 - 32 * x1 + 12 * x1^2 + 48 * x2 - 36 * x1 * x2 + 27 * x2^2
+
+f = (1 + f1^2 * f2) * (30 + f3^2 * f4)
+
+@constraint(model, f >= γ) # Constrains f(x) - γ to be sum of squares
+
+@objective(model, Max, γ)
+
+optimize!(model)
+
+println(objective_value(model))
+```
+
+Let's check the input file that is used to specify the problem for the SDPA-GMP
+binary. The following command uses some implementation details of how JuMP
+stores the underlying optimizer and so may not work in later JuMP versions.
+However, the following path is always printed when setting `verbose =
+SDPAFamily.VERBOSE`.
+
+```@repl sumofsquares
+path = joinpath(model.moi_backend.optimizer.model.optimizer.tempdir, "input.dat-s")
+readlines(path)[1:10] .|> println;
+```
+
+The full file is longer, but what gets passed to the optimizer for this problem
+are floating point numbers that can be faithfully read by SDPA-GMP at the
+200-bits of precision it uses internally. Thus, in this case, that JuMP
+restricts the Julia model to store the numbers at machine precision does not
+affect the precision of data that SDPA-GMP receives. It does, however, affect
+the precision of data that JuMP can recover from the output file. In this case,
+JuMP receives the correct answer to full machine precision ($\sim 10^{-16}$),
+but the true answer printed by SDPA-GMP (which can be seen in the file
+`output.dat-s`) is in fact correct to $\sim 10^{-30}$ in this case.
+
+For this kind of problem which uses JuMP, the precision advantage of SDPA-GMP
+over other problems is that SDPA-GMP should be able to solve the problem to the
+full $\sim 10^{-16}$ precision representable by 64-bit floating point numbers,
+while solvers which solve the problem in machine precision can only recover the
+result to $\sim 10^{-8}$.
