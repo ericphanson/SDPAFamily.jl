@@ -5,6 +5,7 @@
 # Install the right branch of Convex
 using Pkg
 Pkg.add(PackageSpec(name="Convex", url="https://github.com/ericphanson/Convex.jl", rev="MathOptInterface"));
+Pkg.add("SCS")
 setprecision(256)
 ```
 
@@ -201,3 +202,55 @@ over other problems is that SDPA-GMP should be able to solve the problem to the
 full $\sim 10^{-16}$ precision representable by 64-bit floating point numbers,
 while solvers which solve the problem in machine precision can only recover the
 result to $\sim 10^{-8}$.
+
+## SDP relaxation in polynomial optimization problem
+
+We consider a polynomial optimization problem (POP) where we wish to find $p^* = \inf \lbrace x | x \geq 0,\ x^2 \geq 1 \rbrace$, which has an SDP relaxation of order $r$ as
+
+```@raw html
+<img src="https://latex.codecogs.com/svg.latex?\inline&space;\dpi{300}&space;\large&space;\begin{align*}&space;\text{minimize}&\&space;y_1&space;\\&space;\text{such&space;that}&&space;\begin{bmatrix}&space;1&space;&y_1&space;&\dots&space;&y_r&space;\\&space;y_1&space;&&space;y_2&space;&\dots&space;&y_{r&plus;1}&space;\\&space;\vdots&space;&&space;\vdots&space;&&space;\ddots&space;&\vdots&space;\\&space;y_r&space;&&space;y_{r&plus;1}&space;&\dots&space;&y_{2r}&space;\end{bmatrix}&space;&&space;\succeq&space;O\\&space;&&space;\begin{bmatrix}&space;y_1&space;&y_2&space;&\dots&space;&y_r&space;\\&space;y_2&space;&&space;y_3&space;&\dots&space;&y_{r&plus;1}&space;\\&space;\vdots&space;&&space;\vdots&space;&&space;\ddots&space;&\vdots&space;\\&space;y_r&space;&&space;y_{r&plus;1}&space;&\dots&space;&y_{2r-1}&space;\end{bmatrix}&space;&&space;\succeq&space;O\\&space;&\begin{bmatrix}&space;y_2&space;-&space;1&space;&y_3&space;-&space;y_1&space;&\dots&space;&y_{r&plus;1}&space;-&space;y_{r-1}&space;\\&space;y_3-y_1&space;&&space;y_4-y_2&space;&\dots&space;&y_{r&plus;2}&space;-&space;y_r&space;\\&space;\vdots&space;&&space;\vdots&space;&&space;\ddots&space;&\vdots&space;\\&space;y_{r&plus;1}&space;-&space;y_{r-1}&space;&&space;y_{r&plus;2}&space;-y_{r}&space;&\dots&space;&y_{2r}&space;-&space;y_{2r-2}&space;\end{bmatrix}&space;&&space;\succeq&space;O\\&space;&(y_1,\dots,y_{2r})&space;\in&space;\mathbb{R}^{2r}&space;\end{align*}" title="\large \begin{align*} \text{minimize}&\ y_1 \\ \text{such that}& \begin{bmatrix} 1 &y_1 &\dots &y_r \\ y_1 & y_2 &\dots &y_{r+1} \\ \vdots & \vdots & \ddots &\vdots \\ y_r & y_{r+1} &\dots &y_{2r} \end{bmatrix} & \succeq O\\ & \begin{bmatrix} y_1 &y_2 &\dots &y_r \\ y_2 & y_3 &\dots &y_{r+1} \\ \vdots & \vdots & \ddots &\vdots \\ y_r & y_{r+1} &\dots &y_{2r-1} \end{bmatrix} & \succeq O\\ &\begin{bmatrix} y_2 - 1 &y_3 - y_1 &\dots &y_{r+1} - y_{r-1} \\ y_3-y_1 & y_4-y_2 &\dots &y_{r+2} - y_r \\ \vdots & \vdots & \ddots &\vdots \\ y_{r+1} - y_{r-1} & y_{r+2} -y_{r} &\dots &y_{2r} - y_{2r-2} \end{bmatrix} & \succeq O\\ &(y_1,\dots,y_{2r}) \in \mathbb{R}^{2r} \end{align*}" align="middle"/>
+```
+
+This is an example when most solvers fail due to numerical errors using Float64. It can be shown that for all $r \geq 1$, we have $y_1^* = 0$ as the optimal value for the SDP relaxation. However, most solvers will report  $y_1^* = 1$, which is in fact the optimal value for $p^*$ in the original problem. The details are discussed in [1]. Such problem can be overcome by using appropriate parameters for `SDPA-GMP`. We now demonstrate this using `Convex.jl`.
+
+```@repl 1
+using SDPAFamily, SCS, Convex
+
+function relaxed_pop(r::Int, T)
+    v = Variable(2*r)
+    M1 = v[1:1+r]'
+    for i in 2:r
+        M1 = vcat(M1, v[i:i+r]')
+    end
+    t = [1 v[1:r]']
+    M1 = vcat(t, M1)
+    c1 = M1 in :SDP
+    M2 = M1[2:end, 1:end-1]
+    c2 = M2 in :SDP
+    M3 = M1[2:end, 2:end] - M1[1:end-1, 1:end-1]
+    c3 = M3 in :SDP
+    return Problem{T}(:minimize, v[1], [c1, c2, c3])
+end
+
+p1 = relaxed_pop(5, Float64);
+solve!(p1, SCS.Optimizer(max_iters = 10000, verbose = 0));
+p2 = relaxed_pop(5, BigFloat);
+solve!(p2, SDPAFamily.Optimizer(presolve = true, verbose = SDPAFamily.SILENT,
+            params = ( epsilonStar = 1e-90,
+                       epsilonDash = 1e-90,
+                       precision = 5000,
+                       betaStar = 0.5,
+                       betaBar = 0.5,
+                       gammaStar = 0.5,
+                       lambdaStar = 1e5,
+                       omegaStar = 2.0,
+                       maxIteration = 10000
+                       )));
+                       
+p1.status
+p1.optval
+p2.status
+p2.optval
+```
+
+[1] H. Waki, M. Nakata, and M. Muramatsu, ‘Strange behaviors of interior-point methods for solving semidefinite programming problems in polynomial optimization’, *Comput Optim Appl*, vol. 53, no. 3, pp. 823–844, Dec. 2012.
