@@ -9,6 +9,8 @@ abstract type AbstractBlockMatrix{T} <: AbstractMatrix{T} end
 function nblocks end
 function block end
 
+struct TemporaryDirectory <: MOI.AbstractOptimizerAttribute end
+
 function Base.size(bm::AbstractBlockMatrix)
     n = mapreduce(blk -> LinearAlgebra.checksquare(block(bm, blk)),
                   +, 1:nblocks(bm), init=0)
@@ -79,7 +81,8 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
             verbose::Verbosity = silent ? SILENT : WARN,
             binary_path = BB_PATHS[variant],
             use_WSL = HAS_WSL[variant],
-            params::Union{Params, ParamsSetting, String, NamedTuple} = Params{variant, T}()
+            params::Union{Params, ParamsSetting, String, NamedTuple} = Params{variant, T}(),
+            TemporaryDirectory::String = mktempdir(),
             ) where T
 
         if params isa NamedTuple
@@ -92,7 +95,7 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
             zero(T), 1, Int[], Tuple{Int, Int, Int}[], T[], NaN, verbose,
             Dict{Symbol, Any}(), T[], PrimalSolution{T}(Matrix{T}[]),
             VarDualSolution{T}(Matrix{T}[]), zero(T), zero(T), :not_called,
-            mktempdir(), [], presolve, binary_path, P, false, use_WSL,
+            TemporaryDirectory, [], presolve, binary_path, P, false, use_WSL,
             variant)
 
         if silent && verbose != SILENT
@@ -133,6 +136,12 @@ function MOI.set(optimizer::Optimizer, ::MOI.Silent, value::Bool)
         optimizer.verbosity = WARN
     end
 end
+
+function MOI.set(optimizer::Optimizer, ::TemporaryDirectory, path::String)
+    optimizer.tempdir = path
+end
+
+MOI.get(optimizer::Optimizer, ::TemporaryDirectory) = optimizer.tempdir
 
 MOI.get(optimizer::Optimizer, ::MOI.Silent) = optimizer.verbosity == SILENT
 
@@ -177,10 +186,17 @@ function MOI.empty!(optimizer::Optimizer{T}) where T
     optimizer.Z = VarDualSolution{T}(Matrix{T}[])
     optimizer.y = T[]
     optimizer.phasevalue = :not_called
-    optimizer.tempdir = mktempdir()
+    clean_tempdir(optimizer.tempdir)
     optimizer.elemdata = []
     optimizer.primalobj = zero(T)
     optimizer.dualobj = zero(T)
+end
+
+function clean_tempdir(tempdir)
+    files = joinpath.(Ref(tempdir), ["input.dat-s", "output.dat", "params.sdpa"])
+    for f in files
+        isfile(f) && rm(f)
+    end
 end
 
 function MOI.supports(

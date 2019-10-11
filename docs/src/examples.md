@@ -183,7 +183,7 @@ However, the following path is always printed when setting `verbose =
 SDPAFamily.VERBOSE`.
 
 ```@repl sumofsquares
-path = joinpath(model.moi_backend.optimizer.model.optimizer.tempdir, "input.dat-s")
+path = joinpath(MOI.get(model, SDPAFamily.TemporaryDirectory()),  "input.dat-s")
 readlines(path)[1:10] .|> println;
 ```
 
