@@ -34,6 +34,8 @@ import SDPAFamily
 
         @testset "Unit" begin
             exclusion_list = [
+                # `NumberOfThreads` not supported.
+                "number_threads",
                 # `TimeLimitSec` not supported.
                 "time_limit_sec",
                 # SingleVariable objective of bridged variables, will be solved by objective bridges
