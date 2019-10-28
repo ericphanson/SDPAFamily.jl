@@ -13,6 +13,7 @@ const variants = (:sdpa, :sdpa_dd, :sdpa_qd, :sdpa_gmp)
         include("presolve.jl")
         include("status_test.jl")
         include("variant_test.jl")
+        include("attributes.jl")
     end
 
     include("Convex.jl")
