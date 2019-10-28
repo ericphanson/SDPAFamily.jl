@@ -51,6 +51,7 @@ const params_options = Dict(
                             "lp_neg_atom" => SDPAFamily.UNSTABLE_BUT_FAST,
                             "sdp_matrix_frac_atom" => SDPAFamily.UNSTABLE_BUT_FAST,
                             "affine_Partial_transpose" => SDPAFamily.UNSTABLE_BUT_FAST,
+                            "affine_Diagonal_atom" => SDPAFamily.UNSTABLE_BUT_FAST,
                         ),
                     (:sdpa_dd, BigFloat) =>  Dict(
                         "lp_dotsort_atom" => SDPAFamily.UNSTABLE_BUT_FAST,
