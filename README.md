@@ -1,7 +1,6 @@
 # SDPAFamily
 
-[![Build
-Status](https://travis-ci.com/ericphanson/SDPAFamily.jl.svg?branch=master)](https://travis-ci.com/ericphanson/SDPAFamily.jl)
+[![Build Status](https://github.com/ericphanson/SDPAFamily.jl/workflows/CI/badge.svg)](https://github.com/ericphanson/SDPAFamily.jl/actions)
 [![Codecov](https://codecov.io/gh/ericphanson/SDPAFamily.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/ericphanson/SDPAFamily.jl)
 [![](https://img.shields.io/badge/docs-stable-blue.svg)](https://ericphanson.github.io/SDPAFamily.jl/stable)
 [![](https://img.shields.io/badge/docs-dev-blue.svg)](https://ericphanson.github.io/SDPAFamily.jl/dev)
@@ -25,16 +24,14 @@ can only be specified to 64-bits of precision, and results can only be recovered
 at that level of precision, when using JuMP. This is tracked in the issue
 [JuMP#2025](https://github.com/JuliaOpt/JuMP.jl/issues/2025).
 
-Convex.jl does not yet officially support MathOptInterface; this issue is
-tracked at [Convex.jl#262](https://github.com/JuliaOpt/Convex.jl/issues/262).
-However, there is a work-in-progress branch which can be added to your Julia
-environment via
+Convex.jl's `master` branch supports MathOptInterface, but the release version
+does not. You can use the `master` branch by
 
 ```julia
-] add https://github.com/ericphanson/Convex.jl#MathOptInterface
+] add Convex.jl#master
 ```
 
-which can be used to solve problems with the solvers from this package.
+until then to solve problems with the solvers from this package.
 
 ## Quick Example
 
