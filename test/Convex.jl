@@ -83,6 +83,8 @@ const params_options = Dict(
                         ))
 @testset "Convex tests" for var in variants
     @testset "Convex tests with variant $var and type $T" for T in (Float64, Double64, BigFloat)
+    @info "Starting testset `Convex tests with variant $var and type $T`"
+
         excludes = vcat(common_excludes, get(variant_excludes, (var, T), Regex[]), type_excludes[T])
         for class in keys(Convex.ProblemDepot.PROBLEMS)
             @testset "$class" begin
@@ -97,7 +99,7 @@ const params_options = Dict(
                             if params !== nothing
                                 settings = (params = params, settings...)
                             end
-
+                            @info "Solving problem $name with variant $var and type $T"
                             Convex.solve!(p, SDPAFamily.Optimizer{T}(; settings...))
                         end
                     end

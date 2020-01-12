@@ -13,8 +13,8 @@ SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 
 [compat]
 BinaryProvider = "0.5"
-DoubleFloats = "0.9, ≥ 0.9.9"
-MathOptInterface = "0.9.5, 0.9.6"
+DoubleFloats = "0.9.9"
+MathOptInterface = "0.9.5"
 julia = "1"
 
 [extras]

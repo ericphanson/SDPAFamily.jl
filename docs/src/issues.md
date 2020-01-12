@@ -1,7 +1,7 @@
 # Possible Issues and Troubleshooting
 
 We now demonstrate some current limitations of this package via
-[`Convex.jl#MathOptInterface`](https://github.com/ericphanson/Convex.jl/tree/MathOptInterface)'s
+[`Convex.jl#master`](https://github.com/JuliaOpt/Convex.jl)'s
 `Problem Depot`. This is run with `TEST=true`, meaning the solution returned by
 the solver will be tested against the true solution.
 
@@ -16,7 +16,7 @@ solution, and the test fails.
 ```@setup convex
 using SDPAFamily, Test, SparseArrays
 using Pkg
-Pkg.add(PackageSpec(name="Convex", url="https://github.com/ericphanson/Convex.jl", rev="MathOptInterface"));
+Pkg.add(PackageSpec(name="Convex", url="https://github.com/JuliaOpt/Convex.jl", rev="master"));
 using Convex
 ```
 

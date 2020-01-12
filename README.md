@@ -25,7 +25,7 @@ at that level of precision, when using JuMP. This is tracked in the issue
 [JuMP#2025](https://github.com/JuliaOpt/JuMP.jl/issues/2025).
 
 Convex.jl's `master` branch supports MathOptInterface, but the release version
-does not. You can use the `master` branch by
+does not. You can use the `master` branch via
 
 ```julia
 ] add Convex.jl#master

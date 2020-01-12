@@ -4,7 +4,7 @@
 # This setup block is not shown in the final output
 # Install the right branch of Convex
 using Pkg
-Pkg.add(PackageSpec(name="Convex", url="https://github.com/ericphanson/Convex.jl", rev="MathOptInterface"));
+Pkg.add(PackageSpec(name="Convex", url="https://github.com/JuliaOpt/Convex.jl", rev="master"));
 Pkg.add("SCS")
 setprecision(256)
 ```
@@ -13,7 +13,7 @@ Here is a simple optimization problem formulated with Convex.jl:
 
 ```@repl 1
 using SDPAFamily, LinearAlgebra
-using Convex # ] add https://github.com/ericphanson/Convex.jl#MathOptInterface
+using Convex # ] add Convex.jl#master
 y = Semidefinite(3)
 p = maximize(lambdamin(y), tr(y) <= 5; numeric_type = BigFloat)
 solve!(p, SDPAFamily.Optimizer(presolve=true))
@@ -84,7 +84,7 @@ Let us see to what accuracy we can recover that result using the SDPA solvers.
 
 ```@repl 1
 using SDPAFamily, Printf
-using Convex # ] add https://github.com/ericphanson/Convex.jl#MathOptInterface
+using Convex # ] add Convex.jl#master
 
 ρ₁ = Complex{BigFloat}[1 0; 0 0]
 ρ₂ = (1//2)*Complex{BigFloat}[1 -im; im 1]

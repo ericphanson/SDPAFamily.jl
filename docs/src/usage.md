@@ -68,7 +68,7 @@ does help quite a lot with some problems, however.
 ```@setup convexquantum
 using SDPAFamily, Test
 using Pkg
-Pkg.add(PackageSpec(name="Convex", url="https://github.com/ericphanson/Convex.jl", rev="MathOptInterface"));
+Pkg.add(PackageSpec(name="Convex", url="https://github.com/JuliaOpt/Convex.jl", rev="master"));
 using Convex
 ρ₁ = Complex{BigFloat}[1 0; 0 0]
 ρ₂ = (1//2)*Complex{BigFloat}[1 -im; im 1]
