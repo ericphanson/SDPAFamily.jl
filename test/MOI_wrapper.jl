@@ -71,7 +71,7 @@ import SDPAFamily
                 # Missing bridges
                 "rootdets",
                 # Does not support power and exponential cone, or their dual cones
-                "pow", "dualpow", "logdet", "exp", "dualexp" ])
+                "pow", "dualpow", "logdet", "exp", "dualexp", "relentr" ])
         end
     end
 end
