@@ -36,7 +36,7 @@ Here is a simple optimization problem formulated with Convex.jl:
 using SDPAFamily, LinearAlgebra
 using Convex
 y = Semidefinite(3)
-p = maximize(lambdamin(y), tr(y) <= 5; numeric_type = BigFloat)
+p = maximize(eigmin(y), tr(y) <= 5; numeric_type = BigFloat)
 solve!(p, () -> SDPAFamily.Optimizer(presolve=true))
 @show p.optval
 ```

@@ -8,5 +8,5 @@ problem_func(Val(true), 1e-3, 0.0, BigFloat) do p
     params = SDPAFamily.UNSTABLE_BUT_FAST,
     presolve = false, variant = :sdpa_dd)
     Convex.solve!(p, opt)
-    @test MOI.get(opt, MOI.TerminationStatus()) == MOI.ITERATION_LIMIT
+    @test Convex.termination_status(p) == MOI.ITERATION_LIMIT
 end

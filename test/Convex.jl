@@ -31,7 +31,21 @@ const variant_excludes = Dict(
                     (:sdpa, Double64) => Regex[
                             r"lp_dotsort_atom", # imprecise, cholesky miss
                             r"lp_pos_atom" # imprecise
-                        ])
+                        ]
+                    )
+
+# failures on CI with Julia 1.0; couldn't locally reproduce locally
+if VERSION < v"1.3"
+    for T in (Float64, Double64, BigFloat)
+        for variant in variants
+            variant_excludes[(variant, T)] = Regex[r"socp_quad_form_atom"]
+        end
+    end
+
+    for T in (Float64, Double64, BigFloat)
+        variant_excludes[(:sdpa, T)] = Regex[r"lp_pos_atom"]
+    end
+end
 
 # problems where `presolve=true` causes problems
 const no_presolve_problems = ["affine_Partial_transpose", "lp_min_atom", "lp_max_atom"]
