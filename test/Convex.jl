@@ -31,7 +31,21 @@ const variant_excludes = Dict(
                     (:sdpa, Double64) => Regex[
                             r"lp_dotsort_atom", # imprecise, cholesky miss
                             r"lp_pos_atom" # imprecise
-                        ])
+                        ]
+                    )
+
+# failures on CI with Julia 1.0; couldn't locally reproduce locally
+if VERSION < v"1.3"
+    for T in (Float64, Double64, BigFloat)
+        for variant in variants
+            variant_excludes[(variant, T)] = Regex[r"socp_quad_form_atom"]
+        end
+    end
+
+    for T in (Float64, Double64, BigFloat)
+        variant_excludes[(:sdpa, T)] = Regex[r"lp_pos_atom"]
+    end
+end
 
 # problems where `presolve=true` causes problems
 const no_presolve_problems = ["affine_Partial_transpose", "lp_min_atom", "lp_max_atom"]
@@ -83,6 +97,8 @@ const params_options = Dict(
                         ))
 @testset "Convex tests" for var in variants
     @testset "Convex tests with variant $var and type $T" for T in (Float64, Double64, BigFloat)
+    @info "Starting testset `Convex tests with variant $var and type $T`"
+
         excludes = vcat(common_excludes, get(variant_excludes, (var, T), Regex[]), type_excludes[T])
         for class in keys(Convex.ProblemDepot.PROBLEMS)
             @testset "$class" begin
@@ -97,8 +113,8 @@ const params_options = Dict(
                             if params !== nothing
                                 settings = (params = params, settings...)
                             end
-
-                            Convex.solve!(p, SDPAFamily.Optimizer{T}(; settings...))
+                            @info "Solving problem $name with variant $var and type $T"
+                            Convex.solve!(p, () -> SDPAFamily.Optimizer{T}(; settings...))
                         end
                     end
                 end

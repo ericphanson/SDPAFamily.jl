@@ -2,10 +2,6 @@
 
 ```@setup 1
 # This setup block is not shown in the final output
-# Install the right branch of Convex
-using Pkg
-Pkg.add(PackageSpec(name="Convex", url="https://github.com/ericphanson/Convex.jl", rev="MathOptInterface"));
-Pkg.add("SCS")
 setprecision(256)
 ```
 
@@ -13,10 +9,10 @@ Here is a simple optimization problem formulated with Convex.jl:
 
 ```@repl 1
 using SDPAFamily, LinearAlgebra
-using Convex # ] add https://github.com/ericphanson/Convex.jl#MathOptInterface
+using Convex
 y = Semidefinite(3)
-p = maximize(lambdamin(y), tr(y) <= 5; numeric_type = BigFloat)
-solve!(p, SDPAFamily.Optimizer(presolve=true))
+p = maximize(eigmin(y), tr(y) <= 5; numeric_type = BigFloat)
+solve!(p, () -> SDPAFamily.Optimizer(presolve=true))
 p.optval
 ```
 
@@ -83,8 +79,7 @@ p_\text{guess} = \frac{1}{2} + \frac{1}{2 \sqrt{2}}
 Let us see to what accuracy we can recover that result using the SDPA solvers.
 
 ```@repl 1
-using SDPAFamily, Printf
-using Convex # ] add https://github.com/ericphanson/Convex.jl#MathOptInterface
+using Convex, SDPAFamily, Printf
 
 ρ₁ = Complex{BigFloat}[1 0; 0 0]
 ρ₂ = (1//2)*Complex{BigFloat}[1 -im; im 1]
@@ -95,7 +90,7 @@ problem = maximize( real((1//2)*tr(ρ₁*E₁) + (1//2)*tr(ρ₂*E₂)),
                     numeric_type = BigFloat );
 p_guess = 1//2 + 1/(2*sqrt(big(2)))
 for variant in (:sdpa, :sdpa_dd, :sdpa_qd, :sdpa_gmp)
-    solve!(problem, SDPAFamily.Optimizer(silent = true, presolve = true, variant = variant))
+    solve!(problem, () -> SDPAFamily.Optimizer(silent = true, presolve = true, variant = variant))
     error = abs(problem.optval - p_guess)
     print("$variant solved the problem with an absolute error of ")
     @printf("%.2e.\n", error)
@@ -120,7 +115,7 @@ good results:
 
 ```@repl 1
 for variant in (:sdpa, :sdpa_dd, :sdpa_qd, :sdpa_gmp)
-    solve!(problem, SDPAFamily.Optimizer(silent = true, presolve = false, variant = variant))
+    solve!(problem, () -> SDPAFamily.Optimizer(silent = true, presolve = false, variant = variant))
     error = abs(problem.optval - p_guess)
     print("$variant solved the problem with an absolute error of ")
     @printf("%.2e.\n", error)
@@ -233,9 +228,9 @@ function relaxed_pop(r::Int, T)
 end
 
 p1 = relaxed_pop(5, Float64);
-solve!(p1, SCS.Optimizer(max_iters = 10000, verbose = 0));
+solve!(p1, () -> SCS.Optimizer(max_iters = 10000, verbose = 0));
 p2 = relaxed_pop(5, BigFloat);
-solve!(p2, SDPAFamily.Optimizer(presolve = true, verbose = SDPAFamily.SILENT,
+solve!(p2, () -> SDPAFamily.Optimizer(presolve = true, verbose = SDPAFamily.SILENT,
             params = ( epsilonStar = 1e-90,
                        epsilonDash = 1e-90,
                        precision = 5000,

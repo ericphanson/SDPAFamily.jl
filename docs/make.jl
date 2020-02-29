@@ -2,7 +2,11 @@ using Documenter, SDPAFamily
 
 makedocs(;
     modules = [SDPAFamily],
-    format = Documenter.HTML(),
+    format=Documenter.HTML(;
+        prettyurls=get(ENV, "CI", "false") == "true",
+        canonical="https://ericphanson.github.io/SDPAFamily.jl",
+        assets=String[],
+    ),
     pages = [
         "Home" => "index.md",
         "Installation" => "installation.md",

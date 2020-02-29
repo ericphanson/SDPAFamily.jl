@@ -13,6 +13,7 @@ import SDPAFamily
                                                     Float64,
                                                     # BigFloat # not yet supported: MathOptInterface#41
                                                 )
+        @info "Starting testset `MOI tests with variant $var and type T=$T`"
         optimizer = SDPAFamily.Optimizer{T}(presolve=true, variant = var)
         MOI.set(optimizer, MOI.Silent(), true)
 

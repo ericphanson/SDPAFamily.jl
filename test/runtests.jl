@@ -1,14 +1,11 @@
 using SDPAFamily
 using Test
 
-# Make sure we get the MOI branch of Convex. This can be removed once Convex.jl proper supports MOI.
-using Pkg
-Pkg.add(PackageSpec(name="Convex", url="https://github.com/ericphanson/Convex.jl", rev="MathOptInterface"))
-
 const variants = (:sdpa, :sdpa_dd, :sdpa_qd, :sdpa_gmp)
 
 @testset "SDPAFamily" begin
 
+    @info "Starting testset `General utilities`"
     @testset "General utilities" begin
         include("presolve.jl")
         include("status_test.jl")
@@ -20,6 +17,7 @@ const variants = (:sdpa, :sdpa_dd, :sdpa_qd, :sdpa_gmp)
 
     include("MOI_wrapper.jl")
 
+    @info "Starting testset `High-precision example`"
     @testset "High-precision example" begin
         include("high_precision_test.jl")
     end

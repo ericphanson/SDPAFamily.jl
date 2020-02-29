@@ -31,20 +31,23 @@ SDPAFamily.Optimizer{BigFloat}
 
 The following is a brief summary of the parameters. See the SDPA manual for more details.
 
-* `maxIteration`: number of iterations allowed * `epsilonStar`: constraint
-tolerance * `epsilonDash`: normalized duality gap tolerance * `lambdaStar`:
-determines initial point; should have the same order of magnitude as the optimal
-solution * `omegaStar`: determines region in which SDPA searches for an optimal
-solution; must be at least 1.0. * `lowerBound`, (resp. `upperBound`): bound on
-the primal (resp. dual) optimal objective value; serves as a stopping criteria *
-`betaStar`: parameter controlling the search direction for feasible points *
-`betaBar`: parameter controlling the search direction for infeasible points *
-`gammaStar`: reduction factor for the primal and dual step lengths *
-`precision`: number of significant bits used for SDPA-GMP; if set to `b` bits,
-then `(log(2)/log(10)) * b` is approximately the number of decimal digits of
-precision. * `xPrint`, `XPrint`, `YPrint`, `infPrint`: `printf` format
-specification used for printing the results to send them from the solver binary
-to Julia.
+* `maxIteration`: number of iterations allowed
+* `epsilonStar`: constraint tolerance
+* `epsilonDash`: normalized duality gap tolerance
+* `lambdaStar`: determines initial point; should have the same order of magnitude as the optimal
+    solution
+* `omegaStar`: determines region in which SDPA searches for an optimal
+    solution; must be at least 1.0.
+* `lowerBound`, (resp. `upperBound`): bound on the primal (resp. dual) optimal objective value; serves as a stopping criteria
+* `betaStar`: parameter controlling the search direction for feasible points
+* `betaBar`: parameter controlling the search direction for infeasible points
+* `gammaStar`: reduction factor for the primal and dual step lengths
+* `precision`: number of significant bits used for SDPA-GMP; if set to `b` bits,
+    then `(log(2)/log(10)) * b` is approximately the number of decimal digits of
+    precision.
+* `xPrint`, `XPrint`, `YPrint`, `infPrint`: `printf` format
+    specification used for printing the results to send them from the solver binary
+    to Julia.
 
 """
 struct Params{variant, T <: Number}
