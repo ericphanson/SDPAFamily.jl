@@ -66,10 +66,7 @@ problem. This process is numerically unstable, so is disabled by default. It
 does help quite a lot with some problems, however.
 
 ```@setup convexquantum
-using SDPAFamily, Test
-using Pkg
-Pkg.add(PackageSpec(name="Convex", url="https://github.com/JuliaOpt/Convex.jl", rev="master"));
-using Convex
+using SDPAFamily, Test, Convex
 ρ₁ = Complex{BigFloat}[1 0; 0 0]
 ρ₂ = (1//2)*Complex{BigFloat}[1 -im; im 1]
 E₁ = ComplexVariable(2, 2);
@@ -77,7 +74,7 @@ E₂ = ComplexVariable(2, 2);
 problem = maximize( real((1//2)*tr(ρ₁*E₁) + (1//2)*tr(ρ₂*E₂)),
                     [E₁ ⪰ 0, E₂ ⪰ 0, E₁ + E₂ == Diagonal(ones(2))];
                     numeric_type = BigFloat );
-opt = SDPAFamily.Optimizer(presolve = true, variant = :sdpa_gmp, silent = true);
+opt = () -> SDPAFamily.Optimizer(presolve = true, variant = :sdpa_gmp, silent = true);
 ```
 
 We demonstrate `presolve` using the problem defined in [Optimal guessing
@@ -88,14 +85,14 @@ for our test cases, solvers' intolerance to redundant constraints increases from
 `:sdpa` to `:sdpa_gmp`.
 
 ```@repl convexquantum
-solve!(problem, SDPAFamily.Optimizer(presolve = false))
+solve!(problem, () -> SDPAFamily.Optimizer(presolve = false))
 ```
 
 Applying presolve helps by removing 8 redundant constraints from the final input
 file.
 
 ```@repl convexquantum
-solve!(problem, SDPAFamily.Optimizer(presolve = true))
+solve!(problem, () -> SDPAFamily.Optimizer(presolve = true))
 @test problem.optval ≈ 1//2 + 1/(2*sqrt(big(2))) atol=1e-30
 ```
 
@@ -106,7 +103,7 @@ We see we have recovered the true answer to a tolerance of $10^{-30}$.
 Continuing the above example, we can also increase the precision by changing the default parameters:
 
 ```@repl convexquantum
-opt = SDPAFamily.Optimizer(
+opt = () -> SDPAFamily.Optimizer(
     presolve = true,
     params = (  epsilonStar = 1e-200, # constraint tolerance
                 epsilonDash = 1e-200, # normalized duality gap tolerance

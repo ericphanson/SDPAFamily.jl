@@ -100,7 +100,7 @@ const params_options = Dict(
                                 settings = (params = params, settings...)
                             end
                             @info "Solving problem $name with variant $var and type $T"
-                            Convex.solve!(p, SDPAFamily.Optimizer{T}(; settings...))
+                            Convex.solve!(p, () -> SDPAFamily.Optimizer{T}(; settings...))
                         end
                     end
                 end

@@ -121,4 +121,6 @@ following troubleshoot steps.
 4. Change the parameters by passing choices of parameters, e.g.
     `SDPAFamily.Optimizer(params=(SDPAFamily.UNSTABLE_BUT_FAST))`, or
    `SDPAFamily.Optimizer(params=(epsilonDash=1e-40,))`. It might
-   be helpful to use a tighter choice of the `epsilonDash` and `epsilonStar` parameters. See [Usage](@ref) and [Changing parameters & solving at very high precision](@ref) for more options and examples.
+   be helpful to use a tighter choice of the `epsilonDash` and `epsilonStar` parameters.
+   See [Usage](@ref) and [Changing parameters & solving at very high precision](@ref)
+   for more options and examples.
