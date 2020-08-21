@@ -1,4 +1,5 @@
 module SDPAFamily
+using SDPA_jll: SDPA_jll
 using LinearAlgebra # for diag()
 using DelimitedFiles # for writing SDPA input file
 using MathOptInterface
@@ -45,7 +46,7 @@ end
 
 Holds the binary-builder-built paths to the executables for `sdpa_gmp`, `sdpa_dd`, and `sdpa_qd`.
 """
-const BB_PATHS = Dict(:sdpa_gmp => sdpa_gmp, :sdpa_dd => sdpa_dd, :sdpa_qd => sdpa_qd, :sdpa => sdpa)
+const BB_PATHS = Dict(:sdpa_gmp => sdpa_gmp, :sdpa_dd => sdpa_dd, :sdpa_qd => sdpa_qd, :sdpa => "")
 
 const default_params_path = Dict(
     :sdpa_gmp =>  normpath(joinpath(@__DIR__, "..", "deps", "param_gmp.sdpa")),

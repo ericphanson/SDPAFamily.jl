@@ -1,5 +1,4 @@
 include("install_bb_qd.jl")
-include("install_bb_sdpa.jl")
 include("install_bb_sdpa_high_precision.jl")
 include("install_custom_WSL_binaries.jl")
 
@@ -52,7 +51,7 @@ end
 
 products = Product[]
 
-for var in [:sdpa_gmp, :sdpa_qd, :sdpa_dd, :sdpa]
+for var in [:sdpa_gmp, :sdpa_qd, :sdpa_dd]
     if custom_library[var]
         push!(products, FileProduct(Prefix(ENV[path_names[var]]), string(var), var))
     else
@@ -77,12 +76,8 @@ for var in [:sdpa_gmp, :sdpa_qd, :sdpa_dd, :sdpa]
         if install_wsl_binary
             append!(products, install_custom_WSL_binaries(prefix, verbose, [var]))
         else
-            if var != :sdpa
-                append!(products, install_bb_sdpa_high_precision(prefix, verbose, [var]))
-                append!(products, install_bb_qd(prefix, verbose))
-            else
-                append!(products, install_bb_sdpa(prefix, verbose)) # install plain SDPA binary too, for comparisons
-            end
+            append!(products, install_bb_sdpa_high_precision(prefix, verbose, [var]))
+            append!(products, install_bb_qd(prefix, verbose))
         end
     end
 end
