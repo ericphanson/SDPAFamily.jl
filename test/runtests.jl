@@ -1,6 +1,11 @@
 using SDPAFamily
 using Test
 
+# https://github.com/ericphanson/SDPAFamily.jl/pull/36#issuecomment-682117337
+using Libdl
+libs = filter!(lib -> occursin("fortran", lib), dllist())
+@info libs
+
 const variants = (:sdpa, :sdpa_dd, :sdpa_qd, :sdpa_gmp)
 
 @testset "SDPAFamily" begin
