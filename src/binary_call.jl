@@ -23,7 +23,12 @@ function sdpa_gmp_binary_solve!(m::Optimizer, full_input_path::String, full_outp
         params_path = get_params_path(m)
         arg = `-ds $full_input_path -o $full_output_path -p $(params_path)`
     end
-    if m.use_WSL
+
+    if m.variant == :sdpa
+        error_messages, miss = SDPA_jll.sdpa() do path
+            run_binary(`$path $arg`, m.verbosity)
+        end
+    elseif m.use_WSL
         wsl_binary_path = dirname(normpath(m.binary_path))
         error_messages, miss = cd(wsl_binary_path) do
             var = string(m.variant)
