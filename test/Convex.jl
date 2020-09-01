@@ -23,14 +23,17 @@ const variant_excludes = Dict(
                     (:sdpa, Float64) => Regex[
                             r"lp_dotsort_atom", # imprecise, cholesky miss
                             r"lp_pos_atom" # imprecise
+                            r"sdp_matrix_frac_atom" # imprecise
                         ],
                     (:sdpa, BigFloat) => Regex[
                             r"lp_dotsort_atom", # imprecise, cholesky miss
                             r"lp_pos_atom" # imprecise
+                            r"sdp_matrix_frac_atom" # imprecise
                         ],
                     (:sdpa, Double64) => Regex[
                             r"lp_dotsort_atom", # imprecise, cholesky miss
                             r"lp_pos_atom" # imprecise
+                            r"sdp_matrix_frac_atom" # imprecise
                         ]
                     )
 
