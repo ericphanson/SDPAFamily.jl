@@ -207,11 +207,9 @@ function MOI.supports(
     return true
 end
 
-function MOI.supports_constraint(
-    ::Optimizer, ::Type{MOI.VectorOfVariables}, ::Type{MOI.Reals})
-    return false
-end
+MOI.supports_add_constrained_variables(::Optimizer, ::Type{MOI.Reals}) = false
 const SupportedSets = Union{MOI.Nonnegatives, MOI.PositiveSemidefiniteConeTriangle}
+MOI.supports_add_constrained_variables(::Optimizer, ::Type{<:SupportedSets}) = true
 function MOI.supports_constraint(
     ::Optimizer, ::Type{MOI.VectorOfVariables},
     ::Type{<:SupportedSets})
