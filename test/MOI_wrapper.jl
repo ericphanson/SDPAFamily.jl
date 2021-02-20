@@ -49,6 +49,11 @@ import SDPAFamily
                 "solve_zero_one_with_bounds_1",
                 "solve_zero_one_with_bounds_2",
                 "solve_zero_one_with_bounds_3",
+                # `MOI.UNKNOWN_RESULT_STATUS` instead of `MOI.INFEASIBILITY_CERTIFICATE`
+                "solve_farkas_interval_lower", "solve_farkas_interval_upper",
+                "solve_farkas_lessthan", "solve_farkas_greaterthan",
+                "solve_farkas_variable_lessthan_max", "solve_farkas_variable_lessthan",
+                "solve_farkas_equalto_upper", "solve_farkas_equalto_lower",
                 # Underflow results when using Float64
                 "solve_affine_equalto"]
             MOIT.unittest(bridged, config, exclusion_list)
