@@ -53,4 +53,23 @@ end
         p_guess = 1//2 + 1/(2*sqrt(big(2)))
         @test problem.optval ≈ p_guess atol=1e-200
     end
+
+
+    # https://github.com/ericphanson/SDPAFamily.jl/issues/35
+    opt = () -> SDPAFamily.Optimizer(
+            presolve = true,
+            params = (  epsilonStar = big"1e-600", # constraint tolerance
+                        epsilonDash = big"1e-600", # normalized duality gap tolerance
+                        precision = 2000, # arithmetric precision used in sdpa_gmp
+                        maxIteration = 1000
+                    ))
+    setprecision(2000) do
+        y = Semidefinite(3)
+        p = maximize(eigmin(y), tr(y) <= 5; numeric_type = BigFloat)
+        solve!(p, opt)
+        @show p.optval - big(5)/3
+        @test p.optval ≈ big(5)/3 atol=big"1e-600"
+    end
+
+
 end
