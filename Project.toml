@@ -1,7 +1,7 @@
 name = "SDPAFamily"
 uuid = "bfe18334-aefd-11e9-1109-4bf2b15a5b91"
 authors = ["Eric P. Hanson and Jiazheng Zhu"]
-version = "0.2.1"
+version = "0.2.2"
 
 [deps]
 BinaryProvider = "b99e7846-7c00-51b0-8f62-c81ae34c0232"

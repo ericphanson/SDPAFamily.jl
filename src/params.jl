@@ -1,4 +1,3 @@
-
 """
     struct Params{variant, T <: Number}
 
@@ -52,31 +51,31 @@ The following is a brief summary of the parameters. See the SDPA manual for more
 """
 struct Params{variant, T <: Number}
     maxIteration::Int
-    epsilonStar::Float64
-    lambdaStar::Float64
-    omegaStar::Float64
-    lowerBound::Float64
-    upperBound::Float64
-    betaStar::Float64
-    betaBar::Float64
-    gammaStar::Float64
-    epsilonDash::Float64
+    epsilonStar::BigFloat
+    lambdaStar::BigFloat
+    omegaStar::BigFloat
+    lowerBound::BigFloat
+    upperBound::BigFloat
+    betaStar::BigFloat
+    betaBar::BigFloat
+    gammaStar::BigFloat
+    epsilonDash::BigFloat
     precision::Union{Int, Nothing}
     xPrint::Union{String, Nothing}
     XPrint::Union{String, Nothing}
     YPrint::Union{String, Nothing}
     infPrint::Union{String, Nothing}
     function Params{variant, T}(
-        maxIteration::Int,
-        epsilonStar::Float64,
-        lambdaStar::Float64,
-        omegaStar::Float64,
-        lowerBound::Float64,
-        upperBound::Float64,
-        betaStar::Float64,
-        betaBar::Float64,
-        gammaStar::Float64,
-        epsilonDash::Float64,
+        maxIteration,
+        epsilonStar,
+        lambdaStar,
+        omegaStar,
+        lowerBound,
+        upperBound,
+        betaStar,
+        betaBar,
+        gammaStar,
+        epsilonDash,
         precision::Union{Int, Nothing} = nothing,
         xPrint::Union{String, Nothing} = nothing,
         XPrint::Union{String, Nothing} = nothing,
@@ -111,16 +110,16 @@ struct Params{variant, T <: Number}
 end
 
 function Params{:sdpa_gmp, T}(;
-    maxIteration::Int = 400,
-    epsilonStar::Float64 = 1e-30,
-    lambdaStar::Float64 = 1e4,
-    omegaStar::Float64 = 2.0,
-    lowerBound::Float64 = -1e5,
-    upperBound::Float64 = 1e5,
-    betaStar::Float64 = 0.1,
-    betaBar::Float64 = 0.3,
-    gammaStar::Float64 = 0.9,
-    epsilonDash::Float64 = 1e-30,
+    maxIteration = 400,
+    epsilonStar = 1e-30,
+    lambdaStar = 1e4,
+    omegaStar = 2.0,
+    lowerBound = -1e5,
+    upperBound = 1e5,
+    betaStar = 0.1,
+    betaBar = 0.3,
+    gammaStar = 0.9,
+    epsilonDash = 1e-30,
     precision::Int = 200,
     xPrint::Union{String, Nothing} = "%+.Fe",
     XPrint::Union{String, Nothing} = "%+.Fe",
@@ -132,16 +131,16 @@ function Params{:sdpa_gmp, T}(;
 end
 
 function Params{:sdpa_gmp, Float64}(;
-    maxIteration::Int = 200,
-    epsilonStar::Float64 = 1e-7,
-    lambdaStar::Float64 = 1e3,
-    omegaStar::Float64 = 2.0,
-    lowerBound::Float64 = -1e5,
-    upperBound::Float64 = 1e5,
-    betaStar::Float64 = 0.1,
-    betaBar::Float64 = 0.3,
-    gammaStar::Float64 = 0.9,
-    epsilonDash::Float64 = 1e-7,
+    maxIteration = 200,
+    epsilonStar = 1e-7,
+    lambdaStar = 1e3,
+    omegaStar = 2.0,
+    lowerBound = -1e5,
+    upperBound = 1e5,
+    betaStar = 0.1,
+    betaBar = 0.3,
+    gammaStar = 0.9,
+    epsilonDash = 1e-7,
     precision::Int = 80,
     xPrint::Union{String, Nothing} = "%+.Fe",
     XPrint::Union{String, Nothing} = "%+.Fe",
@@ -154,16 +153,16 @@ function Params{:sdpa_gmp, Float64}(;
 end
 
 function Params{:sdpa_qd, T}(;
-    maxIteration::Int = 100,
-    epsilonStar::Float64 = 1e-20,
-    lambdaStar::Float64 = 1e3,
-    omegaStar::Float64 = 2.0,
-    lowerBound::Float64 = -1e5,
-    upperBound::Float64 = 1e5,
-    betaStar::Float64 = 0.1,
-    betaBar::Float64 = 0.3,
-    gammaStar::Float64 = 0.9,
-    epsilonDash::Float64 = 1e-20) where {T <: Number}
+    maxIteration = 100,
+    epsilonStar = 1e-20,
+    lambdaStar = 1e3,
+    omegaStar = 2.0,
+    lowerBound = -1e5,
+    upperBound = 1e5,
+    betaStar = 0.1,
+    betaBar = 0.3,
+    gammaStar = 0.9,
+    epsilonDash = 1e-20) where {T <: Number}
 
     Params{:sdpa_qd, T}(maxIteration, epsilonStar, lambdaStar,
     omegaStar, lowerBound, upperBound, betaStar, betaBar,
@@ -171,16 +170,16 @@ function Params{:sdpa_qd, T}(;
 end
 
 function Params{:sdpa_dd, T}(;
-    maxIteration::Int = 100,
-    epsilonStar::Float64 = 1e-15,
-    lambdaStar::Float64 = 1e3,
-    omegaStar::Float64 = 2.0,
-    lowerBound::Float64 = -1e5,
-    upperBound::Float64 = 1e5,
-    betaStar::Float64 = 0.1,
-    betaBar::Float64 = 0.3,
-    gammaStar::Float64 = 0.9,
-    epsilonDash::Float64 = 1e-15) where {T <: Number}
+    maxIteration = 100,
+    epsilonStar = 1e-15,
+    lambdaStar = 1e3,
+    omegaStar = 2.0,
+    lowerBound = -1e5,
+    upperBound = 1e5,
+    betaStar = 0.1,
+    betaBar = 0.3,
+    gammaStar = 0.9,
+    epsilonDash = 1e-15) where {T <: Number}
 
     Params{:sdpa_qd, T}(maxIteration, epsilonStar, lambdaStar,
     omegaStar, lowerBound, upperBound, betaStar, betaBar,
@@ -188,16 +187,16 @@ function Params{:sdpa_dd, T}(;
 end
 
 function Params{:sdpa, T}(;
-    maxIteration::Int = 100,
-    epsilonStar::Float64 = 1e-7,
-    lambdaStar::Float64 = 1e2,
-    omegaStar::Float64 = 2.0,
-    lowerBound::Float64 = -1e5,
-    upperBound::Float64 = 1e5,
-    betaStar::Float64 = 0.01,
-    betaBar::Float64 = 0.02,
-    gammaStar::Float64 = 0.95,
-    epsilonDash::Float64 = 1e-7,
+    maxIteration = 100,
+    epsilonStar = 1e-7,
+    lambdaStar = 1e2,
+    omegaStar = 2.0,
+    lowerBound = -1e5,
+    upperBound = 1e5,
+    betaStar = 0.01,
+    betaBar = 0.02,
+    gammaStar = 0.95,
+    epsilonDash = 1e-7,
     xPrint::Union{String, Nothing} = "%+8.10e",
     XPrint::Union{String, Nothing} = "%+8.10e",
     YPrint::Union{String, Nothing} = "%+8.10e",
