@@ -145,7 +145,7 @@ using SDPAFamily
 @polyvar x1 x2 # Create symbolic variables (not JuMP decision variables)
 
 # Create a Sum of Squares JuMP model with the SDPAFamily solver
-model = SOSModel(with_optimizer(SDPAFamily.Optimizer{Float64}, # JuMP only supports Float64
+model = SOSModel(() -> SDPAFamily.Optimizer{Float64}( # JuMP only supports Float64
                     variant = :sdpa_gmp, # use the arbitrary precision variant
                     params = (  epsilonStar = 1e-30, # constraint tolerance
                                 epsilonDash = 1e-30, # normalized duality gap tolerance
