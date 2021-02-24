@@ -20,4 +20,4 @@ makedocs(;
     sitename = "SDPAFamily.jl")
 
 
-deploydocs(repo = "github.com/ericphanson/SDPAFamily.jl.git")
+deploydocs(repo = "github.com/ericphanson/SDPAFamily.jl.git", push_preview=true)

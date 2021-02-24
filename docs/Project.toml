@@ -9,5 +9,5 @@ SDPAFamily = "bfe18334-aefd-11e9-1109-4bf2b15a5b91"
 SumOfSquares = "4b9e565b-77fc-50a5-a571-1244f986bda1"
 
 [compat]
-Convex = "0.13"
-Documenter = "0.23"
+Convex = "0.14"
+Documenter = "0.26"

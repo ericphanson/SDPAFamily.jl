@@ -114,19 +114,20 @@ end
 
 varmap(optimizer::Optimizer, vi::MOI.VariableIndex) = optimizer.varmap[vi.value]
 
-function MOI.supports(optimizer::Optimizer, param::MOI.RawParameter)
-	return param.name in keys(SET_PARAM)
-end
-function MOI.set(optimizer::Optimizer, param::MOI.RawParameter, value)
-	if !MOI.supports(optimizer, param)
-		throw(MOI.UnsupportedAttribute(param))
-	end
-	optimizer.options[param.name] = value
-end
-function MOI.get(optimizer::Optimizer, param::MOI.RawParameter)
-	# TODO: This gives a poor error message if the name of the parameter is invalid.
-	return optimizer.options[param.name]
-end
+# This code is all broken. TODO: fix.
+# function MOI.supports(optimizer::Optimizer, param::MOI.RawParameter)
+# 	return param.name in keys(SET_PARAM)
+# end
+# function MOI.set(optimizer::Optimizer, param::MOI.RawParameter, value)
+# 	if !MOI.supports(optimizer, param)
+# 		throw(MOI.UnsupportedAttribute(param))
+# 	end
+# 	optimizer.options[param.name] = value
+# end
+# function MOI.get(optimizer::Optimizer, param::MOI.RawParameter)
+# 	# TODO: This gives a poor error message if the name of the parameter is invalid.
+# 	return optimizer.options[param.name]
+# end
 
 MOI.supports(::Optimizer, ::MOI.Silent) = true
 function MOI.set(optimizer::Optimizer, ::MOI.Silent, value::Bool)
