@@ -6,6 +6,7 @@ using MathOptInterface
 const MOI = MathOptInterface
 const MOIB = MOI.Bridges
 using BinaryProvider
+using Scratch
 
 """
 Possible verbosity levels of an `SDPAFamily.Optimizer`.

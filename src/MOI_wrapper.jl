@@ -82,7 +82,7 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
             binary_path = BB_PATHS[variant],
             use_WSL = HAS_WSL[variant],
             params::Union{Params, ParamsSetting, String, NamedTuple} = Params{variant, T}(),
-            TemporaryDirectory::String = mktempdir(),
+            TemporaryDirectory::String = mktempdir(@get_scratch!("solves")),
             ) where T
 
         if params isa NamedTuple
