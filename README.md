@@ -1,6 +1,6 @@
 # SDPAFamily
 
-[![Build Status](https://github.com/ericphanson/SDPAFamily.jl/workflows/CI/badge.svg)](https://github.com/ericphanson/SDPAFamily.jl/actions)
+[![CI](https://github.com/ericphanson/SDPAFamily.jl/actions/workflows/ci.yml/badge.svg)](https://github.com/ericphanson/SDPAFamily.jl/actions/workflows/ci.yml)
 [![Codecov](https://codecov.io/gh/ericphanson/SDPAFamily.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/ericphanson/SDPAFamily.jl)
 [![](https://img.shields.io/badge/docs-stable-blue.svg)](https://ericphanson.github.io/SDPAFamily.jl/stable)
 [![](https://img.shields.io/badge/docs-dev-blue.svg)](https://ericphanson.github.io/SDPAFamily.jl/dev)
