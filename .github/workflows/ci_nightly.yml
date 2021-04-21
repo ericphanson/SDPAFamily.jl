@@ -6,7 +6,7 @@ on:
       - main
       - /^release-.*$/
     paths:
-      - '.github/workflows/CI.yml'
+      - '.github/workflows/ci_nightly.yml'
       - 'test/**'
       - 'src/**'
       - 'deps/**'
@@ -14,22 +14,33 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
-      - '.github/workflows/CI.yml'
+      - '.github/workflows/ci_nightly.yml'
       - 'test/**'
       - 'src/**'
       - 'deps/**'
       - 'Project.toml'
 jobs:
   test:
-    name: Julia Nightly - ${{ github.event_name }}
-    runs-on: ubuntu-latest
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        version:
+          - 'nightly'
+        os:
+          - ubuntu-latest
+          - macOS-latest
+        arch:
+          - x64
     steps:
       - uses: actions/checkout@v2
         with:
           fetch-depth: 0
       - uses: julia-actions/setup-julia@v1
         with:
-          version: 'nightly'
+          version: ${{ matrix.version }}
+          arch: ${{ matrix.arch }}
       - uses: actions/cache@v2
         with:
           path: ~/.julia/artifacts

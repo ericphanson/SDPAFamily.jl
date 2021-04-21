@@ -6,7 +6,7 @@ on:
       - main
       - /^release-.*$/
     paths:
-      - '.github/workflows/CI.yml'
+      - '.github/workflows/ci.yml'
       - 'test/**'
       - 'src/**'
       - 'deps/**'
@@ -14,7 +14,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
-      - '.github/workflows/CI.yml'
+      - '.github/workflows/ci.yml'
       - 'test/**'
       - 'src/**'
       - 'deps/**'

@@ -8,6 +8,7 @@ on:
       - 'src/**'
       - 'docs/**'
       - 'deps/**'
+      - 'Project.toml'
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
@@ -15,6 +16,7 @@ on:
       - 'src/**'
       - 'docs/**'
       - 'deps/**'
+      - 'Project.toml'
 jobs:
   build:
     runs-on: ubuntu-latest
