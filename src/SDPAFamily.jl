@@ -24,7 +24,7 @@ Options are `DEFAULT`, `UNSTABLE_BUT_FAST`, or `STABLE_BUT_SLOW`.
 """
 @enum ParamsSetting DEFAULT UNSTABLE_BUT_FAST STABLE_BUT_SLOW
 
-const DEPS_DIR = @get_scratch!(string("build_julia_", VERSION, "_", Sys.KERNEL))
+const DEPS_DIR = @get_scratch!(string("build_julia_", VERSION.major, ".", VERSION.minor, "_", Sys.KERNEL))
 
 if !isfile(joinpath(DEPS_DIR, "deps.jl"))
     error("""Build file not found. Please run `using Pkg; Pkg.build("SDPAFamily")` and

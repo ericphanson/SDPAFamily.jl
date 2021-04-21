@@ -10,7 +10,7 @@ const SDPAFamily_UUID = UUID("bfe18334-aefd-11e9-1109-4bf2b15a5b91")
 # Key off of Julia version to avoid issues like <https://github.com/ericphanson/SDPAFamily.jl/issues/29#issue-549039097>
 # why key off `Sys.KERNEL`? I once had some strange setup with WSL2 where I had windows
 # and linux runtimes looking at the same filesystem. This might help...
-const DEPS_DIR = get_scratch!(SDPAFamily_UUID, string("build_julia_", VERSION, "_", Sys.KERNEL))
+const DEPS_DIR = get_scratch!(SDPAFamily_UUID, string("build_julia_", VERSION.major, ".", VERSION.minor, "_", Sys.KERNEL))
 
 # Parse some basic command-line arguments
 const verbose = "--verbose" in ARGS
