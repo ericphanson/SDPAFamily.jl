@@ -3,10 +3,18 @@ include("install_bb_sdpa_high_precision.jl")
 include("install_custom_WSL_binaries.jl")
 
 using BinaryProvider # requires BinaryProvider 0.3.0 or later
+using Scratch, UUIDs
+
+const SDPAFamily_UUID = UUID("bfe18334-aefd-11e9-1109-4bf2b15a5b91")
+
+# Key off of Julia version to avoid issues like <https://github.com/ericphanson/SDPAFamily.jl/issues/29#issue-549039097>
+# why key off `Sys.KERNEL`? I once had some strange setup with WSL2 where I had windows
+# and linux runtimes looking at the same filesystem. This might help...
+const DEPS_DIR = get_scratch!(SDPAFamily_UUID, string("build_julia_", VERSION, "_", Sys.KERNEL))
 
 # Parse some basic command-line arguments
 const verbose = "--verbose" in ARGS
-const prefix = Prefix(get([a for a in ARGS if a != "--verbose"], 1, joinpath(@__DIR__, "usr")))
+const prefix = Prefix(get([a for a in ARGS if a != "--verbose"], 1, joinpath(DEPS_DIR, "usr")))
 
 ## Check for WSL or custom library
 
@@ -83,7 +91,7 @@ for var in [:sdpa_gmp, :sdpa_qd, :sdpa_dd]
 end
 
 # Write out a deps.jl file that will contain mappings for our products
-deps_file_path = joinpath(@__DIR__, "deps.jl")
+deps_file_path = joinpath(DEPS_DIR, "deps.jl")
 
 write_deps_file(deps_file_path, products, verbose = verbose)
 

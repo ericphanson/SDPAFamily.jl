@@ -24,6 +24,12 @@ Options are `DEFAULT`, `UNSTABLE_BUT_FAST`, or `STABLE_BUT_SLOW`.
 """
 @enum ParamsSetting DEFAULT UNSTABLE_BUT_FAST STABLE_BUT_SLOW
 
+const DEPS_DIR = @get_scratch!(string("build_julia_", VERSION, "_", Sys.KERNEL))
+
+if !isfile(joinpath(DEPS_DIR, "deps.jl"))
+    error("""Build file not found. Please run `using Pkg; Pkg.build("SDPAFamily")` and
+             try loading the package again.""")
+end
 
 # The `deps.jl` file defines `HAS_WSL::Bool` and `sdpa_gmp::String`.
 #
@@ -33,9 +39,9 @@ Options are `DEFAULT`, `UNSTABLE_BUT_FAST`, or `STABLE_BUT_SLOW`.
 # in the binary call, we turn the paths into WSL paths.
 #
 # `sdpa_gmp` is the default path to the binary.
-include(joinpath(@__DIR__, "..", "deps", "deps.jl"))
+include(joinpath(DEPS_DIR, "deps.jl"))
 
-const prefix = Prefix(joinpath(@__DIR__, "..", "deps", "usr"))
+const prefix = Prefix(joinpath(DEPS_DIR, "usr"))
 
 function __init__()
     check_deps()
