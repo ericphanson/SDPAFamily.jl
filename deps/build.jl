@@ -19,6 +19,8 @@ const prefix = Prefix(get([a for a in ARGS if a != "--verbose"], 1, joinpath(DEP
 ## Check for WSL or custom library
 
 custom_library = Dict(:sdpa_gmp => false, :sdpa_qd => false, :sdpa_dd => false, :sdpa => false)
+
+# used for when we're running on Windows but want to execute the binary from within WSL.
 HAS_WSL = Dict(:sdpa_gmp => false, :sdpa_qd => false, :sdpa_dd => false, :sdpa => false)
 path_names = Dict(:sdpa_gmp => "JULIA_SDPA_GMP_PATH", :sdpa_dd => "JULIA_SDPA_DD_PATH", :sdpa_qd => "JULIA_SDPA_QD_PATH", :sdpa => "JULIA_SDPA_PLAIN_PATH")
 
@@ -63,7 +65,7 @@ for var in [:sdpa_gmp, :sdpa_qd, :sdpa_dd]
     if custom_library[var]
         push!(products, FileProduct(Prefix(ENV[path_names[var]]), string(var), var))
     else
-        if Sys.islinux() && occursin("WSL", read(`cat /proc/version`, String))
+        if get(ENV, "JULIA_SDPAFAMILY_WSL", false) == "TRUE" || (Sys.islinux() && (occursin("WSL", read(`cat /proc/version`, String)) || occursin("microsoft", read(`cat /proc/version`, String))))
             install_wsl_binary = true
         else
             install_wsl_binary = false
