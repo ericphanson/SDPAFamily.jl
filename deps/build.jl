@@ -105,3 +105,12 @@ open(deps_file_path, "a") do io
 
     """)
 end
+
+for file in readdir(joinpath(DEPS_DIR, "usr", "bin"); join=true)
+    if isfile(file)
+        # https://stackoverflow.com/a/30463972
+        mode = stat(file).mode
+        mode |= (mode & 0o444) >> 2
+        chmod(file, mode)
+    end
+end
