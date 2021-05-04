@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Examples · SDPAFamily.jl</title><link rel="canonical" href="https://ericphanson.github.io/SDPAFamily.jl/examples/"/><link href="https://fonts.googleapis.com/css?family=Lato|Roboto+Mono" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.0/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.0/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.0/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.11.1/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL=".."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../assets/documenter.js"></script><script src="../siteinfo.js"></script><script src="../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit">SDPAFamily.jl</span></div><form class="docs-search" action="../search/"><input class="docs-search-query" id="documenter-search-query" name="q" type="text" placeholder="Search docs"/></form><ul class="docs-menu"><li><a class="tocitem" href="../">Home</a></li><li><a class="tocitem" href="../installation/">Installation</a></li><li><a class="tocitem" href="../usage/">Usage</a></li><li class="is-active"><a class="tocitem" href>Examples</a><ul class="internal"><li><a class="tocitem" href="#Optimal-guessing-probability-for-a-pair-of-quantum-states"><span>Optimal guessing probability for a pair of quantum states</span></a></li><li><a class="tocitem" href="#Polynomial-optimization"><span>Polynomial optimization</span></a></li><li><a class="tocitem" href="#SDP-relaxation-in-polynomial-optimization-problem"><span>SDP relaxation in polynomial optimization problem</span></a></li></ul></li><li><a class="tocitem" href="../issues/">Possible Issues &amp; Troubleshooting</a></li><li><a class="tocitem" href="../reference/">Developer reference</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>Examples</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Examples</a></li></ul></nav><div class="docs-right"><a class="docs-edit-link" href="https://github.com/ericphanson/SDPAFamily.jl/blob/master/docs/src/examples.md#L" title="Edit on GitHub"><span class="docs-icon fab"></span><span class="docs-label is-hidden-touch">Edit on GitHub</span></a><a class="docs-settings-button fas fa-cog" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-sidebar-button fa fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a></div></header><article class="content" id="documenter-page"><h1 id="Examples"><a class="docs-heading-anchor" href="#Examples">Examples</a><a id="Examples-1"></a><a class="docs-heading-anchor-permalink" href="#Examples" title="Permalink"></a></h1><p>Here is a simple optimization problem formulated with Convex.jl:</p><pre><code class="language-julia-repl">julia&gt; using SDPAFamily, LinearAlgebra
+
+julia&gt; using Convex
+
+julia&gt; y = Semidefinite(3)
+Variable
+size: (3, 3)
+sign: real
+vexity: affine
+id: 165…493
+
+julia&gt; p = maximize(eigmin(y), tr(y) &lt;= 5; numeric_type = BigFloat)
+maximize
+└─ eigmin (concave; real)
+   └─ 3×3 real variable (id: 165…493)
+subject to
+└─ &lt;= constraint (affine)
+   ├─ sum (affine; real)
+   │  └─ diag (affine; real)
+   │     └─ …
+   └─ 5
+
+status: `solve!` not called yet
+
+julia&gt; solve!(p, () -&gt; SDPAFamily.Optimizer(presolve=true))
+
+julia&gt; p.optval
+1.666666666666666666666666666665476989753299163954502444310422560355435839263761</code></pre><h2 id="Optimal-guessing-probability-for-a-pair-of-quantum-states"><a class="docs-heading-anchor" href="#Optimal-guessing-probability-for-a-pair-of-quantum-states">Optimal guessing probability for a pair of quantum states</a><a id="Optimal-guessing-probability-for-a-pair-of-quantum-states-1"></a><a class="docs-heading-anchor-permalink" href="#Optimal-guessing-probability-for-a-pair-of-quantum-states" title="Permalink"></a></h2><p>In physics, a <em>state</em> represents a possible configuration of a physical system. In quantum mechanical systems with finitely many degrees of freedom, states are represented by <em>density matrices</em>, which are <span>$d\times d$</span> matrices with complex entries that are positive semi-definite and have trace equal to one. States can be <em>measured</em>; mathematically, a measurement with <span>$n$</span> possible outcomes is represented by a set of measurement operators <span>$\{E_j\}_{j=1}^n$</span>, where each <span>$E_j$</span> is a <span>$d\times d$</span> matrix. For example, imagine an experiment in which a charged particle is released in a magnetic field such that it will hit either a detector on the left or a detector on the right. This corresponds to a measurement of the particle with two outcomes, and hence two measurement operators <span>$\{E_1, E_2\}$</span>, which to the left and right detector.</p><p>In order for <span>$\{E_j\}_{j=1}^n$</span> to be a valid set of measurement operators, each <span>$E_j$</span> must be positive semi-definite, and the family <span>$\{E_j\}_{j=1}^n$</span> must have the property that <span>$\sum_{j=1}^n E_j = I_d$</span>, the <span>$d\times d$</span> identity matrix. If the state of the system is represented by <span>$\rho$</span>, and a measurement with measurement operators <span>$\{E_j\}_{j=1}^n$</span> is performed, then outcome <span>$j$</span> is obtained with probability <span>$\operatorname{tr}[\rho E_j]$</span>.</p><p>Consider the case where <span>$d=2$</span> (i.e. the states are <em>qubits</em>), and the state of the system is either represented by <span>$\rho_1 = \begin{pmatrix} 1 &amp; 0 \\ 0 &amp; 0 \end{pmatrix}$</span> or by <span>$\rho_2 = \frac{1}{2}\begin{pmatrix} 1 &amp; -i \\ i &amp; 1 \end{pmatrix}$</span>, but we don&#39;t know which; let&#39;s say there is a referee who flipped a fair coin, and then prepared the system in either <span>$\rho_1$</span> or <span>$\rho_2$</span>. We will perform a measurement of the system, and then use the outcome to make a guess about the state of the system.  What is the measurement that gives the highest probability of correctly determining which state the system is in, and what&#39;s the optimal probability?</p><p>We will perform a measurement with measurement operators <span>$E_1$</span> and <span>$E_2$</span>. If we get outcome <span>$1$</span>, we will guess the system is in state <span>$\rho_1$</span> and and if we obtain outcome 2, we guess the system is in state <span>$\rho_2$</span>. Then the probability of guessing correctly is</p><p class="math-container">\[p_\text{guess}(E_1, E_2) = \frac{1}{2}\operatorname{tr}(\rho_1  E_1) + \frac{1}{2}\operatorname{tr}(\rho_2  E_2)\]</p><p>since there is a 50% chance of the system being in state <span>$\rho_1$</span>, in which case we guess correctly when we get outcome 1 (which occurs with probability <span>$\operatorname{tr}(\rho_1 E_1)$</span>), and a 50% chance of the system being in state <span>$\rho_2$</span>, in which case we guess correctly when we get outcome <span>$2$</span>.</p><p>Our goal now is to choose the optimal measurement operators to have the the best chance of guessing correctly. That is, we aim to maximize the above expression over all choices of <span>$E_1$</span> and <span>$E_2$</span> such that <span>$\{E_1, E_2\}$</span> is a valid set of measurement operators. This is a semidefinite program, which can be solved e.g. with SDPAFamily.jl In this simple example with only two states to discriminate between, the problem can be solved analytically, and the solution is related to the trace distance between the two states. This problem specifically is Example 3.2.1 of the <a href="http://users.cms.caltech.edu/~vidick/teaching/120_qcrypto/LN_Week3.pdf">edX Quantum Cryptography notes by Thomas Vidick</a>. It can be seen that the optimal guessing probability is</p><p class="math-container">\[p_\text{guess} = \frac{1}{2} + \frac{1}{2 \sqrt{2}}\]</p><p>Let us see to what accuracy we can recover that result using the SDPA solvers.</p><pre><code class="language-julia-repl">julia&gt; using Convex, SDPAFamily, Printf
+
+julia&gt; ρ₁ = Complex{BigFloat}[1 0; 0 0]
+2×2 Array{Complex{BigFloat},2}:
+ 1.0+0.0im  0.0+0.0im
+ 0.0+0.0im  0.0+0.0im
+
+julia&gt; ρ₂ = (1//2)*Complex{BigFloat}[1 -im; im 1]
+2×2 Array{Complex{BigFloat},2}:
+ 0.50+0.0im    0.0-0.50im
+  0.0+0.50im  0.50+0.0im
+
+julia&gt; E₁ = ComplexVariable(2, 2)
+Variable
+size: (2, 2)
+sign: complex
+vexity: affine
+id: 877…607
+
+julia&gt; E₂ = ComplexVariable(2, 2)
+Variable
+size: (2, 2)
+sign: complex
+vexity: affine
+id: 706…755
+
+julia&gt; problem = maximize( real((1//2)*tr(ρ₁*E₁) + (1//2)*tr(ρ₂*E₂)),
+                           [E₁ ⪰ 0, E₂ ⪰ 0, E₁ + E₂ == Diagonal(ones(2))];
+                           numeric_type = BigFloat );
+
+julia&gt; p_guess = 1//2 + 1/(2*sqrt(big(2)))
+0.8535533905932737622004221810524245196424179688442370182941699344976831196155298
+
+julia&gt; for variant in (:sdpa, :sdpa_dd, :sdpa_qd, :sdpa_gmp)
+           solve!(problem, () -&gt; SDPAFamily.Optimizer(silent = true, presolve = true, variant = variant))
+           error = abs(problem.optval - p_guess)
+           print(&quot;$variant solved the problem with an absolute error of &quot;)
+           @printf(&quot;%.2e.\n&quot;, error)
+       end
+sdpa solved the problem with an absolute error of 1.30e-07.
+sdpa_dd solved the problem with an absolute error of 4.75e-16.
+sdpa_qd solved the problem with an absolute error of 3.13e-17.
+sdpa_gmp solved the problem with an absolute error of 2.70e-31.</code></pre><p>Here, we have solved the problem four times, once with each variant of the SDPA family of optimizers supported by this package. We can see that SDPA-GMP has solved the problem to an accuracy of <span>$\sim 10^{-31}$</span>, far exceeding machine precision.</p><p>As usual with semidefinite programs, we can recover a set of optimal measurements:</p><pre><code class="language-julia-repl">julia&gt; evaluate(E₁)
+2×2 Array{Complex{BigFloat},2}:
+ 0.853553+0.0im            0.0+0.353553im
+      0.0-0.353553im  0.146447+0.0im
+
+julia&gt; evaluate(E₂)
+2×2 Array{Complex{BigFloat},2}:
+ 0.146447+0.0im            0.0-0.353553im
+      0.0+0.353553im  0.853553+0.0im</code></pre><p>Note that this is an example where the presolve routine is essential to getting good results:</p><pre><code class="language-julia-repl">julia&gt; for variant in (:sdpa, :sdpa_dd, :sdpa_qd, :sdpa_gmp)
+           solve!(problem, () -&gt; SDPAFamily.Optimizer(silent = true, presolve = false, variant = variant))
+           error = abs(problem.optval - p_guess)
+           print(&quot;$variant solved the problem with an absolute error of &quot;)
+           @printf(&quot;%.2e.\n&quot;, error)
+       end
+sdpa solved the problem with an absolute error of 7.83e-04.
+┌ Warning: Problem status ITERATION_LIMIT; solution may be inaccurate.
+└ @ Convex ~/.julia/packages/Convex/VAIWO/src/solution.jl:250
+sdpa_dd solved the problem with an absolute error of 8.54e-01.
+┌ Warning: Problem status ITERATION_LIMIT; solution may be inaccurate.
+└ @ Convex ~/.julia/packages/Convex/VAIWO/src/solution.jl:250
+sdpa_qd solved the problem with an absolute error of 8.54e-01.
+┌ Warning: Problem status ITERATION_LIMIT; solution may be inaccurate.
+└ @ Convex ~/.julia/packages/Convex/VAIWO/src/solution.jl:250
+sdpa_gmp solved the problem with an absolute error of 8.54e-01.</code></pre><p>We can see that without the presolve routine, we have only recovered the true solution up to errors of size <span>$\sim 10^{-1}$</span> for <code>:sdpa</code> variant. All other variants have failed to produce a result due to redundant constraints and returned with default value 0.</p><p>This problem is revisited at very high precision in <a href="../usage/#Changing-parameters-and-solving-at-very-high-precision">Changing parameters &amp; solving at very high precision</a>.</p><h2 id="Polynomial-optimization"><a class="docs-heading-anchor" href="#Polynomial-optimization">Polynomial optimization</a><a id="Polynomial-optimization-1"></a><a class="docs-heading-anchor-permalink" href="#Polynomial-optimization" title="Permalink"></a></h2><p>The following example is adapted from an example in the <a href="https://github.com/JuliaOpt/SumOfSquares.jl">SumOfSquares.jl</a> documentation to use SDPAFamily.jl. Even though the problem is only specified with <code>Float64</code>&#39;s, since the entries are specified as integers, they can be sent to SDPA-GMP without a loss of precision.</p><pre><code class="language-julia-repl">julia&gt; using SumOfSquares
+
+julia&gt; using DynamicPolynomials
+
+julia&gt; using SDPAFamily
+
+julia&gt; @polyvar x1 x2 # Create symbolic variables (not JuMP decision variables)
+(x1, x2)
+
+julia&gt; # Create a Sum of Squares JuMP model with the SDPAFamily solver
+       model = SOSModel(() -&gt; SDPAFamily.Optimizer{Float64}( # JuMP only supports Float64
+                           variant = :sdpa_gmp, # use the arbitrary precision variant
+                           params = (  epsilonStar = 1e-30, # constraint tolerance
+                                       epsilonDash = 1e-30, # normalized duality gap tolerance
+                                       precision = 200 # arithmetric precision used in sdpa_gmp
+                       )))
+A JuMP Model
+Feasibility problem with:
+Variables: 0
+Model mode: AUTOMATIC
+CachingOptimizer state: EMPTY_OPTIMIZER
+Solver name: SDPAFamily
+
+julia&gt; @variable(model, γ) # Create a JuMP decision variable for the lower bound
+γ
+
+julia&gt; # f(x) is the Goldstein-Price function
+       f1 = x1 + x2 + 1
+x1 + x2 + 1
+
+julia&gt; f2 = 19 - 14 * x1 + 3 * x1^2 - 14 * x2 + 6 * x1 * x2 + 3 * x2^2
+3x1² + 6x1x2 + 3x2² - 14x1 - 14x2 + 19
+
+julia&gt; f3 = 2 * x1 - 3 * x2
+2x1 - 3x2
+
+julia&gt; f4 = 18 - 32 * x1 + 12 * x1^2 + 48 * x2 - 36 * x1 * x2 + 27 * x2^2
+12x1² - 36x1x2 + 27x2² - 32x1 + 48x2 + 18
+
+julia&gt; f = (1 + f1^2 * f2) * (30 + f3^2 * f4)
+144x1⁸ - 288x1⁷x2 - 648x1⁶x2² + 1224x1⁵x2³ + 1305x1⁴x2⁴ - 1836x1³x2⁵ - 1458x1²x2⁶ + 972x1x2⁷ + 729x2⁸ - 768x1⁷ + 1344x1⁶x2 + 2592x1⁵x2² - 4080x1⁴x2³ - 3480x1³x2⁴ + 3672x1²x2⁵ + 1944x1x2⁶ - 648x2⁷ + 952x1⁶ - 168x1⁵x2 - 5370x1⁴x2² + 1240x1³x2³ + 8730x1²x2⁴ - 1188x1x2⁵ - 4428x2⁶ + 1344x1⁵ - 7680x1⁴x2 + 9840x1³x2² + 5040x1²x2³ - 11880x1x2⁴ + 1944x2⁵ - 2454x1⁴ + 5784x1³x2 + 7776x1²x2² - 23616x1x2³ + 14346x2⁴ - 1072x1³ + 7344x1²x2 - 19296x1x2² + 12288x2³ + 1260x1² - 4680x1x2 + 3060x2² + 720x1 + 720x2 + 600
+
+julia&gt; @constraint(model, f &gt;= γ) # Constrains f(x) - γ to be sum of squares
+(144)x1⁸ + (-288)x1⁷x2 + (-648)x1⁶x2² + (1224)x1⁵x2³ + (1305)x1⁴x2⁴ + (-1836)x1³x2⁵ + (-1458)x1²x2⁶ + (972)x1x2⁷ + (729)x2⁸ + (-768)x1⁷ + (1344)x1⁶x2 + (2592)x1⁵x2² + (-4080)x1⁴x2³ + (-3480)x1³x2⁴ + (3672)x1²x2⁵ + (1944)x1x2⁶ + (-648)x2⁷ + (952)x1⁶ + (-168)x1⁵x2 + (-5370)x1⁴x2² + (1240)x1³x2³ + (8730)x1²x2⁴ + (-1188)x1x2⁵ + (-4428)x2⁶ + (1344)x1⁵ + (-7680)x1⁴x2 + (9840)x1³x2² + (5040)x1²x2³ + (-11880)x1x2⁴ + (1944)x2⁵ + (-2454)x1⁴ + (5784)x1³x2 + (7776)x1²x2² + (-23616)x1x2³ + (14346)x2⁴ + (-1072)x1³ + (7344)x1²x2 + (-19296)x1x2² + (12288)x2³ + (1260)x1² + (-4680)x1x2 + (3060)x2² + (720)x1 + (720)x2 + (-γ + 600) is SOS
+
+julia&gt; @objective(model, Max, γ)
+γ
+
+julia&gt; optimize!(model)
+
+julia&gt; println(objective_value(model))
+3.0</code></pre><p>Let&#39;s check the input file that is used to specify the problem for the SDPA-GMP binary. The following command uses some implementation details of how JuMP stores the underlying optimizer and so may not work in later JuMP versions. However, the following path is always printed when setting <code>verbose = SDPAFamily.VERBOSE</code>.</p><pre><code class="language-julia-repl">julia&gt; path = joinpath(MOI.get(model, SDPAFamily.TemporaryDirectory()),  &quot;input.dat-s&quot;)
+&quot;/tmp/jl_9SKrlN/input.dat-s&quot;
+
+julia&gt; readlines(path)[1:10] .|&gt; println;
+45
+2
+-2 15
+-144.0 288.0 648.0 -1224.0 -1305.0 1836.0 1458.0 -972.0 -729.0 768.0 -1344.0 -2592.0 4080.0 3480.0 -3672.0 -1944.0 648.0 -952.0 168.0 5370.0 -1240.0 -8730.0 1188.0 4428.0 -1344.0 7680.0 -9840.0 -5040.0 11880.0 -1944.0 2454.0 -5784.0 -7776.0 23616.0 -14346.0 1072.0 -7344.0 19296.0 -12288.0 -1260.0 4680.0 -3060.0 -720.0 -720.0 -600.0
+0 1 1 1 1.0 
+0 1 2 2 -1.0 
+1 2 1 1 -1.0 
+2 2 2 1 -1.0 
+3 2 2 2 -1.0 
+3 2 3 1 -1.0</code></pre><p>The full file is longer, but what gets passed to the optimizer for this problem are floating point numbers that can be faithfully read by SDPA-GMP at the 200-bits of precision it uses internally. Thus, in this case, that JuMP restricts the Julia model to store the numbers at machine precision does not affect the precision of data that SDPA-GMP receives. It does, however, affect the precision of data that JuMP can recover from the output file. In this case, JuMP receives the correct answer to full machine precision (<span>$\sim 10^{-16}$</span>), but the true answer printed by SDPA-GMP (which can be seen in the file <code>output.dat-s</code>) is in fact correct to <span>$\sim 10^{-30}$</span> in this case.</p><p>For this kind of problem which uses JuMP, the precision advantage of SDPA-GMP over other problems is that SDPA-GMP should be able to solve the problem to the full <span>$\sim 10^{-16}$</span> precision representable by 64-bit floating point numbers, while solvers which solve the problem in machine precision can only recover the result to <span>$\sim 10^{-8}$</span>.</p><h2 id="SDP-relaxation-in-polynomial-optimization-problem"><a class="docs-heading-anchor" href="#SDP-relaxation-in-polynomial-optimization-problem">SDP relaxation in polynomial optimization problem</a><a id="SDP-relaxation-in-polynomial-optimization-problem-1"></a><a class="docs-heading-anchor-permalink" href="#SDP-relaxation-in-polynomial-optimization-problem" title="Permalink"></a></h2><p>We consider a polynomial optimization problem (POP) where we wish to find <span>$p^* = \inf \lbrace x | x \geq 0,\ x^2 \geq 1 \rbrace$</span>, which has an SDP relaxation of order <span>$r$</span> as</p><img src="https://latex.codecogs.com/svg.latex?\inline&space;\dpi{300}&space;\large&space;\begin{align*}&space;\text{minimize}&\&space;y_1&space;\\&space;\text{such&space;that}&&space;\begin{bmatrix}&space;1&space;&y_1&space;&\dots&space;&y_r&space;\\&space;y_1&space;&&space;y_2&space;&\dots&space;&y_{r&plus;1}&space;\\&space;\vdots&space;&&space;\vdots&space;&&space;\ddots&space;&\vdots&space;\\&space;y_r&space;&&space;y_{r&plus;1}&space;&\dots&space;&y_{2r}&space;\end{bmatrix}&space;&&space;\succeq&space;O\\&space;&&space;\begin{bmatrix}&space;y_1&space;&y_2&space;&\dots&space;&y_r&space;\\&space;y_2&space;&&space;y_3&space;&\dots&space;&y_{r&plus;1}&space;\\&space;\vdots&space;&&space;\vdots&space;&&space;\ddots&space;&\vdots&space;\\&space;y_r&space;&&space;y_{r&plus;1}&space;&\dots&space;&y_{2r-1}&space;\end{bmatrix}&space;&&space;\succeq&space;O\\&space;&\begin{bmatrix}&space;y_2&space;-&space;1&space;&y_3&space;-&space;y_1&space;&\dots&space;&y_{r&plus;1}&space;-&space;y_{r-1}&space;\\&space;y_3-y_1&space;&&space;y_4-y_2&space;&\dots&space;&y_{r&plus;2}&space;-&space;y_r&space;\\&space;\vdots&space;&&space;\vdots&space;&&space;\ddots&space;&\vdots&space;\\&space;y_{r&plus;1}&space;-&space;y_{r-1}&space;&&space;y_{r&plus;2}&space;-y_{r}&space;&\dots&space;&y_{2r}&space;-&space;y_{2r-2}&space;\end{bmatrix}&space;&&space;\succeq&space;O\\&space;&(y_1,\dots,y_{2r})&space;\in&space;\mathbb{R}^{2r}&space;\end{align*}" title="\large \begin{align*} \text{minimize}&\ y_1 \\ \text{such that}& \begin{bmatrix} 1 &y_1 &\dots &y_r \\ y_1 & y_2 &\dots &y_{r+1} \\ \vdots & \vdots & \ddots &\vdots \\ y_r & y_{r+1} &\dots &y_{2r} \end{bmatrix} & \succeq O\\ & \begin{bmatrix} y_1 &y_2 &\dots &y_r \\ y_2 & y_3 &\dots &y_{r+1} \\ \vdots & \vdots & \ddots &\vdots \\ y_r & y_{r+1} &\dots &y_{2r-1} \end{bmatrix} & \succeq O\\ &\begin{bmatrix} y_2 - 1 &y_3 - y_1 &\dots &y_{r+1} - y_{r-1} \\ y_3-y_1 & y_4-y_2 &\dots &y_{r+2} - y_r \\ \vdots & \vdots & \ddots &\vdots \\ y_{r+1} - y_{r-1} & y_{r+2} -y_{r} &\dots &y_{2r} - y_{2r-2} \end{bmatrix} & \succeq O\\ &(y_1,\dots,y_{2r}) \in \mathbb{R}^{2r} \end{align*}" align="middle"/><p>This is an example when most solvers fail due to numerical errors using Float64. It can be shown that for all <span>$r \geq 1$</span>, we have <span>$y_1^* = 0$</span> as the optimal value for the SDP relaxation. However, most solvers will report  <span>$y_1^* = 1$</span>, which is in fact the optimal value for <span>$p^*$</span> in the original problem. The details are discussed in [1]. Such problem can be overcome by using appropriate parameters for <code>SDPA-GMP</code>. We now demonstrate this using <code>Convex.jl</code>.</p><pre><code class="language-julia-repl">julia&gt; using SDPAFamily, SCS, Convex
+
+julia&gt; function relaxed_pop(r::Int, T)
+           v = Variable(2*r)
+           M1 = v[1:1+r]&#39;
+           for i in 2:r
+               M1 = vcat(M1, v[i:i+r]&#39;)
+           end
+           t = [1 v[1:r]&#39;]
+           M1 = vcat(t, M1)
+           c1 = M1 in :SDP
+           M2 = M1[2:end, 1:end-1]
+           c2 = M2 in :SDP
+           M3 = M1[2:end, 2:end] - M1[1:end-1, 1:end-1]
+           c3 = M3 in :SDP
+           return Problem{T}(:minimize, v[1], [c1, c2, c3])
+       end
+relaxed_pop (generic function with 1 method)
+
+julia&gt; p1 = relaxed_pop(5, Float64);
+
+julia&gt; solve!(p1, () -&gt; SCS.Optimizer(max_iters = 10000, verbose = 0));
+
+julia&gt; p2 = relaxed_pop(5, BigFloat);
+
+julia&gt; solve!(p2, () -&gt; SDPAFamily.Optimizer(presolve = true, verbose = SDPAFamily.SILENT,
+                   params = ( epsilonStar = 1e-90,
+                              epsilonDash = 1e-90,
+                              precision = 5000,
+                              betaStar = 0.5,
+                              betaBar = 0.5,
+                              gammaStar = 0.5,
+                              lambdaStar = 1e5,
+                              omegaStar = 2.0,
+                              maxIteration = 10000
+                              )));
+
+julia&gt; p1.status
+OPTIMAL::TerminationStatusCode = 1
+
+julia&gt; p1.optval
+1.0000018000700561
+
+julia&gt; p2.status
+OPTIMAL::TerminationStatusCode = 1
+
+julia&gt; p2.optval
+3.225928011631908053851026635729835526095312041976221702616664153931913217148134e-09</code></pre><p>[1] H. Waki, M. Nakata, and M. Muramatsu, ‘Strange behaviors of interior-point methods for solving semidefinite programming problems in polynomial optimization’, <em>Comput Optim Appl</em>, vol. 53, no. 3, pp. 823–844, Dec. 2012.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../usage/">« Usage</a><a class="docs-footer-nextpage" href="../issues/">Possible Issues &amp; Troubleshooting »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> on <span class="colophon-date" title="Wednesday 21 April 2021 23:09">Wednesday 21 April 2021</span>. Using Julia version 1.5.4.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
