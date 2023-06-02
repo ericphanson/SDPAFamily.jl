@@ -102,6 +102,10 @@ function MOI_tests(var, ::Type{T}) where {T}
             ],
         )
     end
+    if T != Float64
+        # See https://github.com/jump-dev/MathOptInterface.jl/issues/2189
+        push!(exclude, r"test_model_ScalarFunctionConstantNotZero$")
+    end
 
     MOI.Test.runtests(
         bridged,
