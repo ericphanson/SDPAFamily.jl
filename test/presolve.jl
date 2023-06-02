@@ -1,10 +1,8 @@
 using Test
 using Convex
-using MathOptInterface
+import MathOptInterface as MOI
 using SparseArrays
-const MOI = MathOptInterface
 const MOIT = MOI.Test
-const MOIU = MOI.Utilities
 const MOIB = MOI.Bridges
 
 import SDPAFamily

@@ -49,7 +49,7 @@ The following is a brief summary of the parameters. See the SDPA manual for more
     to Julia.
 
 """
-struct Params{variant, T <: Number}
+mutable struct Params{variant, T <: Number}
     maxIteration::Int
     epsilonStar::BigFloat
     lambdaStar::BigFloat

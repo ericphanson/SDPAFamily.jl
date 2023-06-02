@@ -87,14 +87,15 @@ function read_results!(
                 line = getnextline(io)
             end
         end
-    if optimizer.verbosity != SILENT && (norm(optimizer.b, Inf) < eps(norm(xMatvec, Inf)) || norm(optimizer.b, Inf) < eps(norm(yMatvec, Inf)))
-        @warn "Potential underflow detected. Check the results and use `BigFloat` entries if necessary."
-    end
+    # FIXME `optimizer.b` has been removed
+    #if optimizer.verbosity != SILENT && (norm(optimizer.b, Inf) < eps(norm(xMatvec, Inf)) || norm(optimizer.b, Inf) < eps(norm(yMatvec, Inf)))
+    #    @warn "Potential underflow detected. Check the results and use `BigFloat` entries if necessary."
+    #end
     xVecstring = remove_brackets!(xVecstring)
     xVecstring = split(xVecstring, ",")
     xVec = parse.(T, xVecstring)
-    optimizer.primalobj = parse(T, objValPrimalstring)
-    optimizer.dualobj = parse(T, objValDualstring)
+    optimizer.dualobj = parse(T, objValPrimalstring)
+    optimizer.primalobj = parse(T, objValDualstring)
     for i in redundant_entries
         splice!(xVec, i:i-1, zero(T))
     end
