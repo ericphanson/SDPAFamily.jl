@@ -70,31 +70,32 @@ end
 
     end
 
-    @testset "redundant constraints" begin
-        for n in 2:5
-            opt = SDPAFamily.Optimizer{Float64}(;silent = true, variant = :sdpa, presolve = true)
-            opt.no_solve = true
-            A = rand(Float64, n,n) + im*rand(Float64, n,n)
-            A = A + A' # now A is hermitian
-            x = ComplexVariable(n,n)
-            p = minimize(sumsquares(A - x), [x in :SDP])
-
-            @test_throws BoundsError solve!(p, opt)
-            @test length(SDPAFamily.presolve(opt)) == n^2 - n
-        end
-    end
-
-    @testset "inconsistent constraints" begin
-        m = SDPAFamily.Optimizer(verbose = SDPAFamily.WARN)
-        m.blockdims = [3]
-        m.elemdata = [(1, 1, 1, 1, big"1.0"), (1, 1, 2, 2, big"1.0"), (1, 1, 3, 3, big"1.0"),
-            (2, 1, 1, 2, big"2.0"), (2, 1, 2, 1, big"2.0"),
-            (3, 1, 1, 1, big"2.0"), (3, 1, 2, 2, big"2.0"), (3, 1, 3, 3, big"2.0"),
-            (3, 1, 1, 2, big"3.0"), (3, 1, 2, 1, big"3.0")]
-        m.b = [big"2.2", big"3.1", big"9.05"]
-        @test length(SDPAFamily.presolve(m))==1
-        m.b = [big"2.2", big"3.1", big"9.05"-eps(9.05)]
-        @test_logs (:warn, "Inconsistency at constraint index 1. Problem is dual infeasible.") SDPAFamily.presolve(m)
-    end
+#    # Presolve removed
+#    @testset "redundant constraints" begin
+#        for n in 2:5
+#            opt = SDPAFamily.Optimizer{Float64}(;silent = true, variant = :sdpa, presolve = true)
+#            opt.no_solve = true
+#            A = rand(Float64, n,n) + im*rand(Float64, n,n)
+#            A = A + A' # now A is hermitian
+#            x = ComplexVariable(n,n)
+#            p = minimize(sumsquares(A - x), [x in :SDP])
+#
+#            @test_throws BoundsError solve!(p, opt)
+#            @test length(SDPAFamily.presolve(opt)) == n^2 - n
+#        end
+#    end
+#
+#    @testset "inconsistent constraints" begin
+#        m = SDPAFamily.Optimizer(verbose = SDPAFamily.WARN)
+#        m.blockdims = [3]
+#        m.elemdata = [(1, 1, 1, 1, big"1.0"), (1, 1, 2, 2, big"1.0"), (1, 1, 3, 3, big"1.0"),
+#            (2, 1, 1, 2, big"2.0"), (2, 1, 2, 1, big"2.0"),
+#            (3, 1, 1, 1, big"2.0"), (3, 1, 2, 2, big"2.0"), (3, 1, 3, 3, big"2.0"),
+#            (3, 1, 1, 2, big"3.0"), (3, 1, 2, 1, big"3.0")]
+#        m.b = [big"2.2", big"3.1", big"9.05"]
+#        @test length(SDPAFamily.presolve(m))==1
+#        m.b = [big"2.2", big"3.1", big"9.05"-eps(9.05)]
+#        @test_logs (:warn, "Inconsistency at constraint index 1. Problem is dual infeasible.") SDPAFamily.presolve(m)
+#    end
 
 end
