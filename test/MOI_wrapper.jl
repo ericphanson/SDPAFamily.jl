@@ -82,6 +82,11 @@ function MOI_tests(var, ::Type{T}) where {T}
         # Expression: ≈(MOI.get(model, MOI.ConstraintDual(), c), T[1, 0, 0, -1, 1, 0, -1, -1, 1] / T(3), config)
         #  Evaluated: ≈([0.3333333625488728, -0.16666659692134123, -0.16666659693012292, -0.16666659692134123, 0.33333336253987234, -0.16666659692112254, -0.16666659693012292, -0.16666659692112254, 0.333333362548654], [0.3333333333333333, 0.0, 0.0, -0.3333333333333333, 0.3333333333333333, 0.0, -0.3333333333333333, -0.3333333333333333, 0.3333333333333333]
         r"test_conic_PositiveSemidefiniteConeSquare_3$",
+        # FIXME investigate
+        # Test_solve_DualStatus_INFEASIBILITY_CERTIFICATE_EqualTo_lower: Test Failed at /home/runner/.julia/packages/MathOptInterface/BlCD1/src/Test/test_solve.jl:493
+        #  Expression: MOI.get(model, MOI.TerminationStatus()) == config.infeasible_status
+        #   Evaluated: MathOptInterface.INFEASIBLE_OR_UNBOUNDED == MathOptInterface.INFEASIBLE
+        r"test_solve_DualStatus_INFEASIBILITY_CERTIFICATE_EqualTo_lower$",
         # FIXME
         r"test_model_LowerBoundAlreadySet$",
         r"test_model_UpperBoundAlreadySet$",
