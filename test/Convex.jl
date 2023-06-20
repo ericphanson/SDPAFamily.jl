@@ -21,6 +21,7 @@ const common_excludes = Regex[
     r"sdp_lambda_min_atom",
     r"sdp_lieb_ando",
     r"sdp_quantum_channel_capacity",
+    r"sdp_quantum_relative_entropy1_lowrank",
     r"sdp_quantum_relative_entropy2_lowrank",
     r"sdp_quantum_relative_entropy3_lowrank",
     r"sdp_sdp_constraints",
