@@ -123,10 +123,9 @@ function MOI_tests()
     @testset "MOI tests with variant $var" for var in variants
         @testset "MOI tests with type T=$T" for T in (
             Float64,
-            # BigFloat # not yet supported: MathOptInterface#41
+            BigFloat
         )
-            MOI_tests(var, Float64)
-            MOI_tests(var, BigFloat)
+            MOI_tests(var, T)
         end
     end
 end
