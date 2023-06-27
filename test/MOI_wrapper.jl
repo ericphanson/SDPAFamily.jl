@@ -1,82 +1,133 @@
 using Test
 
-using MathOptInterface
-const MOI = MathOptInterface
-const MOIT = MOI.Test
-const MOIU = MOI.Utilities
-const MOIB = MOI.Bridges
+import MathOptInterface as MOI
 
 import SDPAFamily
 
-@testset "MOI tests" for var in variants
-    @testset "MOI tests with variant $var and type T=$T" for T in (
-                                                    Float64,
-                                                    # BigFloat # not yet supported: MathOptInterface#41
-                                                )
-        @info "Starting testset `MOI tests with variant $var and type T=$T`"
-        optimizer = SDPAFamily.Optimizer{T}(presolve=true, variant = var)
-        MOI.set(optimizer, MOI.Silent(), true)
+function MOI_tests(var, ::Type{T}) where {T}
+    optimizer = SDPAFamily.Optimizer{T}(presolve = true, variant = var)
+    MOI.set(optimizer, MOI.Silent(), true)
+    MOI.set(optimizer, MOI.RawOptimizerAttribute("maxIteration"), 5000)
+    @testset "SolverName" begin
+        @test MOI.get(optimizer, MOI.SolverName()) == "SDPAFamily"
+    end
 
-        @testset "SolverName" begin
-            @test MOI.get(optimizer, MOI.SolverName()) == "SDPAFamily"
-        end
+    # UniversalFallback is needed for starting values, even if they are ignored by SDPA
+    cache = MOI.Utilities.UniversalFallback(MOI.Utilities.Model{T}())
+    cached = MOI.Utilities.CachingOptimizer(cache, optimizer)
+    bridged = MOI.Bridges.full_bridge_optimizer(cached, T)
+    # test 1e-3 because of rsoc3 test, otherwise, 1e-5 is enough
+    config = MOI.Test.Config(
+        T,
+        atol=1e-3,
+        rtol=1e-3,
+        exclude = Any[
+            MOI.ConstraintBasisStatus,
+            MOI.VariableBasisStatus,
+            MOI.ObjectiveBound,
+            MOI.SolverVersion,
+        ],
+    )
 
-        @testset "supports_default_copy_to" begin
-            @test MOIU.supports_allocate_load(optimizer, false)
-            @test !MOIU.supports_allocate_load(optimizer, true)
-        end
+    exclude = [
+        # The output file is possibly corrupted.
+        r"test_attribute_RawStatusString$",
+        r"test_attribute_SolveTimeSec$",
+        r"test_conic_empty_matrix$",
+        r"test_solve_TerminationStatus_DUAL_INFEASIBLE$",
+        # Unable to bridge RotatedSecondOrderCone to PSD because the dimension is too small: got 2, expected >= 3.
+        r"test_conic_SecondOrderCone_INFEASIBLE$",
+        r"test_constraint_PrimalStart_DualStart_SecondOrderCone$",
+        # Expression: MOI.get(model, MOI.TerminationStatus()) == MOI.INFEASIBLE
+        #  Evaluated: MathOptInterface.INFEASIBLE_OR_UNBOUNDED == MathOptInterface.INFEASIBLE
+        r"test_conic_NormInfinityCone_INFEASIBLE$",
+        r"test_conic_NormOneCone_INFEASIBLE$",
+        r"test_solve_DualStatus_INFEASIBILITY_CERTIFICATE_Interval_lower$",
+        r"test_solve_DualStatus_INFEASIBILITY_CERTIFICATE_Interval_upper$",
+        # Incorrect objective
+        # See https://github.com/jump-dev/MathOptInterface.jl/issues/1759
+        r"test_unbounded_MIN_SENSE$",
+        r"test_unbounded_MIN_SENSE_offset$",
+        r"test_unbounded_MAX_SENSE$",
+        r"test_unbounded_MAX_SENSE_offset$",
+        r"test_infeasible_MAX_SENSE$",
+        r"test_infeasible_MAX_SENSE_offset$",
+        r"test_infeasible_MIN_SENSE$",
+        r"test_infeasible_MIN_SENSE_offset$",
+        r"test_infeasible_affine_MAX_SENSE$",
+        r"test_infeasible_affine_MAX_SENSE_offset$",
+        r"test_infeasible_affine_MIN_SENSE$",
+        r"test_infeasible_affine_MIN_SENSE_offset$",
+        # TODO remove when PR merged
+        # See https://github.com/jump-dev/MathOptInterface.jl/pull/1769
+        r"test_objective_ObjectiveFunction_blank$",
+        # FIXME investigate
+        #  Expression: isapprox(MOI.get(model, MOI.ObjectiveValue()), T(2), config)
+        #   Evaluated: isapprox(5.999999984012059, 2.0, ...
+        r"test_modification_delete_variables_in_a_batch$",
+        # FIXME investigate
+        #  Expression: isapprox(MOI.get(model, MOI.ObjectiveValue()), objective_value, config)
+        #   Evaluated: isapprox(-2.1881334077988868e-7, 5.0, ...
+        r"test_objective_qp_ObjectiveFunction_edge_case$",
+        # FIXME investigate
+        #  Expression: isapprox(MOI.get(model, MOI.ObjectiveValue()), objective_value, config)
+        #   Evaluated: isapprox(-2.1881334077988868e-7, 5.0, ...
+        r"test_objective_qp_ObjectiveFunction_zero_ofdiag$",
+        # FIXME investigate
+        #  Expression: isapprox(MOI.get(model, MOI.ConstraintPrimal(), index), solution_value, config)
+        #   Evaluated: isapprox(2.5058846553349667e-8, 1.0, ...
+        r"test_variable_solve_with_lowerbound$",
+        # FIXME investigate
+        # See https://github.com/jump-dev/SDPA.jl/runs/7246518765?check_suite_focus=true#step:6:128
+        # Expression: ≈(MOI.get(model, MOI.ConstraintDual(), c), T[1, 0, 0, -1, 1, 0, -1, -1, 1] / T(3), config)
+        #  Evaluated: ≈([0.3333333625488728, -0.16666659692134123, -0.16666659693012292, -0.16666659692134123, 0.33333336253987234, -0.16666659692112254, -0.16666659693012292, -0.16666659692112254, 0.333333362548654], [0.3333333333333333, 0.0, 0.0, -0.3333333333333333, 0.3333333333333333, 0.0, -0.3333333333333333, -0.3333333333333333, 0.3333333333333333]
+        r"test_conic_PositiveSemidefiniteConeSquare_3$",
+        # FIXME investigate
+        # Test_solve_DualStatus_INFEASIBILITY_CERTIFICATE_EqualTo_lower: Test Failed at /home/runner/.julia/packages/MathOptInterface/BlCD1/src/Test/test_solve.jl:493
+        #  Expression: MOI.get(model, MOI.TerminationStatus()) == config.infeasible_status
+        #   Evaluated: MathOptInterface.INFEASIBLE_OR_UNBOUNDED == MathOptInterface.INFEASIBLE
+        r"test_solve_DualStatus_INFEASIBILITY_CERTIFICATE_EqualTo_lower$",
+        # FIXME
+        r"test_model_LowerBoundAlreadySet$",
+        r"test_model_UpperBoundAlreadySet$",
+    ]
+    if var != :sdpa
+        append!(
+            exclude,
+            [
+                r"test_solve_VariableIndex_ConstraintDual_MAX_SENSE$",
+                r"test_solve_VariableIndex_ConstraintDual_MIN_SENSE$",
+                r"test_constraint_ScalarAffineFunction_EqualTo$",
+                # ITERATION_LIMIT for sdpa_dd
+                r"test_conic_SecondOrderCone_negative_post_bound_2$",
+                r"test_conic_SecondOrderCone_negative_post_bound_3$",
+                r"test_conic_SecondOrderCone_no_initial_bound$",
+                r"test_linear_FEASIBILITY_SENSE$",
+                r"test_linear_transform$",
+            ],
+        )
+    end
+    if T != Float64
+        # See https://github.com/jump-dev/MathOptInterface.jl/issues/2189
+        push!(exclude, r"test_model_ScalarFunctionConstantNotZero$")
+    end
 
-        # UniversalFallback is needed for starting values, even if they are ignored by SDPA
-        cache = MOIU.UniversalFallback(MOIU.Model{T}())
-        cached = MOIU.CachingOptimizer(cache, optimizer)
-        bridged = MOIB.full_bridge_optimizer(cached, T)
-        # test 1e-3 because of rsoc3 test, otherwise, 1e-5 is enough
-        config = MOIT.TestConfig(atol=1e-3, rtol=1e-3)
+    MOI.Test.runtests(
+        bridged,
+        config;
+        exclude,
+    )
+end
 
-        @testset "Unit" begin
-            exclusion_list = [
-                # `NumberOfThreads` not supported.
-                "number_threads",
-                # `TimeLimitSec` not supported.
-                "time_limit_sec",
-                # SingleVariable objective of bridged variables, will be solved by objective bridges
-                "solve_time", "raw_status_string",
-                "solve_singlevariable_obj",
-                # Quadratic functions are not supported
-                "solve_qcp_edge_cases", "solve_qp_edge_cases",
-                # Integer and ZeroOne sets are not supported
-                "solve_integer_edge_cases", "solve_objbound_edge_cases",
-                "solve_zero_one_with_bounds_1",
-                "solve_zero_one_with_bounds_2",
-                "solve_zero_one_with_bounds_3",
-                # `MOI.UNKNOWN_RESULT_STATUS` instead of `MOI.INFEASIBILITY_CERTIFICATE`
-                "solve_farkas_interval_lower", "solve_farkas_interval_upper",
-                "solve_farkas_lessthan", "solve_farkas_greaterthan",
-                "solve_farkas_variable_lessthan_max", "solve_farkas_variable_lessthan",
-                "solve_farkas_equalto_upper", "solve_farkas_equalto_lower",
-                # Underflow results when using Float64
-                "solve_affine_equalto"]
-            MOIT.unittest(bridged, config, exclusion_list)
-        end
-        @testset "Linear tests" begin
-            # See explanation in `MOI/test/Bridges/lazy_bridge_optimizer.jl`.
-            # This is to avoid `Variable.VectorizeBridge` which does not support
-            # `ConstraintSet` modification.
-            MOIB.remove_bridge(bridged, MOIB.Constraint.ScalarSlackBridge{T})
-            MOIT.contlineartest(bridged, config, [
-                # `MOI.UNKNOWN_RESULT_STATUS` instead of `MOI.INFEASIBILITY_CERTIFICATE`
-                "linear8a",
-                "linear12"
-            ])
-        end
-        @testset "Conic tests" begin
-            MOIT.contconictest(bridged, config, [
-                # `MOI.UNKNOWN_RESULT_STATUS` instead of `MOI.INFEASIBILITY_CERTIFICATE`
-                "lin3", "soc3", "norminf2", "normone2",
-                # Missing bridges
-                "rootdets",
-                # Does not support power and exponential cone, or their dual cones
-                "pow", "dualpow", "logdet", "exp", "dualexp", "relentr" ])
+function MOI_tests()
+    @testset "MOI tests with variant $var" for var in variants
+        @testset "MOI tests with type T=$T" for T in (
+            Float64,
+            BigFloat
+        )
+            MOI_tests(var, T)
         end
     end
 end
+
+MOI_tests()

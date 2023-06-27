@@ -19,7 +19,7 @@ that every parameter is specified.
 julia> using SDPAFamily
 
 julia> P = SDPAFamily.Params{:sdpa_gmp, BigFloat}(maxIteration = 600)
-SDPAFamily.Params{:sdpa_gmp,BigFloat}(600, 1.0e-30, 10000.0, 2.0, -100000.0, 100000.0, 0.1, 0.3, 0.9, 1.0e-30, 200, "%+.Fe", "%+.Fe", "%+.Fe", "%+.Fe")
+SDPAFamily.Params{:sdpa_gmp, BigFloat}(600, 1.000000000000000083336420607585985350931336026868654502364509783548862515410206e-30, 10000.0, 2.0, -100000.0, 100000.0, 0.1000000000000000055511151231257827021181583404541015625, 0.299999999999999988897769753748434595763683319091796875, 0.90000000000000002220446049250313080847263336181640625, 1.000000000000000083336420607585985350931336026868654502364509783548862515410206e-30, 200, "%+.Fe", "%+.Fe", "%+.Fe", "%+.Fe")
 
 julia> SDPAFamily.Optimizer(params = P)
 SDPAFamily.Optimizer{BigFloat}
@@ -49,7 +49,7 @@ The following is a brief summary of the parameters. See the SDPA manual for more
     to Julia.
 
 """
-struct Params{variant, T <: Number}
+mutable struct Params{variant, T <: Number}
     maxIteration::Int
     epsilonStar::BigFloat
     lambdaStar::BigFloat

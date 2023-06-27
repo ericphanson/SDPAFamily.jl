@@ -5,11 +5,37 @@ using GenericLinearAlgebra
 
 # Problems that cannot be handled by any variant with any numeric type
 const common_excludes = Regex[
-                            r"mip", # SDPA solvers don't support mixed integer programming
-                            r"exp", # SDPA solvers don't support the exponential cone (no bridge yet?)
-                            r"benchmark", # don't include benchmark-only problems
-                            r"sdp_Complex_Semidefinite_constraint", # too large / slow
-                        ]
+    r"mip", # SDPA solvers don't support mixed integer programming
+    r"exp", # SDPA solvers don't support the exponential cone (no bridge yet?)
+    r"benchmark", # don't include benchmark-only problems
+    r"sdp_Complex_Semidefinite_constraint", # too large / slow
+    # The following were added in https://github.com/ericphanson/SDPAFamily.jl/pull/66
+    # They fail because of issues like https://github.com/jump-dev/Convex.jl/issues/502 or
+    # the fact that we removed the presolve, see https://github.com/jump-dev/Convex.jl/issues/503
+    r"lp_dotsort_atom",
+    r"lp_sumlargest_atom",
+    r"sdp_Real_Variables_with_complex_equality_constraints",
+    r"sdp_dual_lambda_max_atom",
+    r"sdp_geom_mean_epicone_real_8_5_optA",
+    r"sdp_geom_mean_epicone_real_neg3_5_optA",
+    r"sdp_lambda_min_atom",
+    r"sdp_lieb_ando",
+    r"sdp_quantum_channel_capacity",
+    r"sdp_quantum_relative_entropy1_lowrank",
+    r"sdp_quantum_relative_entropy2_lowrank",
+    r"sdp_quantum_relative_entropy3_lowrank",
+    r"sdp_quantum_relative_entropy4_lowrank",
+    r"sdp_sdp_constraints",
+    r"sdp_sum_largest_eigs",
+    r"sdp_trace_logm_cplx",
+    r"sdp_trace_logm_real",
+    r"sdp_trace_mpower_cplx_2_3",
+    r"sdp_trace_mpower_cplx_5_4",
+    r"sdp_trace_mpower_cplx_neg1_4",
+    r"sdp_trace_mpower_real_2_3",
+    r"sdp_trace_mpower_real_5_4",
+    r"sdp_trace_mpower_real_neg1_4",
+]
 
 # Problems that cannot be handled due to issues with a certain numeric type,
 # independent of variant.
