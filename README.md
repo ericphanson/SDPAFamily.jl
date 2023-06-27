@@ -5,6 +5,10 @@
 [![](https://img.shields.io/badge/docs-stable-blue.svg)](https://ericphanson.github.io/SDPAFamily.jl/stable)
 [![](https://img.shields.io/badge/docs-dev-blue.svg)](https://ericphanson.github.io/SDPAFamily.jl/dev)
 
+Note: v0.3.0 was released, which updates the package for MOI v1. This is also **disables the presolve in all cases** (even if it is set to `true`),
+which can cause incorrect results. See issue [#67](https://github.com/ericphanson/SDPAFamily.jl/issues/67) which tracks the status of restoring
+presolve functionality.
+
 An interface to using SDPA-GMP, SDPA-DD, and SDPA-QD in Julia
 (<http://sdpa.sourceforge.net>). This package is registered in the
 General registry; to install, type `]` in the Julia command prompt, then enter
