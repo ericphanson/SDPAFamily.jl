@@ -76,8 +76,8 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
     function Optimizer{T}(; variant = :sdpa_gmp, presolve::Bool = false, 
             silent::Bool = false,
             verbose::Verbosity = silent ? SILENT : WARN,
-            binary_path = BB_PATHS[variant],
-            use_WSL = HAS_WSL[variant],
+            binary_path::String = default_binary_path(variant),
+            use_WSL::Bool = default_use_WSL(variant),
             params::Union{Params, ParamsSetting, String, NamedTuple} = Params{variant, T}(),
             TemporaryDirectory::String = mktempdir(@get_scratch!("solves")),
             ) where T

@@ -1,11 +1,13 @@
 module SDPAFamily
 using SDPA_jll: SDPA_jll
+using SDPA_GMP_jll: SDPA_GMP_jll
+using SDPA_DD_jll: SDPA_DD_jll
+using SDPA_QD_jll: SDPA_QD_jll
 using LinearAlgebra # for diag()
 using DelimitedFiles # for writing SDPA input file
 using MathOptInterface
 const MOI = MathOptInterface
 const MOIB = MOI.Bridges
-using BinaryProvider
 using Scratch
 
 """
@@ -24,36 +26,55 @@ Options are `DEFAULT`, `UNSTABLE_BUT_FAST`, or `STABLE_BUT_SLOW`.
 """
 @enum ParamsSetting DEFAULT UNSTABLE_BUT_FAST STABLE_BUT_SLOW
 
-const DEPS_DIR = @get_scratch!(string("build_julia_", VERSION.major, ".", VERSION.minor, "_", Sys.KERNEL))
+"""
+    default_binary_path(variant::Symbol) -> String
 
-if !isfile(joinpath(DEPS_DIR, "deps.jl"))
-    error("""Build file not found. Please run `using Pkg; Pkg.build("SDPAFamily")` and
-             try loading the package again.""")
+Path to a user-supplied executable for `variant`, or `""` to use the executable from the
+corresponding `_jll` package. A custom executable is selected by setting the environment
+variable `JULIA_SDPA_GMP_PATH`, `JULIA_SDPA_DD_PATH`, `JULIA_SDPA_QD_PATH` or
+`JULIA_SDPA_PLAIN_PATH` to the directory that contains it.
+"""
+function default_binary_path(variant::Symbol)
+    var = PATH_ENV_VARS[variant]
+    haskey(ENV, var) || return ""
+    return joinpath(ENV[var], string(variant))
 end
 
-# The `deps.jl` file defines `HAS_WSL::Bool` and `sdpa_gmp::String`.
-#
-# `HAS_WSL == true` means we default to `use_WSL = true`
-# in SDPAFamily.Optimizer; otherwise we default to `use_WSL = false`.
-# if `use_WSL` is set to true for a given SDPAFamily.Optimizer, that means
-# in the binary call, we turn the paths into WSL paths.
-#
-# `sdpa_gmp` is the default path to the binary.
-include(joinpath(DEPS_DIR, "deps.jl"))
+const PATH_ENV_VARS = Dict(:sdpa_gmp => "JULIA_SDPA_GMP_PATH", :sdpa_dd => "JULIA_SDPA_DD_PATH",
+                           :sdpa_qd => "JULIA_SDPA_QD_PATH", :sdpa => "JULIA_SDPA_PLAIN_PATH")
 
-const prefix = Prefix(joinpath(DEPS_DIR, "usr"))
+"""
+    default_use_WSL(variant::Symbol) -> Bool
 
-function __init__()
-    check_deps()
+`true` if the environment variable `JULIA_SDPA_GMP_WSL` (or the `DD`/`QD`/`PLAIN` analogue)
+is set to `TRUE`. Then the custom executable from `default_binary_path` is run through WSL.
+"""
+function default_use_WSL(variant::Symbol)
+    var = replace(PATH_ENV_VARS[variant], "_PATH" => "_WSL")
+    return uppercase(get(ENV, var, "FALSE")) == "TRUE"
 end
 
 """
-    BB_PATHS::Dict{Symbol,String}
+    jll_command(variant::Symbol) -> Cmd
 
-Holds the binary-builder-built paths to the executables for `sdpa_gmp`, `sdpa_dd`, and `sdpa_qd`.
+The command (with library paths set in its environment) for the executable shipped by the
+`_jll` package for `variant`.
 """
-const BB_PATHS = Dict(:sdpa_gmp => sdpa_gmp, :sdpa_dd => sdpa_dd, :sdpa_qd => sdpa_qd, :sdpa => "")
-
+function jll_command(variant::Symbol)
+    jll = variant == :sdpa_gmp ? SDPA_GMP_jll :
+          variant == :sdpa_dd  ? SDPA_DD_jll  :
+          variant == :sdpa_qd  ? SDPA_QD_jll  :
+          variant == :sdpa     ? SDPA_jll     :
+          throw(ArgumentError("unknown variant $variant"))
+    if !jll.is_available()
+        error("""No prebuilt `$variant` executable is available for this platform
+                 ($(Base.BinaryPlatforms.triplet(Base.BinaryPlatforms.HostPlatform()))).
+                 Set `$(PATH_ENV_VARS[variant])` to the directory of a `$variant` executable
+                 (and `$(replace(PATH_ENV_VARS[variant], "_PATH" => "_WSL"))=TRUE` to run it through WSL),
+                 or pass `binary_path` to `SDPAFamily.Optimizer`.""")
+    end
+    return getproperty(jll, variant)()
+end
 
 """
     WSLize_path(path::String) -> String

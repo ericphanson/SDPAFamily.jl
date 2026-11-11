@@ -37,7 +37,7 @@ and then build the package. This can be done in Julia by, e.g.,
 ```julia
 ENV["JULIA_SDPA_GMP_PATH"] = "/path/to/folder/"
 import Pkg
-Pkg.build("SDPAFamily")
+# (no build step is needed any more; binaries come from SDPA_GMP_jll, SDPA_DD_jll, SDPA_QD_jll)
 ```
 
 and that will configure this package to use that binary by default. If your

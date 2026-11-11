@@ -24,20 +24,21 @@ function sdpa_gmp_binary_solve!(m::Optimizer, full_input_path::String, full_outp
         arg = `-ds $full_input_path -o $full_output_path -p $(params_path)`
     end
 
-    if m.variant == :sdpa
-        error_messages, miss = SDPA_jll.sdpa() do path
-            run_binary(`$path $arg`, m.verbosity)
-        end
-    elseif m.use_WSL
+    if m.use_WSL
+        isempty(m.binary_path) && throw(ArgumentError("`use_WSL = true` requires a `binary_path`."))
         wsl_binary_path = dirname(normpath(m.binary_path))
         error_messages, miss = cd(wsl_binary_path) do
-            var = string(m.variant)
+            var = basename(m.binary_path)
             run_binary(`wsl ./$var $arg`, m.verbosity)
         end
+    elseif !isempty(m.binary_path)
+        error_messages, miss = run_binary(`$(m.binary_path) $arg`, m.verbosity)
     else
-        error_messages, miss = withenv([prefix]) do
-            run_binary(`$(m.binary_path) $arg`, m.verbosity)
-        end
+        base = jll_command(m.variant)
+        # Interpolating `base` into a new `Cmd` drops its `env`, which holds the library
+        # search path for the JLL's dependencies, so carry it over explicitly.
+        cmd = Cmd(`$base $arg`; env = base.env, dir = base.dir)
+        error_messages, miss = run_binary(cmd, m.verbosity)
     end
 
     error_log_path = joinpath(m.tempdir, "errors.log")
