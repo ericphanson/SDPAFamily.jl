@@ -102,7 +102,8 @@ After SDPA has run, the presolve checks the result against your model. Three
 outcomes need attention:
 
 * `NUMERICAL_ERROR`: SDPA reported a result, but it does not satisfy the model to
-  about half of the digits of SDPA's tolerances. The primal and dual statuses are
+  about half of the digits of SDPA's tolerances, also after a second solve with
+  a different rescaling of the problem. The primal and dual statuses are
   `UNKNOWN_RESULT_STATUS`; the values are still available, and
   `MOI.RawStatusString` names SDPA's status and the check that failed. This
   usually means that the model is badly scaled (see
