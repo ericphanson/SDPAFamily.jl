@@ -76,7 +76,7 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
     # `nothing`, or a `PresolveData{T}` (see `presolve.jl`) after a solve with presolve
     presolve_data::Any
     # the dependence and consistency tolerance of the presolve, or `nothing` for the
-    # default `64 eps(T)` (see `data_tol` in `presolve.jl`)
+    # default `64 eps(T)` (see `Tolerances` in `presolve/elimination.jl`)
     presolve_tol::Union{Nothing,Real}
     function Optimizer{T}(; variant = :sdpa_gmp, presolve::Bool = true,
             presolve_tol::Union{Nothing,Real} = nothing,
@@ -276,8 +276,8 @@ function MOI.optimize!(dest::Optimizer{T}, src::MOI.ModelLike) where {T}
     if !dest.no_solve && dest.presolve
         reason = postsolve!(dest)
         if reason !== nothing
-            # The solution of the reduced problem did not pass the checks against the
-            # model; solve the model without reduction.
+            # What the presolve removed does not hold at the solution of the reduced
+            # problem; solve the model without reduction.
             model = fallback_model!(dest, "the solution of the reduced problem did not pass the check: $reason")
             run_sdpa!(dest, model, full_input_path, full_output_path)
             postsolve!(dest)

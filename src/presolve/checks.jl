@@ -150,119 +150,142 @@ end
 valid_certificate(data::PresolveData, yK, yE, tol) =
     valid_certificate(data.A, data.b, data.AE, data.bE, yK, yE, tol)
 
-# The constraint tolerance `epsilonStar` and the gap tolerance `epsilonDash` of the
-# solver parameters, or `nothing` if the parameters are given as a file or as
-# `UNSTABLE_BUT_FAST`/`STABLE_BUT_SLOW`.
+# The tolerances `epsilonStar` and `epsilonDash` of the solver parameters. The preset
+# parameter modes of SDPA use `1e-7` for both. If the parameters are given as a file
+# that cannot be read as a parameter file of SDPA, returns `nothing`.
 function solver_tolerances(optimizer::Optimizer{T}) where {T}
     P = optimizer.params
     if P isa ParamsSetting
-        P == DEFAULT || return nothing
+        P == DEFAULT || return (1e-7, 1e-7)
         P = Params{optimizer.variant,T}()
     end
-    return P isa Params ? (Float64(P.epsilonStar), Float64(P.epsilonDash)) : nothing
+    P isa Params && return (Float64(P.epsilonStar), Float64(P.epsilonDash))
+    try
+        # lines 2 and 10 of a parameter file of SDPA
+        lines = readlines(P)
+        value(i) = parse(Float64, first(split(lines[i])))
+        return (value(2), value(10))
+    catch
+        return nothing
+    end
 end
 solver_feasibility_tol(optimizer::Optimizer) =
     (t = solver_tolerances(optimizer); t === nothing ? 0.0 : t[1])
 
-# The tolerance of the checks of a solution returned by SDPA against the model: the
-# square root of the solver tolerances (or `1e-4` if they are not known). The checks are
-# gross: they catch results that are wrong, not results that are inaccurate.
+# The tolerance of `check_sdpa_result`: the square root of the solver tolerances, that
+# is, half of the digits that SDPA was asked for (the convention of `isapprox`); `1e-4`
+# if they are not known. The check catches results that are wrong, not results that
+# are inaccurate.
 function check_tol(optimizer::Optimizer, data::PresolveData{T,H}) where {T,H}
     t = solver_tolerances(optimizer)
     t === nothing && return max(H(1e-4), sqrt(data.data_tol))
     return sqrt(max(data.data_tol, H(t[1]), H(t[2])))
 end
 
-# Gross checks of the result of SDPA, mapped back to the problem with cone constraints
-# `A x + b ∈ sets`, equality constraints `AE x + bE = 0` and objective `c'x` (with
-# equilibrated rows), at the point `x` with the cone duals `yK` (weighted as in
-# `weighted_dual_vector`) and the equality duals `yE`: the primal point (or ray) and
-# the duality gap. (Certificates are checked by `check_sdpa_certificate`, and the dual
-# equations of the reduced problem in `postsolve!`.) The residuals are compared with
-# `tol` times the largest term of the same kind (the rows are equilibrated, so their
-# terms are comparable); a residual of an individual row relative to its own terms is
-# not meaningful for rows that hold with equality at a point near zero. Returns
-# `nothing`, or the failed check.
-function check_result(optimizer::Optimizer, sets, A, b, c, AE, bE, x, yK, yE, tol, unit)
-    pstat = MOI.get(optimizer, MOI.PrimalStatus())
-    dstat = MOI.get(optimizer, MOI.DualStatus())
-    H = eltype(b)
-    nrm(v) = maximum(abs, v; init = zero(H))
-    dot(u, v) = sum(u .* v; init = zero(H))
-    all(isfinite, x) && all(isfinite, yK) && all(isfinite, yE) || return "the result is not finite"
-    if pstat in (MOI.FEASIBLE_POINT, MOI.INFEASIBILITY_CERTIFICATE)
-        # a point, or a ray (`b` and `bE` do not count)
-        ray = pstat == MOI.INFEASIBILITY_CERTIFICATE
-        s, m = _apply(A, x)
-        r, rm = _apply(AE, x)
-        if !ray
-            s .+= b
-            m .+= abs.(b)
-            r .+= bE
-            rm .+= abs.(bE)
-        end
-        scale = max(nrm(m), nrm(rm))
-        in_cone(sets, s, fill(scale, length(s)), tol)[1] ||
-            return "the primal $(ray ? "ray" : "point") violates a cone constraint"
-        nrm(r) <= tol * scale || return "the primal $(ray ? "ray" : "point") violates an equality constraint"
-        ray && !(dot(c, x) < 0) && return "the primal ray does not decrease the objective"
-    end
-    if optimizer.phasevalue == :pdOPT
-        # The gap relative to its terms, with the floor `unit`: the size in the model of
-        # an objective value of 1 in the problem solved by SDPA, for which SDPA's gap
-        # criterion is absolute.
-        p = dot(c, x)
-        d = -(dot(b, yK) + dot(bE, yE))
-        mag = dot(abs.(c), abs.(x)) + dot(abs.(b), abs.(yK)) + dot(abs.(bE), abs.(yE))
-        abs(p - d) <= tol * (mag + unit) || return "the duality gap is not small"
-    end
-    return nothing
-end
-
-# The tolerance of `check_sdpa_certificate`.
+# The tolerance of the check of an infeasibility certificate returned by SDPA, see
+# `check_sdpa_result`.
 const CERTIFICATE_TOL = 1e-3
 
-# Checks an infeasibility certificate returned by SDPA on the scaled problem written for
-# SDPA (`data.sdpa_problem`, before the solution is scaled back), in which solutions of
-# size 1 are expected. SDPA returns its last iterate, not a ray, so its certificates
-# satisfy `A'y = 0` (or `A d ∈ K`) only approximately; the check asks for the bound
-# that the approximate certificate proves:
-#
-# * dual certificate `y` (`y ∈ K*`, `b'y < 0`, residual `r = A'y`): every feasible `x`
-#   has `r'x = y'(A x + b) - b'y ≥ |b'y|`, so `‖x‖∞ ≥ |b'y| / ‖r‖₁`;
-# * primal ray `d` (`c'd < 0`, `A d + v ∈ K` with a violation `v`): every dual feasible
-#   `y` has `|c'd| = |y'(A d)| ≤ ‖y‖∞ ‖v‖₁` up to the PSD blocks, so `‖y‖∞ ≥ |c'd| / ‖v‖₁`.
-#
-# The certificate is accepted if this bound is at least `1 / CERTIFICATE_TOL`, that is,
-# if it excludes all solutions up to 1000 times the size at which SDPA solved the
-# problem. Returns `nothing`, or the failed check.
-function check_sdpa_certificate(optimizer::Optimizer{T}) where {T}
+"""
+    check_sdpa_result(optimizer) -> Union{Nothing,String}
+
+Checks the result of SDPA on the scaled problem `min c'x : A x + b ∈ K` that was
+written for SDPA (`data.sdpa_problem`), before the solution is scaled back. Returns
+`nothing`, or the failed check.
+
+A primal or dual solution that SDPA reports as feasible, and a result that is reported
+as optimal, must satisfy the stopping criteria of SDPA with the tolerance `γ` of
+`check_tol` in place of `epsilonDash` and `epsilonStar`:
+
+* `A x + b + γ s I ∈ K` with `s = max(1, ‖|A| |x| + |b|‖∞)`,
+* `‖c - A'y‖∞ ≤ γ max(1, ‖|c| + |A|'|y|‖∞)`,
+* `|c'x + b'y| ≤ γ max(1, (|c'x| + |b'y|) / 2)` (for a result reported as optimal,
+  which includes SDPA's status `pdFEAS`).
+
+The gap criterion must also hold in the units of the model, for the gap that SDPA's
+tolerance admits: with `p` and `d` the objective values of the scaled problem, `σ` the
+factor of the objective, and `p_m`, `d_m` the objective values of the model (`p / σ`,
+`d / σ` plus the constant of the substitution),
+
+    max(|p - d|, epsilonStar max(1, |p|, |d|)) / σ ≤ γ max(1, (|p_m| + |d_m|) / 2).
+
+SDPA applies its gap tolerance to the scaled objective, with the absolute floor 1. If
+the scaled optimal value is far below 1 and `1/σ` is large (the scaling could not
+tell that the objective is small), a gap within the tolerance is large compared to
+the objective value of the model; without the presolve SDPA would not have accepted
+it.
+
+SDPA does not return rays. It reports unboundedness when the objective of a feasible
+iterate passes its parameter `lowerBound` or `upperBound` (`±1e5` by default), and
+returns that iterate, which satisfies `A'y = c` (or `A d + b ∈ K`) instead of
+`A'y = 0` (`A d ∈ K`). The check is the criterion of the solvers that detect
+infeasibility from approximate certificates (SCS, OSQP, Clarabel), with the
+tolerance `ε = CERTIFICATE_TOL`:
+
+* dual certificate `y` (`y ∈ K*`): `b'y < 0` and `‖A'y‖∞ ≤ ε |b'y|`. Every feasible
+  `x` has `(A'y)'x = y'(A x + b) - b'y ≥ |b'y|`, so `‖x‖₁ ≥ 1/ε`;
+* primal ray `d`: `c'd < 0` and `A d + ε |c'd| I ∈ K` (`k ε` for a PSD block of side
+  dimension `k`). Every dual feasible `y` has
+  `|c'd| = |y'(A d)| ≤ ε |c'd| ‖y‖₁` (with the trace norm for PSD blocks), so
+  `‖y‖₁ ≥ 1/ε`.
+
+In the scaled problem `‖c‖∞ < 2` and `‖b‖∞ < 2`, so an iterate that SDPA reports with
+its default bounds has `‖A'y‖∞ / |b'y| < 2e-5`. The tolerance `1e-3` accepts
+certificates that are 50 times weaker, and rejects those that only exclude solutions
+of norm less than 1000 in the scaled problem, in which solutions of norm 1 are
+expected.
+"""
+function check_sdpa_result(optimizer::Optimizer{T}) where {T}
     data = optimizer.presolve_data
     pstat = MOI.get(optimizer, MOI.PrimalStatus())
     dstat = MOI.get(optimizer, MOI.DualStatus())
-    (pstat == MOI.INFEASIBILITY_CERTIFICATE || dstat == MOI.INFEASIBILITY_CERTIFICATE) || return nothing
     return with_work_precision(T) do
         H = eltype(data.b)
         A, b, c, sets = data.sdpa_problem
-        tol = H(CERTIFICATE_TOL)
+        γ = check_tol(optimizer, data)
+        ε = H(CERTIFICATE_TOL)
+        nrm(v) = maximum(abs, v; init = zero(H))
         dot(u, v) = sum(u .* v; init = zero(H))
-        if dstat == MOI.INFEASIBILITY_CERTIFICATE
-            y = weighted_dual_vector(optimizer, optimizer.X, H)
-            all(isfinite, y) || return "the certificate of infeasibility is not finite"
+        x = H.(optimizer.y[data.keep])
+        y = weighted_dual_vector(optimizer, optimizer.X, H)
+        all(isfinite, x) && all(isfinite, y) || return "the result of SDPA is not finite"
+        if pstat == MOI.FEASIBLE_POINT
+            s, m = _apply(A, x)
+            s .+= b
+            m .+= abs.(b)
+            in_cone(sets, s, fill(max(one(H), nrm(m)), length(s)), γ)[1] ||
+                return "the primal point violates a cone constraint"
+        elseif pstat == MOI.INFEASIBILITY_CERTIFICATE
+            cd = dot(c, x)
+            cd < 0 || return "the primal ray does not decrease the objective"
+            # `A d` must be in the cone up to a violation of size `ε |c'd|`
+            s = A * x
+            in_cone(sets, s, fill(abs(cd), length(s)), ε)[1] ||
+                return "the primal ray does not satisfy the cone constraints closely enough"
+        end
+        if dstat == MOI.FEASIBLE_POINT
+            r = c .- transpose(A) * y
+            m = abs.(c) .+ transpose(abs.(A)) * abs.(y)
+            nrm(r) <= γ * max(one(H), nrm(m)) || return "the dual solution violates the dual equations"
+        elseif dstat == MOI.INFEASIBILITY_CERTIFICATE
             by = dot(b, y)
             by < 0 || return "the certificate of infeasibility does not have b'y < 0"
-            sum(abs, transpose(A) * y; init = zero(H)) <= tol * abs(by) ||
+            nrm(transpose(A) * y) <= ε * abs(by) ||
                 return "the certificate of infeasibility does not satisfy A'y = 0 closely enough"
         end
-        if pstat == MOI.INFEASIBILITY_CERTIFICATE
-            d = H.(optimizer.y[data.keep])
-            all(isfinite, d) || return "the primal ray is not finite"
-            cd = dot(c, d)
-            cd < 0 || return "the primal ray does not decrease the objective"
-            # `A d` must be in the cone up to a violation of total size `tol |c'd|`
-            s = A * d
-            in_cone(sets, s, fill(abs(cd) / length(s), length(s)), tol)[1] ||
-                return "the primal ray does not satisfy the cone constraints closely enough"
+        if MOI.get(optimizer, MOI.TerminationStatus()) == MOI.OPTIMAL
+            p, d = dot(c, x), -dot(b, y)
+            abs(p - d) <= γ * max(one(H), (abs(p) + abs(d)) / 2) || return "the duality gap is not small"
+            # The gap in the units of the model. SDPA accepts a gap of `εgap` times
+            # `max(1, objective)` of the scaled problem, so the gap can be that large.
+            t = solver_tolerances(optimizer)
+            εgap = t === nothing ? γ^2 : H(t[1])
+            gap = max(abs(p - d), εgap * max(one(H), abs(p), abs(d)))
+            σ = data.post.obj
+            shift = optimizer.objsign * H(data.objconstant_delta)
+            pm, dm = p / σ + shift, d / σ + shift
+            gap / σ <= γ * max(one(H), (abs(pm) + abs(dm)) / 2) ||
+                return "the gap tolerance of SDPA does not resolve the objective value of the model"
         end
         return nothing
     end
