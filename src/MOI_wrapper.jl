@@ -165,6 +165,7 @@ const RAW_STATUS = Dict(
     :pINF_dFEAS => "The dual problem has become feasible but the primal problem is expected to be infeasible.",
     :pUNBD => "The primal problem is expected to be unbounded.",
     :dUNBD => "The dual problem is expected to be unbounded.",
+    :pdFEAS_gap => "Both primal problem and the dual problem got feasible, but the iteration has exceeded the maxIteration and stopped, and the duality gap is not small.",
     :presolve_dINF => "The presolve found that the dual problem is infeasible, and SDPA was not called. The primal solution is a ray that certifies the dual infeasibility.",
     :presolve_pINF => "The presolve found that the equality constraints are inconsistent, and SDPA was not called. The dual solution is a certificate of infeasibility.",
     :presolve_OPT => "The presolve determined all variables, and the constraints are satisfied up to the constraint tolerance `epsilonStar`. SDPA was not called.",
@@ -331,6 +332,8 @@ function MOI.get(m::Optimizer, ::MOI.TerminationStatus)
         return MOI.SLOW_PROGRESS
     elseif status == :pdFEAS
         return MOI.OPTIMAL
+    elseif status == :pdFEAS_gap
+        return MOI.ITERATION_LIMIT
     elseif status == :pdINF
         return MOI.INFEASIBLE_OR_UNBOUNDED
     elseif status == :pFEAS_dINF
@@ -375,7 +378,7 @@ function MOI.get(m::Optimizer, attr::MOI.PrimalStatus)
         return MOI.FEASIBLE_POINT
     elseif status == :dFEAS
         return MOI.UNKNOWN_RESULT_STATUS
-    elseif status == :pdFEAS
+    elseif status == :pdFEAS || status == :pdFEAS_gap
         return MOI.FEASIBLE_POINT
     elseif status == :pdINF
         return MOI.UNKNOWN_RESULT_STATUS
@@ -410,7 +413,7 @@ function MOI.get(m::Optimizer, attr::MOI.DualStatus)
         return MOI.UNKNOWN_RESULT_STATUS
     elseif status == :dFEAS
         return MOI.FEASIBLE_POINT
-    elseif status == :pdFEAS
+    elseif status == :pdFEAS || status == :pdFEAS_gap
         return MOI.FEASIBLE_POINT
     elseif status == :pdINF
         return MOI.UNKNOWN_RESULT_STATUS

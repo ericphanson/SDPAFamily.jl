@@ -87,8 +87,11 @@ In these cases, `presolve = false` passes the problem to SDPA unchanged.
 
 Two properties of the SDPA interface are independent of the presolve:
 
-* The SDPA status `pdFEAS` (both iterates feasible, iteration limit reached) is
-  reported as `OPTIMAL`, even when the duality gap is not small.
+* With `presolve = false`, the SDPA status `pdFEAS` (both iterates feasible,
+  iteration limit reached) is reported as `OPTIMAL`, even when the duality gap
+  is not small. With the presolve, it is reported as `OPTIMAL` only if the gap
+  passes the checks described in [Checks and fallback](@ref), and as
+  `ITERATION_LIMIT` otherwise.
 * With `presolve = false`, an `INFEASIBILITY_CERTIFICATE` computed by SDPA is
   SDPA's last iterate, which need not be a ray (`A^T y = 0`). With the presolve,
   certificates are checked as described in [Checks and fallback](@ref).
