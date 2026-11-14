@@ -75,7 +75,7 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
 	variant::Symbol
     # `nothing`, or a `PresolveData{T}` (see `presolve.jl`) after a solve with presolve
     presolve_data::Any
-    function Optimizer{T}(; variant = :sdpa_gmp, presolve::Bool = false, 
+    function Optimizer{T}(; variant = :sdpa_gmp, presolve::Bool = true, 
             silent::Bool = false,
             verbose::Verbosity = silent ? SILENT : WARN,
             binary_path = BB_PATHS[variant],
