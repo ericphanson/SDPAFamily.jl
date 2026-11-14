@@ -12,12 +12,8 @@ The main object of interest supplied by this package is
   `silent=true`), `SDPAFamily.WARN` (which is the default), or
   `SDPAFamily.VERBOSE`, which prints all output from the binary as well as
   additional warnings.
-* `presolve`: whether or not to run a presolve routine to remove linearly
-  dependent constraints. See below for more details. Defaults to `false`. Note,
-  `presolve=true` is required to pass many of the tests for this package;
-  linearly independent constraints are an assumption of the SDPA-family, but
-  constraints generated from high level modelling languages often do have linear
-  dependence between them.
+* `presolve`: whether to run the presolve described in [Presolve](@ref) before
+  calling the solver. Defaults to `true`.
 * `binary_path`: a string representing a path to the SDPA-GMP binary to use. The
   default is chosen at `build` time. To change the default binaries, see [Custom
   binary](@ref).
@@ -54,57 +50,103 @@ reading the solution file, particularly when `MathOptInterface` bridges are
 used. Note that with `MathOptInterface` all the problem data must be
 parametrised by the same number type, i.e. `Float64` in this case.
 
-## Using presolve
+## Presolve
 
-SDPA-GMP will emit `cholesky miss condition :: not positive definite` error when
-the problem data contain linearly dependent constraints. Set `presolve=true` to
-use a presolve routine which tries to detect such constraints by Gaussian
-elimination. The redundant constraints are omitted from the problem formulation
-and the corresponding redundant decision variables are set to 0 in the final
-result. The time taken to perform the presolve step depends on the size of the
-problem. This process is numerically unstable, so is disabled by default. It
-does help quite a lot with some problems, however.
+SDPA solves the pair of problems
 
-```@setup convexquantum
-using SDPAFamily, Test, Convex
-ρ₁ = Complex{BigFloat}[1 0; 0 0]
-ρ₂ = (1//2)*Complex{BigFloat}[1 -im; im 1]
-E₁ = ComplexVariable(2, 2);
-E₂ = ComplexVariable(2, 2);
-problem = maximize( real((1//2)*tr(ρ₁*E₁) + (1//2)*tr(ρ₂*E₂)),
-                    [E₁ ⪰ 0, E₂ ⪰ 0, E₁ + E₂ == Diagonal(ones(2))];
-                    numeric_type = BigFloat );
-opt = () -> SDPAFamily.Optimizer(presolve = true, variant = :sdpa_gmp, silent = true);
+```math
+\begin{aligned}
+(P) \quad & \text{minimize } c^T x && \text{subject to } F_1 x_1 + \dots + F_m x_m - F_0 \succeq 0, \\
+(D) \quad & \text{maximize } F_0 \bullet Y && \text{subject to } F_i \bullet Y = c_i \text{ for } i = 1, \dots, m, \ Y \succeq 0.
+\end{aligned}
 ```
 
-We demonstrate `presolve` using the problem defined in [Optimal guessing
-probability for a pair of quantum states](@ref). When `presolve` is disabled,
-SDPA solvers will terminate prematurely due to linear dependence in the input
-constraints. Note, however, that this does not necessarily happen. Empirically,
-for our test cases, solvers' intolerance to redundant constraints increases from
-`:sdpa` to `:sdpa_gmp`.
+The variables of (P) are the variables of the MathOptInterface model, and each
+constraint of the model is a block of the matrices ``F_i``. Models built with
+Convex.jl, JuMP or MathOptInterface bridges often have two properties that the
+primal-dual interior point method of SDPA handles poorly:
 
-```@repl convexquantum
-solve!(problem, () -> SDPAFamily.Optimizer(presolve = false))
+1. Equality constraints. Without a presolve, MathOptInterface writes each
+   equality constraint ``a^T x + b = 0`` as the two inequalities
+   ``a^T x + b \ge 0`` and ``-a^T x - b \ge 0``. Then (P) has no strictly
+   feasible point.
+2. Linearly dependent matrices ``F_i``. Then the equality constraints of (D) are
+   linearly dependent, and the Schur complement matrix that SDPA factorizes in
+   each iteration is singular. SDPA then prints `cholesky miss condition`
+   warnings, stops at the iteration limit, or returns an inaccurate point.
+
+With `presolve = true` (the default), SDPAFamily removes both before it writes
+the input file. The computations use the number type `T` of
+`SDPAFamily.Optimizer{T}`, so with `BigFloat` they are carried out at the
+precision of `BigFloat`.
+
+1. Gaussian elimination on the equality constraints expresses one variable for
+   each linearly independent equality constraint as an affine function of the
+   other variables. These expressions are substituted into the other
+   constraints and the objective. A linearly dependent equality constraint is
+   dropped if it is consistent with the others. If it is not, the model is
+   infeasible: the termination status is `INFEASIBLE`, the dual status is
+   `INFEASIBILITY_CERTIFICATE`, and SDPA is not called.
+2. Gaussian elimination on the matrices ``F_i`` of the remaining problem finds a
+   maximal linearly independent subset. The other variables are fixed to zero.
+   If ``F_k = \sum_i a_i F_i`` but ``c_k \ne \sum_i a_i c_i``, then (D) is
+   infeasible: the termination status is `DUAL_INFEASIBLE`, the primal status
+   is `INFEASIBILITY_CERTIFICATE` (an unbounded ray), and SDPA is not called.
+
+After SDPA has solved the reduced problem, the solution is mapped back to the
+model. The values of the eliminated variables are computed from the other
+variables. The primal and dual values of the cone constraints need no
+correction. The dual values ``y_E`` of the equality constraints are computed from
+the dual values ``y_K`` of the cone constraints by solving
+``A_E^T y_E = c - A_K^T y_K``, where ``A_E`` and ``A_K`` are the coefficient
+matrices of the equality and cone constraints. Dropped equality constraints
+have the dual value zero.
+
+If the equality constraints determine all variables, SDPA is not called. The
+termination status is `OPTIMAL` if the cone constraints hold up to a relative
+tolerance of `sqrt(eps(T))`, `ALMOST_OPTIMAL` (with primal status
+`NEARLY_FEASIBLE_POINT`) if they hold up to `sqrt(eps(Float64))`, and
+`INFEASIBLE` (without a certificate) otherwise.
+
+A row or column counts as linearly dependent if, after elimination, its largest
+remaining entry is at most `sqrt(eps(T))` times its largest original entry. Rows
+or columns that are close to dependent but above this tolerance are kept.
+
+With `presolve = false`, the problem is passed to SDPA unchanged, with equality
+constraints bridged into pairs of inequalities.
+
+The following problem has two variables whose matrices ``F_i`` are equal:
+
+```@repl presolve
+using SDPAFamily, Convex
+x = Variable(); y = Variable();
+problem = minimize(x + y, [x + y >= 1]; numeric_type = BigFloat);
+solve!(problem, () -> SDPAFamily.Optimizer(presolve = false, silent = true))
+problem.status
+solve!(problem, () -> SDPAFamily.Optimizer(presolve = true, silent = true))
+problem.status
+problem.optval
 ```
 
-Applying presolve helps by removing 8 redundant constraints from the final input
-file.
+Without the presolve, SDPA-GMP stops at the iteration limit. With the presolve,
+one of the two variables is fixed to zero and SDPA-GMP finds the optimal value
+1.
 
-```@repl convexquantum
-solve!(problem, () -> SDPAFamily.Optimizer(presolve = true))
-@test problem.optval ≈ 1//2 + 1/(2*sqrt(big(2))) atol=1e-30
-```
-
-We see we have recovered the true answer to a tolerance of $10^{-30}$.
+To see what the presolve removed, use `verbose = SDPAFamily.VERBOSE`, which
+prints the number of eliminated and fixed variables.
 
 ## Changing parameters & solving at very high precision
 
-Continuing the above example, we can also increase the precision by changing the default parameters:
+The following example uses the problem from [Optimal guessing probability for a
+pair of quantum states](@ref). We can increase the precision by changing the
+default parameters:
+
+```@setup convexquantum
+using SDPAFamily, Test, Convex, LinearAlgebra
+```
 
 ```@repl convexquantum
 opt = () -> SDPAFamily.Optimizer(
-    presolve = true,
     params = (  epsilonStar = 1e-200, # constraint tolerance
                 epsilonDash = 1e-200, # normalized duality gap tolerance
                 precision = 2000 # arithmetric precision used in sdpa_gmp

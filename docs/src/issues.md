@@ -32,28 +32,22 @@ We try to automatically detect underflows and warn against them; in this case,
 the warning is issued. Sometimes this can be avoided by choosing a better set of
 parameters. See [Choice of parameters](@ref).
 
-## Presolve
+## Limitations of the presolve
 
-The usefulness of our `presolve` routine is demonstrated in [Using
-presolve](@ref). However, our `presolve` subroutine simply uses naïve Gaussian
-elimination and has its limitations. At its core, the `reduce!` method takes in
-a sparse matrix where each row is a linearized constraint matrix and apply
-Gaussian elimination with pivoting to identify the linear independence. This
-process is not numerically stable, and we cannot guarantee that all linear
-dependent entries will be identified.
+The presolve described in [Presolve](@ref) decides linear dependence with a
+tolerance: a row or column counts as dependent if, after Gaussian elimination,
+its largest remaining entry is at most `sqrt(eps(T))` times its largest
+original entry. Two cases follow from this.
 
-This is demonstrated in the following example. We explicitly construct a matrix
-with linearly dependent rows. However, due to its numerical instability, we can
-only identify a subset of them.
-
-```@repl convex
-M = sprand(100, 20000, 0.03);
-λ = rand();
-M[1, :] = λ*M[3, :] + (1-λ)*M[7, :];
-rows = Set(rowvals(SDPAFamily.reduce!(M)[:, 1:end-1]));
-redundant = collect(setdiff!(Set(1:10), rows));
-@test length(redundant) >= 1
-```
+* Rows or columns that are nearly, but not exactly, linearly dependent (for
+  example because the problem data were rounded to `Float64` before they were
+  converted to `BigFloat`) are kept. SDPA then receives a problem whose Schur
+  complement matrix is close to singular.
+* The elimination can fill in sparse rows, and the presolve is not optimized for
+  speed. In one test with 1000 random sparse equality constraints on a 60×60
+  matrix variable, the presolve and writing the input file took about 20 seconds
+  with `BigFloat`.
+  `presolve = false` skips it.
 
 ## Choice of parameters
 
@@ -86,11 +80,11 @@ end
 Due to the above reasons, we have modified the default settings for the
 following tests from `Convex.jl`'s `Problem Depot'.
 
-| Solver      | Underflow                                         | Need to use `params = SDPAFamily.UNSTABLE_BUT_FAST`                          | Presolve disabled due to long runtime                  |
-| :---------- | :------------------------------------------------ | :----------------------------------------------------------- | :----------------------------------------------------- |
-| `:sdpa_dd`  | `affine_Partial_transpose`                        | `affine_Partial_transpose` `lp_pos_atom` `lp_neg_atom` `sdp_matrix_frac_atom` `lp_dotsort_atom` | `affine_Partial_transpose` `lp_min_atom` `lp_max_atom` |
-| `:sdpa_qd`  | `affine_Partial_transpose` `affine_Diagonal_atom` | `affine_Partial_transpose` `affine_Diagonal_atom`            | `affine_Partial_transpose` `lp_min_atom` `lp_max_atom` |
-| `:sdpa_gmp` | `affine_Partial_transpose`                        | `affine_Partial_transpose`                                   | `affine_Partial_transpose` `lp_min_atom` `lp_max_atom` |
+| Solver      | Underflow                                         | Need to use `params = SDPAFamily.UNSTABLE_BUT_FAST`                          |
+| :---------- | :------------------------------------------------ | :----------------------------------------------------------- |
+| `:sdpa_dd`  | `affine_Partial_transpose`                        | `affine_Partial_transpose` `lp_pos_atom` `lp_neg_atom` `sdp_matrix_frac_atom` `lp_dotsort_atom` |
+| `:sdpa_qd`  | `affine_Partial_transpose` `affine_Diagonal_atom` | `affine_Partial_transpose` `affine_Diagonal_atom`            |
+| `:sdpa_gmp` | `affine_Partial_transpose`                        | `affine_Partial_transpose`                                   |
 
 In addition, we have excluded `lp_dotsort_atom` and `lp_pos_atom` when testing
 `:sdpa` due to imprecise solutions using default parameters. We have also
@@ -110,9 +104,10 @@ following troubleshoot steps.
 1. Set `silent=false` and look for warnings and error messages. If necessary,
    check the output file. Its path is printed by the solver output and can also
    be retrieved via `Optimizer.tempdir`.
-2. Set `presolve=true` to remove redundant constraints. Typically, redundant
-   constraints are indicated by a premature `cholesky miss` error as shown
-   above.
+2. Check that `presolve=true` (the default) is set. Linearly dependent
+   constraints typically show up as `cholesky miss condition` warnings. With
+   `verbose = SDPAFamily.VERBOSE`, the optimizer prints how many variables the
+   presolve eliminated or fixed.
 3. Use `BigFloat` (the default) or `Double64` (from the
    [DoubleFloats](https://github.com/JuliaMath/DoubleFloats.jl) package)
    precision instead of `Float64` (e.g. `SDPAFamily.Optimizer{Double64}(...)`).
