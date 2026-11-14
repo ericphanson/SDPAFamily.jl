@@ -2,9 +2,7 @@ module SDPAFamily
 using SDPA_jll: SDPA_jll
 using LinearAlgebra # for diag()
 using DelimitedFiles # for writing SDPA input file
-using MathOptInterface
-const MOI = MathOptInterface
-const MOIB = MOI.Bridges
+import MathOptInterface as MOI
 using BinaryProvider
 using Scratch
 
