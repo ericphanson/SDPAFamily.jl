@@ -58,9 +58,10 @@ where a result can be misleading.
   problem passes its parameters `lowerBound` or `upperBound`, which are `-1e5`
   and `1e5` by default. An example is the chain `x[1] >= 1`,
   `x[i+1] >= 2 x[i]` for 20 variables with objective `sum(x)`, whose optimal
-  value is about `1e6`: `:sdpa_dd` reports it as `INFEASIBLE`. Pass larger
-  bounds, for example `params = (lowerBound = -1e10, upperBound = 1e10)`. The
-  same happens with `presolve = false`.
+  value is about `1e6`: `:sdpa_dd` reports it as `INFEASIBLE`. With larger
+  bounds, `params = (lowerBound = -1e10, upperBound = 1e10)`, it is solved.
+  With `presolve = false` this example is reported as `INFEASIBLE_OR_UNBOUNDED`
+  with either choice of bounds.
 * A constraint that follows from others only approximately, with an error above
   `presolve_tol`, is kept. The reduced problem is then ill-conditioned, and the
   result can fail the checks. If the data were rounded to a coarser type than

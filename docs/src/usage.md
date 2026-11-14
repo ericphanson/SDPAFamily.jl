@@ -4,8 +4,9 @@ The main object of interest supplied by this package is
 `SDPAFamily.Optimizer{T}()`. Here, `T` is a numeric type which defaults to
 `BigFloat`. Keyword arguments may also be passed to `SDPAFamily.Optimizer()`:
 
-* `variant`: either `:sdpa_gmp`, `:sdpa_qd`, or `:sdpa_dd`, to use SDPA-GMP,
-  SDPA-QD, or SDPA-DD, respectively. Defaults to `:sdpa_gmp`.
+* `variant`: `:sdpa_gmp`, `:sdpa_qd`, `:sdpa_dd` or `:sdpa`, to use SDPA-GMP,
+  SDPA-QD, SDPA-DD or the double-precision SDPA, respectively. Defaults to
+  `:sdpa_gmp`.
 * `silent`: a boolean to indicate whether or not to print output. Defaults to
   `false`.
 * `verbose`: accepts either `SDPAFamily.SILENT` (which is equivalent to
@@ -14,9 +15,9 @@ The main object of interest supplied by this package is
   additional warnings.
 * `presolve`: whether to run the presolve described in [Presolve](@ref) before
   calling the solver. Defaults to `true`.
-* `presolve_tol`: how exactly a constraint must follow from others to count as
-  redundant, see [Options](@ref). Defaults to `nothing`, which means
-  `64 * eps(T)`.
+* `presolve_tol`: loosens how exactly a constraint must follow from others to
+  count as redundant, see [Options](@ref). Defaults to `nothing`, which means
+  `64 * eps(T)`; a smaller value has no effect.
 * `binary_path`: a string representing a path to the SDPA-GMP binary to use. The
   default is chosen at `build` time. To change the default binaries, see [Custom
   binary](@ref).
@@ -94,7 +95,8 @@ Some models are decided by the presolve, and SDPA is not called:
 |:--|:--|:--|
 | Equality constraints contradict each other | `INFEASIBLE` | The dual solution is a certificate of infeasibility. |
 | The objective decreases along a direction that changes no constraint | `DUAL_INFEASIBLE` | The primal solution is an unbounded ray. |
-| The equality constraints determine all variables | `OPTIMAL`, or `INFEASIBLE` if another constraint is violated at that point | The point, and dual values if it is optimal. |
+| The equality constraints determine all variables, or no variable has a coefficient in another constraint | `OPTIMAL`, or `INFEASIBLE` if another constraint is violated at that point | The point, and dual values if it is optimal. |
+| A constraint without variables, or whose variables are all determined by equality constraints, is violated | `INFEASIBLE` | The point; a certificate if the constraint is a linear inequality. |
 
 `MOI.RawStatusString` says when a result comes from the presolve.
 
@@ -117,7 +119,9 @@ outcomes need attention:
   the presolve": the presolve could not confirm its own reduction, for example
   because constraints are almost but not exactly redundant, and SDPA solved the
   model as with `presolve = false`. The result is checked in the same way. If
-  the data of the model were rounded, see `presolve_tol` below.
+  the data of the model were rounded, see `presolve_tol` below. If the reduction
+  cannot be confirmed after the second solve mentioned above, the status is
+  `NUMERICAL_ERROR` and there is no third solve.
 
 ### Options
 
@@ -125,9 +129,10 @@ outcomes need attention:
 constraint written as two inequalities. Use it to compare, or if the presolve
 takes too long on a model that SDPA can solve directly.
 
-`presolve_tol` sets how exactly a constraint must follow from others to count
-as redundant. The default is `64 * eps(T)` for the number type `T` of the
-optimizer, relative to the sizes of the coefficients involved. The data are
+`presolve_tol` loosens how exactly a constraint must follow from others to count
+as redundant. The tolerance is `64 * eps(T)` for the number type `T` of the
+optimizer, relative to the sizes of the coefficients involved, or `presolve_tol`
+if that is larger; a smaller `presolve_tol` has no effect. The data are
 taken as exact numbers of type `T`. This matters when a `BigFloat` model is
 built from `Float64` or decimal data: `0.3` and `3 * 0.1` are different
 `Float64` numbers, so constraints that are redundant on paper are independent in
