@@ -102,15 +102,45 @@ the dual values ``y_K`` of the cone constraints by solving
 matrices of the equality and cone constraints. Dropped equality constraints
 have the dual value zero.
 
-If the equality constraints determine all variables, SDPA is not called. The
-termination status is `OPTIMAL` if the cone constraints hold up to a relative
-tolerance of `sqrt(eps(T))`, `ALMOST_OPTIMAL` (with primal status
-`NEARLY_FEASIBLE_POINT`) if they hold up to `sqrt(eps(Float64))`, and
-`INFEASIBLE` (without a certificate) otherwise.
+Each number that the presolve computes is a sum of products of the problem
+data. The presolve also computes the sum of the absolute values of these
+products, called the magnitude of the number. A computed number counts as zero
+if its absolute value is at most `64 * eps(T)` times its magnitude, that is, if
+it may consist of rounding errors only. The presolve uses this rule for every
+decision:
 
-A row or column counts as linearly dependent if, after elimination, its largest
-remaining entry is at most `sqrt(eps(T))` times its largest original entry. Rows
-or columns that are close to dependent but above this tolerance are kept.
+* An equality constraint or a matrix ``F_k`` counts as linearly dependent on the
+  others if all its entries count as zero after the elimination. Constraints or
+  matrices that are close to dependent but not dependent up to rounding errors
+  are kept.
+* A dependent equality constraint is consistent if the same combination of the
+  right-hand sides counts as zero, and a dependent matrix ``F_k`` is consistent
+  with the objective if the same combination of the objective coefficients
+  counts as zero. So the decision for one row or column does not depend on the
+  size of unrelated entries of the problem.
+* Coefficients that count as zero after the substitution of the eliminated
+  variables are removed.
+
+If no variable is left after these steps (because the equality constraints
+determine all variables, or because the model has no variables with nonzero
+coefficients), SDPA is not called, and the presolve checks the constraints at
+the only remaining point. A `Nonnegatives` entry with value ``b_i`` and magnitude
+``m_i`` is accepted if ``b_i \ge -\epsilon m_i``, and a positive semidefinite
+block ``B`` is accepted if ``B + \epsilon \|M\|_F I`` is positive definite,
+where ``M`` holds the magnitudes of the entries of ``B``. Here ``\epsilon`` is
+the larger of `64 * eps(T)` and the constraint tolerance `epsilonStar` of the
+solver parameters (zero when the parameters are given as a file or as
+`UNSTABLE_BUT_FAST` or `STABLE_BUT_SLOW`). If all constraints are accepted, the
+termination status is `OPTIMAL`. Otherwise it is `INFEASIBLE`; if a
+`Nonnegatives` entry is violated, the dual status is
+`INFEASIBILITY_CERTIFICATE`, and otherwise `NO_SOLUTION`.
+
+Eliminating variables can fill in sparse rows of the constraints. The presolve
+chooses as pivots variables with few nonzero coefficients, among those whose
+coefficient is at least a tenth of the largest one in the row. In a test with
+400 variables, 200 random equality constraints with 3 nonzero coefficients
+each, and `x ≥ 0`, the SDPA input file was 84 KiB with the presolve and 34 KiB
+without it.
 
 With `presolve = false`, the problem is passed to SDPA unchanged, with equality
 constraints bridged into pairs of inequalities.
