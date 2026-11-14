@@ -271,12 +271,17 @@ as in the first step.
 
 Eliminating variables can fill in sparse rows of the constraints. The presolve
 chooses as pivots variables with few nonzero coefficients, among those whose
-coefficient is at least a tenth of the largest one in the row. In a test with
-400 variables, 200 random equality constraints with 3 nonzero coefficients
-each, and `x ≥ 0`, the SDPA input file was 84 KiB with the presolve and 34 KiB
-without it. For 1000 random sparse equality constraints on a 60×60 matrix
-variable, the presolve took about 0.9 seconds with `Float64` and 16 seconds with
-`BigFloat`.
+coefficient is at least a tenth of the largest one in the row of the
+equilibrated model. In a test with 400 variables, 200 random equality
+constraints with 3 nonzero coefficients each, and `x ≥ 0`, the SDPA input file
+was 86 KiB with the presolve and 34 KiB without it.
+
+The time of the presolve is that of sparse Gaussian elimination in `BigFloat`
+arithmetic. For 1000 random equality constraints with 5 nonzero coefficients on
+a 60×60 matrix variable, and for 2000 random equality constraints with 3 nonzero
+coefficients on 4000 nonnegative variables, it took about 0.1 seconds. For 400
+dense equality constraints on 420 variables it took about 5 seconds with
+`T = Float64` and 7 seconds with `T = BigFloat` at 256 bits.
 
 With `presolve = false`, the problem is passed to SDPA unchanged, with equality
 constraints bridged into pairs of inequalities.
