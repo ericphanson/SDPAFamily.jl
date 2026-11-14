@@ -73,6 +73,8 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
     no_solve::Bool
     use_WSL::Bool
 	variant::Symbol
+    # `nothing`, or a `PresolveData{T}` (see `presolve.jl`) after a solve with presolve
+    presolve_data::Any
     function Optimizer{T}(; variant = :sdpa_gmp, presolve::Bool = false, 
             silent::Bool = false,
             verbose::Verbosity = silent ? SILENT : WARN,
@@ -93,7 +95,7 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
             T[], PrimalSolution{T}(Matrix{T}[]),
             VarDualSolution{T}(Matrix{T}[]), zero(T), zero(T), :not_called,
             TemporaryDirectory, [], presolve, binary_path, P, false, use_WSL,
-            variant)
+            variant, nothing)
 
         if silent && verbose != SILENT
             throw(ArgumentError("Cannot set both `silent=true` and `verbose != SILENT`."))
@@ -158,7 +160,12 @@ const RAW_STATUS = Dict(
     :pFEAS_dINF => "The primal problem has become feasible but the dual problem is expected to be infeasible.",
     :pINF_dFEAS => "The dual problem has become feasible but the primal problem is expected to be infeasible.",
     :pUNBD => "The primal problem is expected to be unbounded.",
-    :dUNBD => "The dual problem is expected to be unbounded.")
+    :dUNBD => "The dual problem is expected to be unbounded.",
+    :presolve_dINF => "The presolve found that the dual problem is infeasible, and SDPA was not called. The primal solution is a ray that certifies the dual infeasibility.",
+    :presolve_pINF => "The presolve found that the equality constraints are inconsistent, and SDPA was not called. The dual solution is a certificate of infeasibility.",
+    :presolve_OPT => "The presolve determined all variables, and the constraints are satisfied. SDPA was not called.",
+    :presolve_NEARLY => "The presolve determined all variables, and the constraints are satisfied up to a relative tolerance of `sqrt(eps(Float64))`. SDPA was not called.",
+    :presolve_INF => "The presolve determined all variables, and the constraints are not satisfied. SDPA was not called.")
 
 function MOI.get(optimizer::Optimizer, ::MOI.RawStatusString)
 	return RAW_STATUS[optimizer.phasevalue]
@@ -173,7 +180,8 @@ function MOI.is_empty(optimizer::Optimizer)
         isempty(optimizer.blockdims) &&
         isempty(optimizer.sd_block_idx) &&
         isempty(optimizer.nn_block_idx) &&
-        optimizer.elemdata == []
+        optimizer.elemdata == [] &&
+        optimizer.presolve_data === nothing
 end
 function MOI.empty!(optimizer::Optimizer{T}) where T
     optimizer.objconstant = zero(T)
@@ -189,6 +197,7 @@ function MOI.empty!(optimizer::Optimizer{T}) where T
     optimizer.elemdata = []
     optimizer.primalobj = zero(T)
     optimizer.dualobj = zero(T)
+    optimizer.presolve_data = nothing
 end
 
 function clean_tempdir(tempdir)
@@ -210,6 +219,13 @@ function MOI.supports_constraint(
     ::Optimizer{T}, ::Type{AFF{T}},
     ::Type{<:SupportedSets}) where {T}
     return true
+end
+
+# Equality constraints are eliminated by the presolve. Without presolve, they are
+# bridged into pairs of `Nonnegatives` constraints.
+function MOI.supports_constraint(
+    optimizer::Optimizer{T}, ::Type{AFF{T}}, ::Type{MOI.Zeros}) where {T}
+    return optimizer.presolve
 end
 
 const NONZERO_OBJECTIVE_CONSTANT_ERROR = 
@@ -242,12 +258,32 @@ function MOI.optimize!(dest::Optimizer{T}, src::MOI.ModelLike) where {T}
         push!(dest.blockdims, set.side_dimension)
         dest.sd_block_idx[ci.value] = length(dest.blockdims)
     end
+	start_time = time()
+    if dest.presolve
+        # The equality constraints were not copied to `sdpa`.
+        AE, bE, eq_rows = equality_constraints(src, index_map, T,
+                                                MOI.get(sdpa, MOI.NumberOfVariables()))
+        reduced = presolve!(dest, sdpa, AE, bE, eq_rows)
+        data = dest.presolve_data
+        if dest.verbosity == VERBOSE
+            neq = data.elim === nothing ? 0 : length(data.elim.pivots)
+            @info "Presolve finished in $(time() - start_time) seconds. $neq variable(s) eliminated using equality constraints, $(length(data.redundant)) linearly dependent variable(s) fixed to zero."
+        end
+        if reduced === nothing
+            # The presolve has determined the result; SDPA is not called.
+            dest.solve_time = time() - start_time
+            return index_map, false
+        end
+        sdpa = reduced
+    end
     open(full_input_path, "w") do io
         write(io, sdpa)
     end
-	start_time = time()
     if !dest.no_solve
-        sdpa_gmp_binary_solve!(dest, full_input_path, full_output_path)
+        redundant = dest.presolve ? dest.presolve_data.redundant : Int[]
+        sdpa_gmp_binary_solve!(dest, full_input_path, full_output_path;
+                               redundant_entries = redundant)
+        postsolve!(dest)
     end
     dest.solve_time = time() - start_time
     return index_map, false
@@ -277,6 +313,14 @@ function MOI.get(m::Optimizer, ::MOI.TerminationStatus)
         return MOI.DUAL_INFEASIBLE
     elseif status == :dUNBD
         return MOI.INFEASIBLE
+    elseif status == :presolve_dINF
+        return MOI.DUAL_INFEASIBLE
+    elseif status == :presolve_pINF || status == :presolve_INF
+        return MOI.INFEASIBLE
+    elseif status == :presolve_OPT
+        return MOI.OPTIMAL
+    elseif status == :presolve_NEARLY
+        return MOI.ALMOST_OPTIMAL
     end
 end
 
@@ -287,6 +331,16 @@ function MOI.get(m::Optimizer, attr::MOI.PrimalStatus)
     status = m.phasevalue
     if status == :not_called
         return MOI.NO_SOLUTION
+    elseif status == :presolve_dINF
+        return MOI.INFEASIBILITY_CERTIFICATE
+    elseif status == :presolve_pINF
+        return MOI.NO_SOLUTION
+    elseif status == :presolve_OPT
+        return MOI.FEASIBLE_POINT
+    elseif status == :presolve_NEARLY
+        return MOI.NEARLY_FEASIBLE_POINT
+    elseif status == :presolve_INF
+        return MOI.INFEASIBLE_POINT
     elseif status == :noINFO
         return MOI.UNKNOWN_RESULT_STATUS
     elseif status == :pFEAS
@@ -316,8 +370,12 @@ function MOI.get(m::Optimizer, attr::MOI.DualStatus)
         return MOI.NO_SOLUTION
     end
     status = m.phasevalue
-    if status == :not_called
+    if status == :not_called || status == :presolve_dINF || status == :presolve_INF
         return MOI.NO_SOLUTION
+    elseif status == :presolve_pINF
+        return MOI.INFEASIBILITY_CERTIFICATE
+    elseif status == :presolve_OPT || status == :presolve_NEARLY
+        return MOI.FEASIBLE_POINT
     elseif status == :noINFO
         return MOI.UNKNOWN_RESULT_STATUS
     elseif status == :pFEAS
@@ -343,13 +401,20 @@ function MOI.get(m::Optimizer, attr::MOI.DualStatus)
 end
 
 MOI.get(m::Optimizer, ::MOI.ResultCount) = 1
+# The objective value of an infeasibility certificate does not include the constant.
 function MOI.get(m::Optimizer, attr::MOI.ObjectiveValue)
     MOI.check_result_index_bounds(m, attr)
+    if MOI.get(m, MOI.PrimalStatus()) == MOI.INFEASIBILITY_CERTIFICATE
+        return m.objsign * m.primalobj
+    end
     return m.objsign * m.primalobj + m.objconstant
 end
 
 function MOI.get(m::Optimizer, attr::MOI.DualObjectiveValue)
     MOI.check_result_index_bounds(m, attr)
+    if MOI.get(m, MOI.DualStatus()) == MOI.INFEASIBILITY_CERTIFICATE
+        return m.objsign * m.dualobj
+    end
     return m.objsign * m.dualobj + m.objconstant
 end
 
@@ -415,4 +480,42 @@ function MOI.get(optimizer::Optimizer{T}, attr::MOI.ConstraintDual,
                  ci::MOI.ConstraintIndex{AFF{T}, S}) where {T,S<:SupportedSets}
     MOI.check_result_index_bounds(optimizer, attr)
     return vectorize_block(MOI.get(optimizer, PrimalSolutionMatrix()), block(optimizer, ci), S)
+end
+
+const EQ{T} = MOI.ConstraintIndex{AFF{T},MOI.Zeros}
+
+function MOI.get(optimizer::Optimizer{T}, attr::MOI.ConstraintPrimal, ci::EQ{T}) where {T}
+    MOI.check_result_index_bounds(optimizer, attr)
+    data = optimizer.presolve_data
+    return data.eq_primal[data.eq_rows[ci.value]]
+end
+
+function MOI.get(optimizer::Optimizer{T}, attr::MOI.ConstraintDual, ci::EQ{T}) where {T}
+    MOI.check_result_index_bounds(optimizer, attr)
+    data = optimizer.presolve_data
+    return data.eq_dual[data.eq_rows[ci.value]]
+end
+
+# The equality constraints `AE x + bE = 0` of `src`, in terms of the variables of the
+# SDPA model (given by `index_map`). Constraint `k` has the rows `eq_rows[k]`, and its
+# index in `src` is mapped to `MOI.ConstraintIndex{AFF{T},MOI.Zeros}(k)` in `index_map`.
+function equality_constraints(src::MOI.ModelLike, index_map, ::Type{T}, n::Int) where {T}
+    I, J, V = Int[], Int[], T[]
+    bE = T[]
+    eq_rows = UnitRange{Int}[]
+    if (AFF{T}, MOI.Zeros) in MOI.get(src, MOI.ListOfConstraintTypesPresent())
+        for ci in MOI.get(src, MOI.ListOfConstraintIndices{AFF{T},MOI.Zeros}())
+            f = MOI.get(src, MOI.ConstraintFunction(), ci)
+            offset = length(bE)
+            for t in f.terms
+                push!(I, offset + t.output_index)
+                push!(J, index_map[t.scalar_term.variable].value)
+                push!(V, t.scalar_term.coefficient)
+            end
+            append!(bE, f.constants)
+            push!(eq_rows, (offset+1):length(bE))
+            index_map[ci] = EQ{T}(length(eq_rows))
+        end
+    end
+    return sparse(I, J, V, length(bE), n), bE, eq_rows
 end
