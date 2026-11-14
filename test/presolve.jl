@@ -836,6 +836,34 @@ include("presolve_kernel.jl")
         end
     end
 
+    @testset "units of the variables in the check of the model" begin
+        # 2^60 x >= 1 at x = 0: the row is violated by all of its constant. With the
+        # unit 1 for x the terms of the row are 2^60 and the violation is within the
+        # tolerance; with the unit 2^-60 it is not.
+        T = Float64
+        K = T(2)^60
+        model, optimizer = bridged_model(T; variant = :sdpa_gmp)
+        x = MOI.add_variable(model)
+        MOI.add_constraint(model, K * x, MOI.GreaterThan(T(1)))
+        MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+        MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), K * x)
+        MOI.optimize!(model)
+        @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
+        @test MOI.get(model, MOI.VariablePrimal(), x) ≈ 1 / K rtol = 1e-6
+        data = optimizer.presolve_data
+        SDPAFamily.with_work_precision(T) do
+            H = eltype(data.b)
+            γ = SDPAFamily.check_tol(optimizer, data)
+            xunit, yunit = SDPAFamily.model_units(data)
+            @test length(xunit) == 1 && length(yunit) == 1
+            @test 0 < xunit[1] <= 1 && 0 < yunit[1] <= 1
+            violations(x, unit) = SDPAFamily.model_violations(data, H[x], H[1], H[], γ, H[unit], H[1])
+            @test violations(0, 1)[1] === nothing
+            @test violations(0, 1 / K)[1] !== nothing
+            @test violations(1 / K, 1 / K) == (nothing, nothing)
+        end
+    end
+
     @testset "result of SDPA that is not finite, without presolve" begin
         # x1 == x2, x1 >= 1e300, x2 >= 0, min (x1 + x2) / 1e300 with `:sdpa`: SDPA
         # returns NaN with the status `pdFEAS`.
