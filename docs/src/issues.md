@@ -34,20 +34,21 @@ parameters. See [Choice of parameters](@ref).
 
 ## Limitations of the presolve
 
-The presolve described in [Presolve](@ref) decides linear dependence with a
-tolerance: a row or column counts as dependent if, after Gaussian elimination,
-its largest remaining entry is at most `sqrt(eps(T))` times its largest
-original entry. Two cases follow from this.
+The presolve described in [Presolve](@ref) treats a computed number as zero
+only if it may consist of rounding errors. Three cases follow from this.
 
-* Rows or columns that are nearly, but not exactly, linearly dependent (for
-  example because the problem data were rounded to `Float64` before they were
-  converted to `BigFloat`) are kept. SDPA then receives a problem whose Schur
-  complement matrix is close to singular.
-* The elimination can fill in sparse rows, and the presolve is not optimized for
-  speed. In one test with 1000 random sparse equality constraints on a 60×60
-  matrix variable, the presolve and writing the input file took about 20 seconds
-  with `BigFloat`.
-  `presolve = false` skips it.
+* Constraints that are nearly, but not exactly, linearly dependent (for example
+  because the problem data were rounded to `Float64` before they were converted
+  to `BigFloat`) are kept. SDPA then receives a problem whose Schur complement
+  matrix is close to singular.
+* The presolve does not rescale the problem. After the substitution, the rows
+  of the cone constraints can have very different scales, and SDPA can then
+  fail on a problem that it solves without the presolve.
+* The presolve is not optimized for speed. In one test with 1000 random sparse
+  equality constraints on a 60×60 matrix variable, the presolve and writing the
+  input file took about 12 seconds with `BigFloat`.
+
+In these cases, `presolve = false` passes the problem to SDPA unchanged.
 
 ## Choice of parameters
 

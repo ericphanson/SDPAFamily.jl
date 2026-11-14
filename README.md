@@ -12,6 +12,8 @@ constraints or linearly dependent constraints. The presolve is restored, and
 enabled by default, in the development version; see issue
 [#67](https://github.com/ericphanson/SDPAFamily.jl/issues/67) and the
 [documentation](https://ericphanson.github.io/SDPAFamily.jl/dev/usage/#Presolve).
+The exported function `presolve(optimizer)`, which raised an error since v0.3.0,
+is removed; the presolve runs inside `MOI.optimize!`.
 
 An interface to using SDPA-GMP, SDPA-DD, and SDPA-QD in Julia
 (<http://sdpa.sourceforge.net>). This package is registered in the
