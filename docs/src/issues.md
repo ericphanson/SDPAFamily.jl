@@ -38,42 +38,42 @@ The [Presolve](@ref) checks every result against the model and reports
 `NUMERICAL_ERROR` when a check fails. The cases below are where that happens, or
 where a result can be misleading.
 
-* **Variables or constraints in very different units.** SDPA's tolerances are
-  absolute. The presolve rescales the problem so that coefficients are near 1,
-  but it cannot always tell which of two very different magnitudes in one
-  constraint matters. If the coefficients of a model span more than about 7
-  orders of magnitude with `variant = :sdpa` or `T = Float64` (tolerance `1e-7`),
-  or more than about 30 with `:sdpa_gmp`, expect `NUMERICAL_ERROR` for some
-  models. In tests with random problems whose variables were scaled by factors
-  between `1e-6` and `1e6`, this affected about 4% of the feasible problems at
-  tolerance `1e-7` and almost none with the high-precision variants. Choose
-  units so that variables and constraints have comparable sizes.
-* **Infeasibility by a margin below the tolerance.** A model whose constraints
-  contradict each other by less than SDPA's tolerance, relative to the sizes of
-  the terms in those constraints, is reported as `OPTIMAL`.
-* **Optimal value far from the scale of the data.** SDPA reports a problem as
-  unbounded when an objective value passes its parameters `lowerBound` or
-  `upperBound`, which are `-1e5` and `1e5` by default, in the rescaled problem.
-  A feasible, bounded model whose solution is very large compared to its data is
-  then reported as `INFEASIBLE` or `DUAL_INFEASIBLE`. An example is the chain
-  `x[1] >= 1`, `x[i+1] >= 2 x[i]` for 20 variables with objective `sum(x)`,
-  whose optimal value is about `1e6`. Pass larger bounds, for example
-  `params = (lowerBound = -1e10, upperBound = 1e10)`. This also happens with
-  `presolve = false`.
-* **Almost redundant constraints.** A constraint that follows from others only
-  up to more than `presolve_tol` is kept. The reduced problem is then
-  ill-conditioned, and the result can fail the checks. If the data were rounded
-  to a coarser type than `T`, set `presolve_tol` (see [Options](@ref)).
-* **Rounding errors in the data.** A coefficient such as `1e-17` where the model
-  means zero is a coefficient like any other.
-* **Results that do not fit the number type.** If a variable of the solution is
-  larger than the largest number of type `T` (about `1.8e308` for `Float64`),
-  the status is `NUMERICAL_ERROR`.
-* **Dense equality constraints.** The time of the presolve grows with the cube
-  of the number of dense equality constraints (see [Cost](@ref)).
+* If the variables or constraints of a model are in very different units, the
+  result can be `NUMERICAL_ERROR`. SDPA's tolerances are absolute. The presolve
+  rescales the problem so that coefficients are near 1, but it cannot always
+  tell which of two very different magnitudes in one constraint matters. In
+  tests with random problems whose variables were scaled by factors between
+  `1e-6` and `1e6` and whose constraints were scaled by factors between `1e-12`
+  and `1e12`, about 2% of the feasible problems ended this way with
+  `variant = :sdpa` (tolerance `1e-7`) and none with `:sdpa_dd`, `:sdpa_qd` and
+  `:sdpa_gmp`. With factors of `1e±30` a few statuses were wrong for all
+  variants. Choose units so that variables and constraints have comparable
+  sizes.
+* If the constraints of a model contradict each other by less than SDPA's
+  tolerance, relative to the sizes of the terms in those constraints, the model
+  is reported as `OPTIMAL`.
+* If the optimal value is very large compared to the data, a feasible and
+  bounded model can be reported as `INFEASIBLE` or `DUAL_INFEASIBLE`. SDPA
+  reports a problem as unbounded when an objective value of the rescaled
+  problem passes its parameters `lowerBound` or `upperBound`, which are `-1e5`
+  and `1e5` by default. An example is the chain `x[1] >= 1`,
+  `x[i+1] >= 2 x[i]` for 20 variables with objective `sum(x)`, whose optimal
+  value is about `1e6`: `:sdpa_dd` reports it as `INFEASIBLE`. Pass larger
+  bounds, for example `params = (lowerBound = -1e10, upperBound = 1e10)`. The
+  same happens with `presolve = false`.
+* A constraint that follows from others only approximately, with an error above
+  `presolve_tol`, is kept. The reduced problem is then ill-conditioned, and the
+  result can fail the checks. If the data were rounded to a coarser type than
+  `T`, set `presolve_tol` (see [Options](@ref)).
+* A coefficient that is a rounding error of the data, such as `1e-17` where the
+  model means zero, is a coefficient like any other.
+* If a value of the solution is larger than the largest number of type `T`
+  (about `1.8e308` for `Float64`), the status is `NUMERICAL_ERROR`.
+* The time of the presolve grows with the cube of the number of dense equality
+  constraints (see [Cost](@ref)).
 
-With `presolve = false`, the model is passed to SDPA unchanged. Then an
-`INFEASIBILITY_CERTIFICATE` is SDPA's last iterate and is not checked.
+With `presolve = false`, the model is passed to SDPA unchanged. An
+`INFEASIBILITY_CERTIFICATE` is then SDPA's last iterate and is not checked.
 
 ## Choice of parameters
 
