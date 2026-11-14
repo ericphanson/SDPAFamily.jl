@@ -106,33 +106,36 @@ have the dual value zero.
 ### Arithmetic and tolerances
 
 The problem data of type `T` are taken as exact numbers and converted exactly to
-a working type with more precision: `Float64x3` from
-[MultiFloats.jl](https://github.com/dzhang314/MultiFloats.jl) (about 157 bits)
-for `T = Float64`, and `BigFloat` with `2 * precision(T) + 64` bits otherwise.
-The presolve computes in the working type. In this section, ``\epsilon_T`` is the
-machine epsilon of `T` (`eps(T)`, for `BigFloat` at the precision set by the
-caller), ``\epsilon_W`` that of the working type, and
-``\tau = \sqrt{\epsilon_T \epsilon_W}``.
+`BigFloat` with twice the precision of `T` plus 64 bits (170 bits for
+`T = Float64`); this is the working precision, in which the presolve computes.
+In this section, ``p`` is the precision of `T` in bits and ``\epsilon_T`` its
+machine epsilon (`eps(T)`, for `BigFloat` at the precision set by the caller).
 
-Each number computed by the eliminations carries a running error bound
-(Wilkinson's running error analysis): a magnitude ``m``, computed alongside the
-number with the absolute values of all operands, such that the rounding error
-of the number is a small multiple of ``\epsilon_W m``. There are two
-tolerances:
+There are two tolerances:
 
-* ``\tau`` (rounding): a computed number ``v`` with ``|v| \le \tau m`` consists of
-  rounding errors of the working type. It is removed during the elimination and
-  the substitution. Numbers that are exact in the data, such as a coefficient
-  ``10^{-100}`` next to a coefficient 1 in the same row, are not removed.
-* ``\delta`` (data), by default ``64 \epsilon_T``: a row of the equality
-  constraints, or a matrix ``F_k``, is linearly dependent on the others if,
-  after the elimination, each entry ``r`` satisfies
-  ``|v_r| \le \delta \sum_j |w_j| |a_{jr}| + \tau m_r``, where ``w_j`` are the
-  coefficients of the combination of data vectors ``a_j`` (rows of the equality
-  constraints, or columns of the constraint matrix). This is confirmed by
-  recomputing the combination from the data. A dependent row or matrix is
-  consistent if the same combination of the right-hand sides (objective
-  coefficients) is zero in the same sense.
+* Rounding residue. An exact cancellation of two numbers leaves a residue near
+  the working precision. A computed number is set to zero if its terms cancelled
+  so far that its leading bit lies more than ``1.5 p + 32`` bits below the
+  leading bit of its largest term (111 bits for `Float64`). Numbers that follow
+  exactly from the data are kept: a coefficient ``10^{-100}`` next to a
+  coefficient 1 in the same row, or the coefficient ``s`` of ``L x - L y + s w``
+  after the substitution ``x = y = w`` with ``s = 10^{-8}`` and ``L = 10^8``.
+* Dependence, with ``\delta = 64 \epsilon_T`` by default. A row of the equality
+  constraints (or a matrix ``F_k``) is linearly dependent on the rows (matrices)
+  before it if a combination with coefficients ``w_j`` of the data vectors
+  ``a_j`` satisfies ``|\sum_j w_j a_j| \le \delta \sum_j |w_j| |a_j|`` in every
+  entry. The combination is found by the elimination and the condition is then
+  evaluated from the data. It means that relative changes of the data of at most
+  ``\delta`` make the vectors exactly dependent (the componentwise backward
+  error of Oettli and Prager), and it does not change when rows or variables
+  are scaled. A dependent row or matrix is consistent if the same combination of
+  the right-hand sides (objective coefficients) is zero in the same sense,
+  relative to the terms of the right-hand sides (objective coefficients) of the
+  model.
+
+The eliminations are sparse LU factorizations with threshold pivoting: a pivot is
+at least a tenth of the largest entry of its row in the equilibrated model, and
+among those the variable with the fewest nonzero coefficients is taken.
 
 The data are taken as exact numbers of type `T`, also when they happen to be
 `Float64` numbers: the model with constraints ``(10^8+1) x + 10^8 y = 1`` and
@@ -147,29 +150,36 @@ that relative amount.
 
 ### Scaling
 
-Before the eliminations, each row of the equality and cone constraints is scaled
-to a largest coefficient near 1, so that the sizes of combinations of rows are
-comparable. After the reduction, the problem passed to SDPA is scaled as conic
-solvers such as SCS do. The constraint matrix is equilibrated by Ruiz's
-algorithm, which divides the rows and the variables repeatedly by the square
-roots of their largest coefficients; the rows of a positive semidefinite block
-share one factor, so that the scaling keeps the cone. Then the right-hand side
-and the objective are each multiplied by one factor, so that their largest
-entries are between 1 and 2. All factors are powers of two, so the scaled data
-are exact, and their exponents are limited so that the factors are finite
-numbers of the working type. The solution is scaled back before the checks
-below.
+The reduced problem is scaled before it is passed to SDPA, as conic solvers such
+as SCS do. All factors are powers of two, so the scaled data are exact.
+
+1. The constraint matrix is equilibrated by Ruiz's algorithm, which divides the
+   rows and the variables repeatedly by the square roots of their largest
+   coefficients. The rows of a positive semidefinite block share one factor, so
+   that the scaling keeps the cone.
+2. The right-hand side is normalized to a largest entry between 1 and 2, by
+   multiplying the rows by a factor and dividing the variables by it. This is
+   done separately for each group of rows and variables that are connected by
+   nonzero coefficients.
+3. The objective is multiplied by one factor ``\sigma`` so that its largest
+   coefficient is between 1 and 2.
+
+SDPA's tolerances are absolute, so they apply to the scaled problem. Its
+feasibility tolerance is relative to the equilibrated rows and variables: a
+variable is accurate relative to the unit that the scaling gave it, not relative
+to its own value. Its gap tolerance `epsilonStar` is relative to
+``\max(1, |\text{objective}|)`` of the scaled problem, that is, to
+``\max(1/\sigma, |\text{objective}|)`` in the units of the model.
 
 Rows of the cone constraints without coefficients (constants, for example from
 a variable that Convex.jl fixed, or rows whose variables were eliminated) are
 checked at the point given by the equality constraints, with the tolerance
 ``\epsilon`` described below. If they hold, their constants are replaced by 1
 (or a constant positive semidefinite block by the identity matrix), which keeps
-the feasible set and gives SDPA a strictly feasible row, and they do not count
-for the factor of the right-hand side. Their primal values are the original
-constants and their dual values are zero. If a constant `Nonnegatives` row is
-violated, the termination status is `INFEASIBLE` with a certificate, and SDPA is
-not called.
+the feasible set and gives SDPA a strictly feasible row, and they do not take
+part in the scaling. Their primal values are the original constants and their
+dual values are zero. If a constant `Nonnegatives` row is violated, the
+termination status is `INFEASIBLE` with a certificate, and SDPA is not called.
 
 ### Checks and fallback
 
@@ -188,47 +198,74 @@ remaining point, computed from the data. A `Nonnegatives` entry with value
 give ``b_i``) is accepted if ``b_i \ge -\epsilon m_i``, and a positive
 semidefinite block ``B`` if ``B + \epsilon \|M\|_F I`` is positive
 semidefinite, where ``M`` holds the magnitudes of the entries of ``B``. Here
-``\epsilon`` is the larger of ``\delta`` and the constraint tolerance
-`epsilonStar` of the solver parameters (zero when the parameters are given as a
-file or as `UNSTABLE_BUT_FAST` or `STABLE_BUT_SLOW`). Semidefiniteness is tested
-by symmetric elimination that accepts zero pivots with zero rows, so the zero
-matrix and other singular positive semidefinite matrices are accepted. If all
-constraints are accepted, the termination status is `OPTIMAL`. Otherwise it is
-`INFEASIBLE`; if a `Nonnegatives` entry is violated, the dual status is
+``\epsilon`` is the larger of ``\delta`` and the tolerance `epsilonStar` of the
+solver parameters. Semidefiniteness is tested by symmetric elimination that
+accepts zero pivots with zero rows, so the zero matrix and other singular
+positive semidefinite matrices are accepted. If all constraints are accepted,
+the termination status is `OPTIMAL`. Otherwise it is `INFEASIBLE`; if a
+`Nonnegatives` entry is violated, the dual status is
 `INFEASIBILITY_CERTIFICATE`, and otherwise `NO_SOLUTION`.
 
-After SDPA has solved the reduced problem, the solution is mapped back and
-checked:
+After SDPA has solved the reduced problem, its result is checked in two steps.
 
-* The equality constraints that were kept must hold up to ``64 \epsilon_T``
-  relative to the sizes of their terms (the rounding of the solution to `T`).
-  A constraint that was dropped as dependent must hold up to ``2\delta`` times
-  the terms of the combination it was found to depend on, plus the residuals of
-  the constraints in that combination.
-* When the dual status is `FEASIBLE_POINT`, the relative residual of the dual
-  equations ``A^T y = c`` of the model must not exceed 100 times the relative
-  residual of the dual equations of the reduced problem plus ``\delta``. The
-  mapping back is exact up to rounding, so this only fails when the elimination
-  amplifies the solver's error, for example for nearly dependent constraints.
-* Gross checks of the result against the model, with the tolerance
-  ``\gamma = \sqrt{\max(\delta, \epsilon^*, \epsilon')}``, where ``\epsilon^*``
-  and ``\epsilon'`` are the constraint and gap tolerances `epsilonStar` and
-  `epsilonDash` of the solver parameters (``\gamma = 10^{-4}`` if they are not
-  known). Residuals are compared with ``\gamma`` times the largest term of the
-  same kind, since the rows are equilibrated. A primal point must satisfy the
-  cone constraints and the equality constraints; a primal ray must also have
-  ``c^T d < 0``; a dual point must satisfy ``A^T y = c``; a certificate of
-  infeasibility must satisfy ``A^T y = 0`` and ``b^T y < 0``; and for the SDPA
-  status `pdOPT`, the primal and dual objective values must agree. These checks
-  catch results that are wrong, not results that are inaccurate.
+First, on the scaled problem that SDPA was given, with the tolerance
+``\gamma = \sqrt{\max(\delta, \epsilon^*, \epsilon')}``, where ``\epsilon^*`` and
+``\epsilon'`` are the tolerances `epsilonStar` and `epsilonDash` of the solver
+parameters (``\gamma = 10^{-4}`` if they are given in a file that cannot be
+read). This asks for half of the digits that SDPA was asked for; it catches
+results that are wrong, not results that are inaccurate.
 
-If any check fails, the presolve falls back: the problem is passed to SDPA
-without the reductions, with each equality constraint written as two
-inequalities, scaled in the same way, and a warning is printed unless
-`silent = true`. The result of the fallback is checked with the gross checks
-above. If it fails them, the termination status is `NUMERICAL_ERROR`, the
-primal and dual statuses are `UNKNOWN_RESULT_STATUS`, and `RawStatusString`
-gives the status that SDPA reported and the check that failed.
+* A primal point, a dual point, and a result reported as optimal (SDPA's
+  statuses `pdOPT` and `pdFEAS`) must satisfy the stopping criteria of SDPA with
+  ``\gamma`` in place of its tolerances: the cone constraints, the dual
+  equations ``A^T y = c``, and the duality gap relative to
+  ``\max(1, |\text{objective}|)``.
+* The gap that SDPA's tolerance admits must also be small in the units of the
+  model: ``\epsilon^* \max(1, |\text{objective}|) / \sigma`` must be at most
+  ``\gamma \max(1, |\text{objective of the model}|)``. This fails when the
+  objective value is far smaller than the scaling could tell from the data,
+  for example when a variable with a large cost can take large values on the
+  feasible set but is zero at the optimum.
+* SDPA does not return rays. It reports unboundedness when the objective of a
+  feasible iterate passes its parameters `lowerBound` or `upperBound`
+  (``\pm 10^5`` by default), and returns that iterate. A certificate of
+  infeasibility ``y`` is accepted if ``b^T y < 0`` and
+  ``\|A^T y\|_\infty \le 10^{-3} |b^T y|``, and a primal ray ``d`` if
+  ``c^T d < 0`` and ``A d`` is in the cone up to ``10^{-3} |c^T d|``. This is the
+  criterion of solvers that detect infeasibility from approximate certificates
+  (SCS, OSQP, Clarabel). An accepted certificate excludes all solutions of the
+  scaled problem with 1-norm below 1000. In the scaled problem the right-hand
+  side and the objective are at most 2, so an iterate at SDPA's default bound
+  has a ratio below ``2 \cdot 10^{-5}``.
+
+Second, after the solution is mapped back, what the presolve removed is checked
+at the returned solution, each relative to the sizes of its own terms:
+
+* The equality constraints that were kept must hold up to ``64 \epsilon_T`` (the
+  rounding of the solution to `T`). A constraint that was dropped as dependent
+  must hold up to ``2\delta`` times the terms of the combination it was found
+  to depend on, plus the residuals of the constraints in that combination.
+* The dual equations of the eliminated variables must hold up to
+  ``64 \epsilon_T``, and those of the variables that were fixed to zero up to
+  ``2\delta`` times the terms of their combination, plus the residuals of the
+  variables in that combination.
+
+These checks fail when the elimination amplifies the solver's error, for
+example for nearly dependent constraints.
+
+If the first step fails, the termination status is `NUMERICAL_ERROR`, the primal
+and dual statuses are `UNKNOWN_RESULT_STATUS`, and `RawStatusString` gives the
+status that SDPA reported and the check that failed. The same holds for a
+solution that passes the first step but is not finite in `T` after it is scaled
+back (for `T = Float64`, a variable beyond about ``1.8 \cdot 10^{308}``).
+
+If the reduction itself is in doubt, the presolve falls back: the problem is
+passed to SDPA without the reductions, with each equality constraint written as
+two inequalities, scaled in the same way, and a warning is printed unless
+`silent = true`. This happens if the working precision was not sufficient for
+the eliminations, if a result of the presolve fails its validation, or if the
+second step fails. The result of the fallback is checked on its scaled problem
+as in the first step.
 
 ### Cost
 

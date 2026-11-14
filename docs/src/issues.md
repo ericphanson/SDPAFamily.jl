@@ -38,34 +38,50 @@ The presolve described in [Presolve](@ref) takes the data as exact numbers of
 type `T` and decides with tolerances. The following limitations remain.
 
 * Constraints that are nearly dependent, but not dependent up to the data
-  tolerance, are kept. The elimination then divides by small numbers. If the
-  mapped-back solution fails the checks, the presolve falls back to the
-  unreduced problem.
+  tolerance, are kept. The elimination then divides by small numbers. If what
+  the presolve removed does not hold at the mapped-back solution, the presolve
+  falls back to the unreduced problem.
 * Data rounded to a coarser type than `T` (such as `Float64` decimals in a
   `BigFloat` model) satisfy linear relations only up to that rounding; the
   presolve treats such rows as independent unless `presolve_tol` is set (see
-  [Arithmetic and tolerances](@ref)).
-* A computed number that is genuinely nonzero but smaller than about `τ` times
-  the magnitude of its computation (a dynamic range above about `1/τ`, roughly
-  `1e31` for `Float64` and `1e125` for `BigFloat` at 256 bits) is treated as zero.
-* The scaling equilibrates the constraint matrix and multiplies the right-hand
-  side and the objective each by one factor. If the right-hand sides of the
-  equilibrated rows differ by many orders of magnitude, for example an inactive
-  bound `x ≤ 1e150` next to bounds near 1, one factor cannot bring all of them
-  near 1, and the problem can remain too badly scaled for SDPA; the checks then
-  report `NUMERICAL_ERROR` instead of a wrong status.
-* The checks of the solution returned by SDPA are gross. A solution that is
-  close to optimal for a slightly perturbed problem passes them, also when it is
-  far from the solution of the given problem because the problem is
-  ill-conditioned.
-* With `T = Float64`, the working type `Float64x3` has the exponent range of
-  `Float64`; for data below about `1e-290` its lower parts are subnormal and the
-  rounding tolerance does not hold.
+  [Arithmetic and tolerances](@ref)). A coefficient that is a rounding error of
+  the data (for example `1e-17` where the model means zero) is a coefficient
+  like any other.
+* A computed number that is genuinely nonzero but more than ``1.5 p + 32`` bits
+  below its largest term (a dynamic range of about `1e33` for `Float64` and
+  `1e125` for `BigFloat` at 256 bits within one computation) is treated as zero.
+* SDPA's tolerances are absolute and apply to the scaled problem. A quantity
+  that is small in the scaled problem is not resolved, also when it is large in
+  the units of the model:
+  - A variable whose whole feasible range is below the tolerance in its scaled
+    unit can violate its bounds by that amount (with `1e-310 x + y == 1`,
+    `0 <= x <= 1e300`, `y >= 0`, the unit of `x` is `1e310`).
+  - A constraint that is violated by less than the tolerance relative to its
+    equilibrated row is satisfied for SDPA; an infeasible problem of this kind
+    is reported as `OPTIMAL`. This occurs when variables in very different
+    units meet in one constraint and the tolerance is `1e-7` (the variant
+    `:sdpa`, or `T = Float64`).
+  - Ruiz equilibration makes the largest entries of all rows and variables 1.
+    For a sparse matrix this does not determine the scaling, and a part of the
+    problem can end up at a size below the tolerance of the variant `:sdpa`.
+  - If the optimal objective value is far smaller than the product of the
+    largest entries of the equilibrated right-hand side and objective, the gap
+    tolerance does not resolve it. This case is detected (see
+    [Checks and fallback](@ref)) and gives `NUMERICAL_ERROR`; an example is an
+    inactive variable with cost 1 that may reach `1e150` on the feasible set.
+* SDPA reports unboundedness when the objective of the scaled problem passes
+  its parameters `lowerBound` or `upperBound` (`±1e5` by default). A problem
+  whose optimal value in the scaled problem is beyond these bounds is reported
+  as `DUAL_INFEASIBLE` or `INFEASIBLE`.
+* The checks of the solution returned by SDPA are at the square root of SDPA's
+  tolerances. A solution that is close to optimal for a slightly perturbed
+  problem passes them, also when it is far from the solution of the given
+  problem because the problem is ill-conditioned.
 * The fallback drops all reductions, even when only one step of the presolve
   failed its check.
-* The eliminations store rows as dictionaries and back-substitute to reduced row
-  echelon form. This is fast for sparse equality constraints; for hundreds of
-  dense equality constraints with `BigFloat` it takes seconds.
+* The equality elimination computes the reduced constraints explicitly. For
+  `m` dense equality constraints this takes time proportional to `m^3` in
+  `BigFloat` arithmetic (about 6 seconds for `m = 400` at 256 bits).
 
 In these cases, `presolve = false` passes the problem to SDPA unchanged.
 
