@@ -470,24 +470,24 @@ vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in te
         @test MOI.get(model, MOI.TerminationStatus()) == MOI.DUAL_INFEASIBLE
     end
 
-    @testset "constant row with a tiny constant, variant $var" for var in variants
-        # A row without coefficients must not be scaled by its constant (this happened
-        # for Convex's `fix!` with a value from a previous solve).
+    @testset "constant row with a tiny negative constant" begin
+        # From Convex's `constant_fix!_with_vectors`: `y` is fixed to the value of a
+        # previous solve, 0.5 - 2.9e-32, so `y >= 0.5` becomes a row without
+        # coefficients and a tiny negative constant. Scaling that row by its constant
+        # made SDPA-GMP report `pdINF`; rows without coefficients are not scaled.
         T = BigFloat
-        model, optimizer = bridged_model(T; variant = var)
-        x = MOI.add_variables(model, 5)
-        MOI.add_constraint(model, MOI.VectorAffineFunction(MOI.VectorAffineTerm{T}[], [big"3.3e-31"]), MOI.Nonnegatives(1))
-        MOI.add_constraint(model, MOI.VectorOfVariables(x), MOI.Nonnegatives(5))
-        for j in 1:5
-            MOI.add_constraint(model, T(1) * x[j], MOI.GreaterThan(T(1) / 2))
-        end
-        MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
-        MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(),
-                MOI.ScalarAffineFunction(MOI.ScalarAffineTerm.(big"0.5" + big"3.3e-31", x), zero(T)))
-        MOI.optimize!(model)
+        x = ComplexVariable(5)
+        fix!(x, ones(5) + im * ones(5))
+        y = Variable()
+        prob = minimize(real(y * sum(x)), [y >= 0.5, real(x) >= 0.5, imag(x) >= 0]; numeric_type = T)
+        solve!(prob, () -> SDPAFamily.Optimizer{T}(silent = true, variant = :sdpa_gmp))
+        free!(x)
+        fix!(y)
+        optimizer = SDPAFamily.Optimizer{T}(silent = true, variant = :sdpa_gmp)
+        solve!(prob, () -> optimizer)
         @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
-        @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
-        @test MOI.get(model, MOI.ObjectiveValue()) ≈ 1.25 atol = soltol(var, T)
+        @test optimizer.phasevalue == :pdOPT
+        @test prob.optval ≈ 1.25 atol = 1e-20
     end
 
     @testset "nothing to reduce, variant $var, sense $sense" for var in (:sdpa_gmp, :sdpa_dd), sense in (MOI.MIN_SENSE, MOI.MAX_SENSE)
