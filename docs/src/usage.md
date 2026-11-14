@@ -102,11 +102,13 @@ have the dual value zero.
 
 ### Arithmetic and tolerances
 
-The problem data of type `T` are taken as exact numbers. They are converted to
-`BigFloat` with `2 * precision(T) + 64` bits (the working precision), and the
-presolve computes in that precision. In this section, ``\epsilon_T`` is the
+The problem data of type `T` are taken as exact numbers and converted exactly to
+a working type with more precision: `Float64x3` from
+[MultiFloats.jl](https://github.com/dzhang314/MultiFloats.jl) (about 157 bits)
+for `T = Float64`, and `BigFloat` with `2 * precision(T) + 64` bits otherwise.
+The presolve computes in the working type. In this section, ``\epsilon_T`` is the
 machine epsilon of `T` (`eps(T)`, for `BigFloat` at the precision set by the
-caller), ``\epsilon_W`` that of the working precision, and
+caller), ``\epsilon_W`` that of the working type, and
 ``\tau = \sqrt{\epsilon_T \epsilon_W}``.
 
 Each decision compares a computed combination ``\sum_j w_j a_j`` of data vectors
@@ -114,38 +116,55 @@ Each decision compares a computed combination ``\sum_j w_j a_j`` of data vectors
 with the final coefficients ``w_j`` against the same data. An entry ``r`` of the
 combination counts as zero at tolerance ``t`` if
 ``|\sum_j w_j a_{jr}| \le t \sum_j |w_j| |a_{jr}| + \tau \sum_j |w_j| \max_s |a_{js}|``.
-The second term covers rounding errors of the working precision that spread
-across the entries of a combination.
+The second term covers rounding errors of the working type that spread across
+the entries of a combination. There are two tolerances:
 
-* Entries that count as zero at tolerance ``\tau`` (rounding errors of the
-  working precision) are removed during the elimination and the substitution.
-* A row of the equality constraints, or a matrix ``F_k``, is linearly dependent
-  on the others if all its entries count as zero at tolerance ``64 \epsilon_T``
-  after the elimination; this is confirmed by recomputing the combination from
-  the original data. So rows or matrices that are combinations of others up to
-  rounding to `T` are dependent.
-* A dependent row or matrix is consistent if the same combination of the
-  right-hand sides (objective coefficients) counts as zero at tolerance
-  ``64 \epsilon_T``. The decision for one row or column does not depend on the
-  size of unrelated entries of the problem.
+* ``\tau`` (rounding): entries that count as zero at tolerance ``\tau`` consist
+  of rounding errors of the working type. They are removed during the
+  elimination and the substitution.
+* ``\delta = 64 \epsilon_D`` (data): a row of the equality constraints, or a
+  matrix ``F_k``, is linearly dependent on the others if all its entries count as
+  zero at tolerance ``\delta`` after the elimination (confirmed by recomputing
+  the combination from the data), and a dependent row or matrix is consistent if
+  the same combination of the right-hand sides (objective coefficients) counts as
+  zero at tolerance ``\delta``. Here ``\epsilon_D = \epsilon_T``, except that
+  ``\epsilon_D = \epsilon_{\text{Float64}}`` if `T` has more precision than
+  `Float64` and all coefficients of the model are `Float64` numbers: such data
+  were most likely computed in `Float64` (for example decimal coefficients like
+  `0.1` widened to `BigFloat`), and relations between them hold only up to
+  rounding to `Float64`.
+
+### Scaling
+
+Before the eliminations, each row of the equality and cone constraints is scaled
+to a largest coefficient near 1, so that the sizes of combinations of rows are
+comparable. After the reduction, the problem passed to SDPA is equilibrated by
+Ruiz's algorithm, which divides the rows (with the right-hand side counted in the
+row norms) and the variables repeatedly by the square roots of their largest
+coefficients; the rows of a positive semidefinite block share one factor, so
+that the scaling keeps the cone. Then the right-hand side and the objective are
+scaled so that their largest entries are between 1 and 2. All factors are powers
+of two, so the scaled data are exact. The solution is scaled back before the
+checks below.
 
 ### Checks and fallback
 
 Every result that the presolve returns without calling SDPA is checked against
-the original data before it is returned: a certificate of infeasibility must
-satisfy ``A^T y = 0`` and ``b^T y < 0`` (at tolerance ``\tau``), a ray must
-satisfy ``A_E d = 0``, ``A_K d \in K`` and ``c^T d < 0``, and the expressions for
-the eliminated variables are checked against the original equality constraints.
+the data before it is returned, at the tolerance ``\delta`` of the decisions
+that led to it: a certificate of infeasibility must satisfy ``A^T y = 0`` and
+``b^T y < 0``, a ray must satisfy ``A_E d = 0``, ``A_K d \in K`` and
+``c^T d < 0``, and the expressions for the eliminated variables are checked
+against the original equality constraints.
 
 If no variable is left (because the equality constraints determine all
 variables, or because the model has no variables with nonzero coefficients),
 SDPA is not called, and the presolve checks the constraints at the only
-remaining point, computed from the original data. A `Nonnegatives` entry with
-value ``b_i`` and magnitude ``m_i`` (the sum of the absolute values of the terms
-that give ``b_i``) is accepted if ``b_i \ge -\epsilon m_i``, and a positive
+remaining point, computed from the data. A `Nonnegatives` entry with value
+``b_i`` and magnitude ``m_i`` (the sum of the absolute values of the terms that
+give ``b_i``) is accepted if ``b_i \ge -\epsilon m_i``, and a positive
 semidefinite block ``B`` if ``B + \epsilon \|M\|_F I`` is positive
 semidefinite, where ``M`` holds the magnitudes of the entries of ``B``. Here
-``\epsilon`` is the larger of ``\tau`` and the constraint tolerance
+``\epsilon`` is the larger of ``\delta`` and the constraint tolerance
 `epsilonStar` of the solver parameters (zero when the parameters are given as a
 file or as `UNSTABLE_BUT_FAST` or `STABLE_BUT_SLOW`). Semidefiniteness is tested
 by symmetric elimination that accepts zero pivots with zero rows, so the zero
@@ -154,19 +173,24 @@ constraints are accepted, the termination status is `OPTIMAL`. Otherwise it is
 `INFEASIBLE`; if a `Nonnegatives` entry is violated, the dual status is
 `INFEASIBILITY_CERTIFICATE`, and otherwise `NO_SOLUTION`.
 
-After SDPA has solved the reduced problem, the original equality constraints are
-checked at the returned point: the rows that were kept must hold up to
-``64 \epsilon_T`` relative to the sizes of their terms, and the rows that were
-dropped as dependent up to the square root of the larger of ``\epsilon_T`` and
-`epsilonStar` (but at least `1e-15`). When the dual status is `FEASIBLE_POINT`,
-the dual equations ``A^T y = c`` are checked with the same tolerance, relative to
-the largest term of these equations or 1, whichever is larger. These checks catch gross errors, for example
-from an ill-conditioned elimination; they do not replace the accuracy of SDPA.
+After SDPA has solved the reduced problem, the solution is mapped back and
+checked:
+
+* The equality constraints that were kept must hold up to ``64 \epsilon_T``
+  relative to the sizes of their terms (the rounding of the solution to `T`).
+  A constraint that was dropped as dependent must hold up to ``2\delta`` times
+  the terms of the combination it was found to depend on, plus the residuals of
+  the constraints in that combination.
+* When the dual status is `FEASIBLE_POINT`, the relative residual of the dual
+  equations ``A^T y = c`` of the model must not exceed 100 times the relative
+  residual of the dual equations of the reduced problem plus ``\delta``. The
+  mapping back is exact up to rounding, so this only fails when the elimination
+  amplifies the solver's error, for example for nearly dependent constraints.
 
 If any check fails, the presolve falls back: the problem is passed to SDPA
-without reduction, with each equality constraint written as two inequalities,
-and a warning is printed unless `silent = true`. SDPA may then fail on the
-problem, but the result is the solver's own.
+without reduction and without scaling, with each equality constraint written as
+two inequalities, and a warning is printed unless `silent = true`. SDPA may then
+fail on the problem, but the result is the solver's own.
 
 ### Cost
 
@@ -174,10 +198,10 @@ Eliminating variables can fill in sparse rows of the constraints. The presolve
 chooses as pivots variables with few nonzero coefficients, among those whose
 coefficient is at least a tenth of the largest one in the row. In a test with
 400 variables, 200 random equality constraints with 3 nonzero coefficients
-each, and `x ≥ 0`, the SDPA input file was 83 KiB with the presolve and 34 KiB
-without it. The working precision makes the presolve slower than arithmetic in
-`T`: for 1000 random sparse equality constraints on a 60×60 matrix variable, the
-presolve took about 10 seconds with `Float64` and 14 seconds with `BigFloat`.
+each, and `x ≥ 0`, the SDPA input file was 84 KiB with the presolve and 34 KiB
+without it. For 1000 random sparse equality constraints on a 60×60 matrix
+variable, the presolve took about 0.9 seconds with `Float64` and 16 seconds with
+`BigFloat`.
 
 With `presolve = false`, the problem is passed to SDPA unchanged, with equality
 constraints bridged into pairs of inequalities.
