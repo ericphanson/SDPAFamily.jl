@@ -74,12 +74,12 @@ using SparseArrays
 
 const _EXACT = Union{Rational,Integer}
 
-work_type(::Type{T}) where {T} = T <: _EXACT ? T : BigFloat
+work_type(::Type{T}) where {T} = T <: _EXACT ? T : T === Float64 ? MultiFloats.Float64x3 : BigFloat
 work_precision(::Type{T}) where {T} = 2 * precision(T) + 64
 
 # Runs `f()` with the `BigFloat` precision set to the working precision for `T`.
 function with_work_precision(f, ::Type{T}) where {T}
-    T <: _EXACT && return f()
+    work_type(T) === BigFloat || return f()
     return setprecision(f, BigFloat, work_precision(T))
 end
 
@@ -87,27 +87,32 @@ end
 # caller (`eps(BigFloat)` depends on the current precision). Call inside
 # `with_work_precision`.
 eps_of(::Type{T}, pT) where {T} =
-    T <: _EXACT ? zero(T) : BigFloat(2)^(1 - (T === BigFloat ? pT : precision(T)))
+    T <: _EXACT ? zero(T) : work_type(T)(2)^(1 - (T === BigFloat ? pT : precision(T)))
 
-# The decision tolerance `τ`; must be called inside `with_work_precision`.
-decision_tol(::Type{T}, pT) where {T} =
-    T <: _EXACT ? zero(T) : sqrt(eps_of(T, pT) * eps(BigFloat))
-
-# The tolerance for consistency decisions (and thus for the infeasibility results of
-# the presolve): `64 eps(T)`. A dependent row or column whose right-hand side or cost
-# differs from the combination by less than this, relative to the terms combined, is
-# treated as consistent: the data of type `T` do not determine it more precisely.
-consistency_tol(::Type{T}, pT) where {T} = T <: _EXACT ? zero(T) : 64 * eps_of(T, pT)
-
-# Rounding errors of the working precision can spread across the entries of a
-# combination (in particular in the back substitution), so an entry also counts as zero
-# if it is at most `τ` times the size of the whole combination,
-# `Σ_j |w_j| max_r |a_jr|`. Must be called inside `with_work_precision`.
-work_floor_tol(::Type{T}, pT) where {T} = decision_tol(T, pT)
-
-# The default tolerance of the exported elimination functions when they are called
-# directly in the number type `T` (without the working precision).
-default_presolve_tol(::Type{T}) where {T} = T <: _EXACT ? zero(T) : 64 * eps(T)
+# ## Tolerances
+#
+# The presolve uses two tolerances for its decisions, both relative to the terms that
+# are combined (see the description above):
+#
+# * `rounding_tol` (`τ = sqrt(eps(T) * eps(W))` for the working type `W`): a computed
+#   number that is at most `τ` times its terms consists of rounding errors of the
+#   working precision. Such numbers are removed during the eliminations and the
+#   substitution, and the reduced row echelon form is checked with `τ`.
+# * `data_tol` (`64 eps(D)`, where `D` is `Float64` if all data of the model are
+#   `Float64` numbers and `T` otherwise): a row or column is dependent, and a dependent
+#   row or column is consistent, if the combination is zero up to `data_tol`. Results
+#   that rest on these decisions (certificates, rays, the determined point) are
+#   validated against the scaled original data with the same tolerance.
+#
+# The determined point is accepted as feasible with `max(data_tol, epsilonStar)`, the
+# constraint tolerance of the solver. After the solve, the residuals of the mapped-back
+# solution are compared with the tolerances above and with the residuals of the
+# reduced problem (see `postsolve!`).
+#
+# Call these inside `with_work_precision`.
+rounding_tol(::Type{T}, pT) where {T} =
+    T <: _EXACT ? zero(T) : sqrt(eps_of(T, pT) * eps(work_type(T)))
+data_tol(::Type{T}, pT) where {T} = T <: _EXACT ? zero(T) : 64 * eps_of(T, pT)
 
 _counts_as_zero(value, bound, tol) = abs(value) <= tol * bound
 
@@ -130,6 +135,9 @@ mutable struct Elimination{T}
     comb::Vector{Dict{Int,T}}
     independent::Vector{Int}
     redundant::Vector{Int}
+    # for each redundant column `k`, coefficients `w` (with `w[k] = 1`) such that
+    # `A w` is zero up to the dependence tolerance
+    dependence::Dict{Int,Dict{Int,T}}
     # the first column that is dependent but inconsistent with `c`, or 0
     inconsistent::Int
     # if `inconsistent > 0`: coefficients `d` with `A d ≈ 0` and `c'd < 0`
@@ -170,16 +178,17 @@ function _combination(A::SparseMatrixCSC{T}, comb::Dict{Int,T}) where {T}
 end
 
 """
-    eliminate(A::SparseMatrixCSC{T}, c::AbstractVector{T}; tol = default_presolve_tol(T), pivot_cost = nothing) -> Elimination{T}
+    eliminate(A::SparseMatrixCSC{T}, c::AbstractVector{T}; tol = 0, data_tol = tol, pivot_cost = nothing) -> Elimination{T}
 
 Gaussian elimination on the columns of `A`, in the number type `T`. The columns are
 processed in order. After the elimination of column `k`, with `w` the coefficients of
 the result in terms of the original columns, entry `r` is dropped if its absolute value
-is at most `tol * Σ_j |w_j| |A[r, j]| + floor_tol * Σ_j |w_j| max|A[:, j]|`. Column `k`
-is linearly dependent on the previous columns if all its entries are at most this bound
-with `dtol` in place of `tol`, which is confirmed by recomputing `A w` directly. The
-same combination of `c` decides whether it is consistent, with the tolerance `ctol`; if
-not, the elimination stops and records a certificate `d` with `A d ≈ 0` and `c'd < 0`.
+is at most `tol * Σ_j |w_j| |A[r, j]| + tol * Σ_j |w_j| max|A[:, j]|` (rounding errors).
+Column `k` is linearly dependent on the previous columns if all its entries are at
+most this bound with `data_tol` in place of `tol` in the first term, which is confirmed
+by recomputing `A w` directly. The same combination of `c` decides whether it is
+consistent, with `data_tol`; if not, the elimination stops and records a certificate
+`d` with `A d ≈ 0` and `c'd < 0`.
 
 The pivot of a new basis vector is chosen among its entries whose absolute value is at
 least `1/10` of the largest one: the entry in the row `r` with the smallest
@@ -189,14 +198,13 @@ With `tol = 0` (the default for `Rational` and `Integer` element types) the
 computation is exact.
 """
 function eliminate(A::SparseMatrixCSC{T}, c::AbstractVector{T};
-                   tol = default_presolve_tol(T), dtol = tol, ctol = dtol,
-                   floor_tol = zero(T),
+                   tol = zero(T), data_tol = tol,
                    pivot_cost::Union{Nothing,AbstractVector{Int}} = nothing) where {T}
     n = size(A, 2)
     length(c) == n || throw(DimensionMismatch("`c` must have one entry per column of `A`"))
     colmax = [maximum(abs, view(nonzeros(A), nzrange(A, j)); init = zero(T)) for j in 1:n]
-    E = Elimination{T}(Int[], Dict{Int,T}[], T[], Dict{Int,T}[], Int[], Int[], 0,
-                       Dict{Int,T}(), false)
+    E = Elimination{T}(Int[], Dict{Int,T}[], T[], Dict{Int,T}[], Int[], Int[],
+                       Dict{Int,Dict{Int,T}}(), 0, Dict{Int,T}(), false)
     row_to_basis = Dict{Int,Int}()
     rows_A = rowvals(A)
     vals_A = nonzeros(A)
@@ -243,14 +251,14 @@ function eliminate(A::SparseMatrixCSC{T}, c::AbstractVector{T};
         bound = _bound(A, comb, keys(v))
         # the rounding errors of the working precision in the computation of `v`, which
         # can exceed `tol` times the one-level bound when `comb` has small entries
-        floor = floor_tol * sum(abs(w) * colmax[j] for (j, w) in comb)
+        spread = tol * sum(abs(w) * colmax[j] for (j, w) in comb)
         for r in collect(keys(v))
-            abs(v[r]) <= tol * bound[r] + floor && delete!(v, r)
+            abs(v[r]) <= tol * bound[r] + spread && delete!(v, r)
         end
-        if all(abs(v[r]) <= dtol * bound[r] + floor for r in keys(v))
+        if all(abs(v[r]) <= data_tol * bound[r] + spread for r in keys(v))
             # dependent column; confirm with the combination computed directly
             val, mag = _combination(A, comb)
-            if !all(abs(val[r]) <= dtol * mag[r] + floor for r in keys(val))
+            if !all(abs(val[r]) <= data_tol * mag[r] + spread for r in keys(val))
                 E.failed = true
                 return E
             end
@@ -260,7 +268,7 @@ function eliminate(A::SparseMatrixCSC{T}, c::AbstractVector{T};
                 cd += w * c[j]
                 cmag += abs(w) * abs(c[j])
             end
-            if abs(cd) > (ctol + floor_tol) * cmag
+            if abs(cd) > (data_tol + tol) * cmag
                 E.inconsistent = k
                 s = cd > 0 ? -one(T) : one(T)
                 for (j, w) in comb
@@ -269,6 +277,7 @@ function eliminate(A::SparseMatrixCSC{T}, c::AbstractVector{T};
                 return E
             end
             push!(E.redundant, k)
+            E.dependence[k] = comb
         else
             maxabs = maximum(abs, values(v))
             prow, pval = 0, zero(T)
@@ -315,33 +324,27 @@ struct PresolveResult{T}
 end
 
 """
-    find_redundant_columns(A::SparseMatrixCSC{T}, c::AbstractVector{T}; tol = nothing) -> PresolveResult{T}
+    find_redundant_columns(A::SparseMatrixCSC{T}, c::AbstractVector{T}) -> PresolveResult{T}
 
 Finds the columns of `A` that are linear combinations of earlier columns, using
 [`SDPAFamily.eliminate`](@ref). If such a combination is inconsistent with `c`, the
 problem `min c'x : A x + b ∈ K` is dual infeasible and the result contains a ray.
 
-Without `tol`, the computation is done in the working precision with the decision
-tolerance described at the top of `src/presolve.jl`, and the result is converted to
-`T`. With `tol`, it is done in `T`; then the check does not account for the rounding
-errors of the multipliers of the elimination.
+The computation is done in the working precision with the tolerances described at the
+top of `src/presolve.jl`, and the result is converted to `T`.
 """
-function find_redundant_columns(A::SparseMatrixCSC{T}, c::AbstractVector{T};
-                                tol = nothing) where {T}
-    tol === nothing || return _find_redundant_columns(A, c, tol, tol)
+function find_redundant_columns(A::SparseMatrixCSC{T}, c::AbstractVector{T}) where {T}
     pT = T === BigFloat ? precision(BigFloat) : 0
     return with_work_precision(T) do
         H = work_type(T)
-        r = _find_redundant_columns(H.(A), H.(c), decision_tol(T, pT), consistency_tol(T, pT);
-                                    floor_tol = work_floor_tol(T, pT))
+        r = _find_redundant_columns(H.(A), H.(c), rounding_tol(T, pT), data_tol(T, pT))
         ray = r.ray === nothing ? nothing : T[_to(T, pT, x) for x in r.ray]
         return PresolveResult{T}(r.redundant, ray, r.failed)
     end
 end
 
-function _find_redundant_columns(A::SparseMatrixCSC{T}, c::AbstractVector{T}, tol, ctol;
-                                 floor_tol = zero(T)) where {T}
-    E = eliminate(A, c; tol = tol, dtol = ctol, ctol = ctol, floor_tol = floor_tol)
+function _find_redundant_columns(A::SparseMatrixCSC{T}, c::AbstractVector{T}, tol, dtol) where {T}
+    E = eliminate(A, c; tol = tol, data_tol = dtol)
     E.failed && return PresolveResult{T}(Int[], nothing, true)
     E.inconsistent == 0 && return PresolveResult{T}(E.redundant, nothing, false)
     ray = zeros(T, size(A, 2))
@@ -368,8 +371,10 @@ struct EqualityElimination{T}
     # row `q` of the reduced system is `Σ_r comb[q][r] * (row r of A_E)`
     comb::Vector{Dict{Int,T}}
     free::Vector{Int}
-    # the rows of `A_E` that were not found to be dependent
+    # the rows of `A_E` that were not found to be dependent, and for each dependent
+    # row `r` the coefficients `w` (`w[r] = 1`) of the combination of rows that is zero
     independent::Vector{Int}
+    dependence::Dict{Int,Dict{Int,T}}
     # `nothing`, or `y` with `A_E' y ≈ 0` and `b_E' y < 0`
     infeasible::Union{Nothing,Vector{T}}
     # `true` if a computed result did not pass its check against `A_E` and `b_E`
@@ -377,43 +382,40 @@ struct EqualityElimination{T}
 end
 
 """
-    eliminate_equalities(AE::SparseMatrixCSC{T}, bE::Vector{T}; tol = nothing, pivot_cost = nothing) -> EqualityElimination{T}
+    eliminate_equalities(AE::SparseMatrixCSC{T}, bE::Vector{T}; pivot_cost = nothing) -> EqualityElimination{T}
 
 Reduces the system `AE * x + bE = 0` to reduced row echelon form by Gaussian
 elimination in the number type `T` (see [`SDPAFamily.eliminate`](@ref)), and checks
-each resulting row against the original rows. Without `tol`, the computation is done in
-the working precision and the result is converted to `T` (see
-[`SDPAFamily.find_redundant_columns`](@ref)). With `pivot_cost[j]` the number of
+each resulting row against the original rows. The computation is done in the working
+precision and the result is converted to `T`. With `pivot_cost[j]` the number of
 nonzeros of variable `j` in the whole model, the pivots are chosen to limit the
 fill-in of the substitution.
 """
 function eliminate_equalities(AE::SparseMatrixCSC{T}, bE::Vector{T};
-                              tol = nothing,
                               pivot_cost::Union{Nothing,AbstractVector{Int}} = nothing) where {T}
-    tol === nothing || return _eliminate_equalities(AE, bE, tol, tol, pivot_cost)
     pT = T === BigFloat ? precision(BigFloat) : 0
     return with_work_precision(T) do
         H = work_type(T)
-        e = _eliminate_equalities(H.(AE), H.(bE), decision_tol(T, pT), consistency_tol(T, pT),
-                                  pivot_cost; floor_tol = work_floor_tol(T, pT))
+        e = _eliminate_equalities(H.(AE), H.(bE), rounding_tol(T, pT), data_tol(T, pT), pivot_cost)
         conv(v) = T[_to(T, pT, x) for x in v]
         convd(d) = Dict{Int,T}(k => _to(T, pT, x) for (k, x) in d)
         return EqualityElimination{T}(e.pivots, convd.(e.rows), conv(e.rhs), convd.(e.comb),
                                       e.free, e.independent,
+                                      Dict{Int,Dict{Int,T}}(r => convd(w) for (r, w) in e.dependence),
                                       e.infeasible === nothing ? nothing : conv(e.infeasible),
                                       e.failed)
     end
 end
 
-function _eliminate_equalities(AE::SparseMatrixCSC{T}, bE::Vector{T}, tol, ctol,
-                               pivot_cost; floor_tol = zero(T)) where {T}
+function _eliminate_equalities(AE::SparseMatrixCSC{T}, bE::Vector{T}, tol, dtol,
+                               pivot_cost) where {T}
     m, n = size(AE)
     failed() = EqualityElimination{T}(Int[], Dict{Int,T}[], T[], Dict{Int,T}[],
-                                      collect(1:n), Int[], nothing, true)
+                                      collect(1:n), Int[], Dict{Int,Dict{Int,T}}(), nothing, true)
     # The columns of the transpose are the rows of `AE`.
     AEt = sparse(transpose(AE))
     rowmax = [maximum(abs, view(nonzeros(AEt), nzrange(AEt, r)); init = zero(T)) for r in 1:m]
-    E = eliminate(AEt, -bE; tol = tol, dtol = ctol, ctol = ctol, floor_tol = floor_tol,
+    E = eliminate(AEt, -bE; tol = tol, data_tol = dtol,
                   pivot_cost = pivot_cost)
     E.failed && return failed()
     if E.inconsistent != 0
@@ -423,7 +425,7 @@ function _eliminate_equalities(AE::SparseMatrixCSC{T}, bE::Vector{T}, tol, ctol,
             y[r] = -w
         end
         return EqualityElimination{T}(Int[], Dict{Int,T}[], T[], Dict{Int,T}[],
-                                      collect(1:n), Int[], y, false)
+                                      collect(1:n), Int[], Dict{Int,Dict{Int,T}}(), y, false)
     end
     Q = length(E.pivots)
     rows = E.basis
@@ -454,16 +456,16 @@ function _eliminate_equalities(AE::SparseMatrixCSC{T}, bE::Vector{T}, tol, ctol,
     # the combination of the original rows.
     for q in 1:Q
         val, mag = _combination(AEt, comb[q])
-        floor = floor_tol * sum(abs(w) * rowmax[r] for (r, w) in comb[q])
+        spread = tol * sum(abs(w) * rowmax[r] for (r, w) in comb[q])
         for l in collect(keys(rows[q]))
             l == E.pivots[q] && continue
-            if abs(rows[q][l]) <= tol * get(mag, l, zero(T)) + floor
+            if abs(rows[q][l]) <= tol * get(mag, l, zero(T)) + spread
                 delete!(rows[q], l)
             end
         end
         for l in union(keys(val), keys(rows[q]))
             target = l == E.pivots[q] ? one(T) : get(rows[q], l, zero(T))
-            if abs(get(val, l, zero(T)) - target) > tol * get(mag, l, zero(T)) + floor
+            if abs(get(val, l, zero(T)) - target) > tol * get(mag, l, zero(T)) + spread
                 return failed()
             end
         end
@@ -473,13 +475,14 @@ function _eliminate_equalities(AE::SparseMatrixCSC{T}, bE::Vector{T}, tol, ctol,
             rd -= w * bE[r]
             rmag += abs(w) * abs(bE[r])
         end
-        if abs(rd - rhs[q]) > tol * rmag + floor_tol * (rmag + sum(abs(w) * rowmax[r] for (r, w) in comb[q]))
+        if abs(rd - rhs[q]) > tol * (2 * rmag + sum(abs(w) * rowmax[r] for (r, w) in comb[q]))
             return failed()
         end
         delete!(rows[q], E.pivots[q])
     end
     free = sort!(collect(setdiff(1:n, E.pivots)))
-    return EqualityElimination{T}(E.pivots, rows, rhs, comb, free, E.independent, nothing, false)
+    return EqualityElimination{T}(E.pivots, rows, rhs, comb, free, E.independent,
+                                  E.dependence, nothing, false)
 end
 
 # Values of all variables, given the values of the free variables. With
@@ -513,6 +516,11 @@ end
 
 const SDPAModel{T} = MOI.FileFormats.SDPA.Model{T}
 const CONE_TYPES = (MOI.Nonnegatives, MOI.PositiveSemidefiniteConeTriangle)
+
+# whether all entries are exactly `Float64` numbers
+_all_float64(arrays...) = all(all(x -> isfinite(x) && Float64(x) == x, nonzeros_or_all(a)) for a in arrays)
+nonzeros_or_all(a::SparseMatrixCSC) = nonzeros(a)
+nonzeros_or_all(a) = a
 
 _cone_constraints(model::SDPAModel{T}, S) where {T} =
     MOI.get(model, MOI.ListOfConstraintIndices{AFF{T},S}())
@@ -651,9 +659,111 @@ function substitute(A::SparseMatrixCSC{H}, b::Vector{H}, c::Vector{H},
 end
 
 """
+    Scaling{H}
+
+Power-of-two scaling factors (see [`SDPAFamily.equilibrate`](@ref)). The scaled problem
+has the cone constraints `diag(row) * (A * diag(col) * x̂ + rhs * b) ∈ K`, the equality
+constraints `diag(eqrow) * (A_E * diag(col) * x̂ + rhs * b_E) = 0` and the objective
+`obj * c' * diag(col) * x̂`, with `x = diag(col) * x̂ / rhs`. Since `K` is a cone,
+multiplying `b` by `rhs` and the solution by `rhs` gives an equivalent problem.
+"""
+struct Scaling{H}
+    row::Vector{H}
+    eqrow::Vector{H}
+    col::Vector{H}
+    obj::H
+    rhs::H
+end
+
+# `exponent` of a positive number (for `MultiFloat`, that of its leading limb)
+_exponent(x::BigFloat) = exponent(x)
+_exponent(x::Rational) = exponent(Float64(x))
+_exponent(x) = exponent(Float64(x))
+_pow2(::Type{H}, k::Int) where {H} = H(2)^k
+
+# the power of two closest to `1 / sqrt(x)` for `x > 0`
+_inv_sqrt_pow2(x::H) where {H} = _pow2(H, -round(Int, _exponent(x) / 2))
+
+# The row group of each cone row: each `Nonnegatives` row is its own group, and the rows
+# of a PSD block share one group, so that the scaling of a block is a congruence
+# `X ↦ ρ X` and keeps the cone.
+function _row_groups(sets, offset::Int)
+    groups = Int[]
+    g = offset
+    for S in sets
+        if S isa MOI.Nonnegatives
+            for _ in 1:MOI.dimension(S)
+                g += 1
+                push!(groups, g)
+            end
+        else
+            g += 1
+            append!(groups, fill(g, MOI.dimension(S)))
+        end
+    end
+    return groups, g
+end
+
+"""
+    equilibrate(M::SparseMatrixCSC{H}, groups::Vector{Int}, ngroups::Int; iterations = 20) -> (rowfactors, colfactors)
+
+Ruiz equilibration (D. Ruiz, "A scaling algorithm to equilibrate both rows and columns
+norms in matrices", 2001), as used by production LP and conic solvers: the row groups
+and the columns of `M` are divided simultaneously by the square roots of their largest
+absolute entries, until all of these are within a factor of 2 of 1. The factors are
+rounded to powers of two, so scaling by them is exact. Returns the factor of each
+group and of each column.
+"""
+function equilibrate(M::SparseMatrixCSC{H}, groups::Vector{Int}, ngroups::Int;
+                     iterations::Int = 20, scale_columns::Bool = true,
+                     fixed_column::Union{Nothing,AbstractVector{H}} = nothing) where {H}
+    if fixed_column !== nothing
+        # a column (the right-hand side) that counts in the row norms but is not scaled
+        M = hcat(M, sparse(fixed_column))
+    end
+    n = size(M, 2)
+    g = ones(H, ngroups)
+    s = ones(H, n)
+    rv = rowvals(M)
+    nz = nonzeros(M)
+    for _ in 1:iterations
+        gnorm = zeros(H, ngroups)
+        cnorm = zeros(H, n)
+        has_coefficients = falses(ngroups)
+        for j in 1:n, p in nzrange(M, j)
+            k = groups[rv[p]]
+            v = abs(nz[p]) * g[k] * s[j]
+            gnorm[k] = max(gnorm[k], v)
+            cnorm[j] = max(cnorm[j], v)
+            if fixed_column === nothing || j < n
+                has_coefficients[k] |= !iszero(nz[p])
+            end
+        end
+        # a row without coefficients is a constant; it is not scaled
+        for k in 1:ngroups
+            has_coefficients[k] || (gnorm[k] = zero(H))
+        end
+        balanced(x) = iszero(x) || (x >= one(H) / 2 && x <= 2)
+        ncols = fixed_column === nothing ? n : n - 1
+        all(balanced, gnorm) && (!scale_columns || all(balanced, view(cnorm, 1:ncols))) && break
+        for k in 1:ngroups
+            iszero(gnorm[k]) || (g[k] *= _inv_sqrt_pow2(gnorm[k]))
+        end
+        if scale_columns
+            for j in 1:(fixed_column === nothing ? n : n - 1)
+                iszero(cnorm[j]) || (s[j] *= _inv_sqrt_pow2(cnorm[j]))
+            end
+        end
+    end
+    return g, fixed_column === nothing ? s : s[1:end-1]
+end
+
+_scale(M::SparseMatrixCSC, r, c) = Diagonal(r) * M * Diagonal(c)
+
+"""
     PresolveData
 
-Information that [`SDPAFamily.Optimizer`](@ref) keeps to map the solution of the
+Information that `SDPAFamily.Optimizer` keeps to map the solution of the
 problem solved by SDPA back to the model. Variables are numbered as in the
 `MOI.FileFormats.SDPA.Model` that is built from the model. The arrays of type `H` are in
 the working precision.
@@ -662,7 +772,20 @@ mutable struct PresolveData{T,H}
     nvars::Int
     pT::Int
     sets::Vector{Any}
-    # cone constraints and objective of the model, see `constraint_matrix`
+    # the scaling before the elimination; the arrays below are scaled by it, and
+    # `original` holds the unscaled `(A, b, c, AE, bE)` for the fallback
+    pre::Scaling{H}
+    original::NTuple{5,Any}
+    # the scaling of the reduced problem passed to SDPA, and its columns among the
+    # variables of the reduced problem
+    post::Union{Nothing,Scaling{H}}
+    keep::Vector{Int}
+    # the reduced problem (scaled by `pre`, before `post`): cone matrix and objective
+    Ared::SparseMatrixCSC{H,Int}
+    cred::Vector{H}
+    # the dependence and consistency tolerance used (see `data_tol`)
+    data_tol::H
+    # cone constraints and objective of the scaled model, see `constraint_matrix`
     A::SparseMatrixCSC{H,Int}
     b::Vector{H}
     c::Vector{H}
@@ -803,7 +926,10 @@ function _all_zero(val, mag, tol)
 end
 
 # Checks a ray `d` against the original data: `AE d = 0`, `A d ∈ K`, `c'd < 0`.
+# The checks below also reject non-finite values: with `MultiFloat` as the working type,
+# an overflow gives `NaN`, for which every comparison is false.
 function valid_ray(data::PresolveData, d, tol)
+    all(isfinite, d) || return false
     rE, mE = _apply(data.AE, d)
     _all_zero(rE, mE, tol) || return false
     s, m = _apply(data.A, d)
@@ -815,6 +941,7 @@ end
 # Checks a dual certificate (`yK` weighted as in `weighted_dual_vector`, `yE`) against
 # the original data: `A' yK + AE' yE = 0`, `yK` in the dual cone, `b' yK + bE' yE < 0`.
 function valid_certificate(data::PresolveData, yK, yE, tol)
+    all(isfinite, yK) && all(isfinite, yE) || return false
     H = eltype(data.b)
     r = transpose(data.A) * yK + transpose(data.AE) * yE
     m = transpose(abs.(data.A)) * abs.(yK) + transpose(abs.(data.AE)) * abs.(yE)
@@ -822,13 +949,6 @@ function valid_certificate(data::PresolveData, yK, yE, tol)
     by = sum(data.b .* yK; init = zero(H)) + sum(data.bE .* yE; init = zero(H))
     bm = sum(abs.(data.b) .* abs.(yK); init = zero(H)) + sum(abs.(data.bE) .* abs.(yE); init = zero(H))
     return by < 0 && !_counts_as_zero(by, bm, tol)
-end
-
-# The tolerance of the checks of the solution after the solve: the square root of the
-# larger of `eps(T)` and the constraint tolerance `epsilonStar`, but at least `1e-15`.
-# These checks only catch gross errors.
-function gross_error_tol(optimizer::Optimizer{T}, ::Type{H}, pT) where {T,H}
-    return max(sqrt(max(eps_of(T, pT), H(solver_feasibility_tol(optimizer)))), H(1e-15))
 end
 
 # The constraint tolerance `epsilonStar` of the solver parameters, or zero if the
@@ -857,10 +977,28 @@ function presolve!(optimizer::Optimizer{T}, model::SDPAModel{T},
     A_T, b_T, c_T, sets = constraint_matrix(model)
     return with_work_precision(T) do
         H = work_type(T)
-        tol = decision_tol(T, pT)
-        ctol = consistency_tol(T, pT)
+        tol = rounding_tol(T, pT)
+        ctol = data_tol(T, pT)
         n = size(A_T, 2)
-        data = PresolveData{T,H}(n, pT, sets, H.(A_T), H.(b_T), H.(c_T), H.(AE_T), H.(bE_T),
+        A0, b0, c0, AE0, bE0 = H.(A_T), H.(b_T), H.(c_T), H.(AE_T), H.(bE_T)
+        if !(T <: _EXACT) && T !== Float64 && _all_float64(A_T, b_T, c_T, AE_T, bE_T)
+            # data that are exactly `Float64` numbers were most likely computed in
+            # `Float64`: decide dependence and consistency at `Float64` precision
+            ctol = H(64 * eps(Float64))
+        end
+        # Scale the rows of the equality and cone constraints (not the variables) before
+        # the eliminations, so that the size of a combination of rows is meaningful.
+        # Scaling the variables here would let rows that turn out to be redundant
+        # distort the scaling of the reduced problem; the variables are scaled after
+        # the reduction.
+        groups, ng = _row_groups(sets, length(bE0))
+        gf, cf = equilibrate(vcat(AE0, A0), vcat(collect(1:length(bE0)), groups), ng;
+                             scale_columns = false)
+        pre = Scaling{H}(gf[groups], gf[1:length(bE0)], cf, one(H), one(H))
+        data = PresolveData{T,H}(n, pT, sets, pre, (A0, b0, c0, AE0, bE0), nothing, Int[],
+                                 spzeros(H, 0, 0), H[], ctol,
+                                 _scale(A0, pre.row, pre.col), pre.row .* b0, pre.col .* c0,
+                                 _scale(AE0, pre.eqrow, pre.col), pre.eqrow .* bE0,
                                  eq_rows, nothing, Int[], :reduced, 0, "", zero(T), T[], T[])
         optimizer.presolve_data = data
         fallback(reason) = fallback_model!(optimizer, reason)
@@ -869,12 +1007,11 @@ function presolve!(optimizer::Optimizer{T}, model::SDPAModel{T},
         if !isempty(data.bE)
             # the number of nonzeros of each variable, to choose pivots with little fill-in
             pivot_cost = [length(nzrange(A, j)) + length(nzrange(data.AE, j)) for j in 1:n]
-            elim = _eliminate_equalities(data.AE, data.bE, tol, ctol, pivot_cost;
-                                         floor_tol = work_floor_tol(T, pT))
+            elim = _eliminate_equalities(data.AE, data.bE, tol, ctol, pivot_cost)
             elim.failed && return fallback("the equality elimination did not pass its check")
             if elim.infeasible !== nothing
                 y = elim.infeasible
-                valid_certificate(data, zeros(H, length(b)), y, tol) ||
+                valid_certificate(data, zeros(H, length(b)), y, ctol) ||
                     return fallback("the certificate for inconsistent equality constraints did not pass its check")
                 set_presolve_result!(optimizer, :presolve_pINF; eq_dual = y)
                 return nothing
@@ -882,12 +1019,12 @@ function presolve!(optimizer::Optimizer{T}, model::SDPAModel{T},
             data.elim = elim
             A, b, c, delta = substitute(A, b, c, elim, tol)
         end
-        result = _find_redundant_columns(A, c, tol, ctol; floor_tol = work_floor_tol(T, pT))
+        result = _find_redundant_columns(A, c, tol, ctol)
         redundant = result.failed ? Int[] : result.redundant
         if result.ray !== nothing
             d = data.elim === nothing ? result.ray :
                 expand_solution(data.elim, n, result.ray; homogeneous = true)
-            valid_ray(data, d, tol) || return fallback("the ray of the presolve did not pass its check")
+            valid_ray(data, d, ctol) || return fallback("the ray of the presolve did not pass its check")
             set_presolve_result!(optimizer, :presolve_dINF; x = d)
             optimizer.primalobj = _to(T, pT, sum(data.c .* d; init = zero(H)))
             return nothing
@@ -900,7 +1037,23 @@ function presolve!(optimizer::Optimizer{T}, model::SDPAModel{T},
         keep = setdiff(1:nr, redundant)
         data.objconstant_delta = optimizer.objsign * _to(T, pT, delta)
         optimizer.objconstant += data.objconstant_delta
-        return build_sdpa_model(T, pT, A[:, keep], b, c[keep], sets)
+        # Equilibrate the reduced problem (rows, with the right-hand side counted in
+        # the row norms, and columns), then scale the right-hand side and the objective
+        # so that their largest entries are in [1, 2), as conic solvers do.
+        Ak = A[:, keep]
+        groups, ng = _row_groups(sets, 0)
+        gf, cf = equilibrate(Ak, groups, ng; fixed_column = b)
+        rows = gf[groups]
+        bk = rows .* b
+        ck = cf .* c[keep]
+        to_unit(v) = (m = maximum(abs, v; init = zero(H)); iszero(m) ? one(H) : _pow2(H, -_exponent(m)))
+        β = to_unit(bk)
+        σ = to_unit(ck)
+        data.post = Scaling{H}(rows, H[], cf, σ, β)
+        data.keep = keep
+        data.Ared = Ak
+        data.cred = c[keep]
+        return build_sdpa_model(T, pT, _scale(Ak, rows, cf), β .* bk, σ .* ck, sets)
     end
 end
 
@@ -917,10 +1070,12 @@ function determined_point!(optimizer::Optimizer{T}, data::PresolveData{T,H}, del
     s, m = _apply(data.A, x0)
     s .+= data.b
     m .+= abs.(data.b)
+    all(isfinite, s) && all(isfinite, m) ||
+        return fallback_model!(optimizer, "the determined point is not finite")
     # the objective value at `x0` (the reduced model contributes zero)
     data.objconstant_delta = optimizer.objsign * _to(T, data.pT, delta)
     optimizer.objconstant += data.objconstant_delta
-    ftol = max(tol, H(solver_feasibility_tol(optimizer)))
+    ftol = max(ctol, H(solver_feasibility_tol(optimizer)))
     feasible, row = in_cone(data.sets, s, m, ftol)
     if feasible
         # optimal with the dual solution `y_K = 0`; the equality duals solve `AE' y_E = c`
@@ -938,7 +1093,7 @@ function determined_point!(optimizer::Optimizer{T}, data::PresolveData{T,H}, del
         yK[row] = one(H)
         yE = data.elim === nothing ? H[] :
              equality_duals(data.elim, length(data.bE), -(transpose(data.A) * yK))
-        if valid_certificate(data, yK, yE, tol)
+        if valid_certificate(data, yK, yE, ctol)
             set_presolve_result!(optimizer, :presolve_INF_cert; x = x0, slack = s,
                                  eq_dual = yE, dual_K = yK)
             return nothing
@@ -946,6 +1101,60 @@ function determined_point!(optimizer::Optimizer{T}, data::PresolveData{T,H}, del
     end
     set_presolve_result!(optimizer, :presolve_INF; x = x0, slack = s)
     return nothing
+end
+
+# The cone values of the blocks `M` as one vector in the order of `constraint_matrix`.
+function cone_vector(optimizer::Optimizer, M, ::Type{H}) where {H}
+    v = H[]
+    for (blk, d) in enumerate(optimizer.blockdims)
+        S = d < 0 ? MOI.Nonnegatives : MOI.PositiveSemidefiniteConeTriangle
+        append!(v, H.(vectorize_block(M, blk, S)))
+    end
+    return v
+end
+
+# Multiplies the cone duals by `dual` and the cone slacks by `slack` (vectors in the
+# order of `constraint_matrix`; constant within PSD blocks).
+function scale_cone_values!(optimizer::Optimizer{T}, dual, slack, pT) where {T}
+    H = eltype(dual)
+    conv(v) = T[_to(T, pT, vi) for vi in v]
+    optimizer.X = PrimalSolution{T}(blocks_from_vector(optimizer.blockdims,
+        conv(cone_vector(optimizer, optimizer.X, H) .* dual)))
+    optimizer.Z = VarDualSolution{T}(blocks_from_vector(optimizer.blockdims,
+        conv(cone_vector(optimizer, optimizer.Z, H) .* slack)))
+    return optimizer
+end
+
+# Maps a solution of the scaled model (`data.pre`) to the model.
+function unscale_pre!(optimizer::Optimizer{T}) where {T}
+    data = optimizer.presolve_data
+    with_work_precision(T) do
+        H = eltype(data.b)
+        conv(v) = T[_to(T, data.pT, vi) for vi in v]
+        pre = data.pre
+        optimizer.y = conv(pre.col .* H.(optimizer.y))
+        scale_cone_values!(optimizer, pre.row, one(H) ./ pre.row, data.pT)
+        isempty(data.eq_dual) || (data.eq_dual = conv(pre.eqrow .* H.(data.eq_dual)))
+        isempty(data.eq_primal) || (data.eq_primal = conv(H.(data.eq_primal) ./ pre.eqrow))
+    end
+    return optimizer
+end
+
+# Maps the solution of the reduced problem written for SDPA (`data.post`) to the
+# variables of the reduced problem.
+function unscale_post!(optimizer::Optimizer{T}) where {T}
+    data = optimizer.presolve_data
+    with_work_precision(T) do
+        H = eltype(data.b)
+        post = data.post
+        y = H.(optimizer.y)
+        y[data.keep] .*= post.col ./ post.rhs
+        optimizer.y = T[_to(T, data.pT, v) for v in y]
+        scale_cone_values!(optimizer, post.row ./ post.obj, one(H) ./ (post.row .* post.rhs), data.pT)
+        optimizer.primalobj = _to(T, data.pT, H(optimizer.primalobj) / (post.obj * post.rhs))
+        optimizer.dualobj = _to(T, data.pT, H(optimizer.dualobj) / (post.obj * post.rhs))
+    end
+    return optimizer
 end
 
 # Stores a result found by the presolve without calling SDPA. All arguments are in the
@@ -981,18 +1190,19 @@ function set_presolve_result!(optimizer::Optimizer{T}, phase::Symbol;
         yK = dual_K === nothing ? zeros(H, length(data.b)) : dual_K
         optimizer.dualobj = _to(T, data.pT, -(sum(data.b .* yK; init = zero(H)) +
                                              sum(data.bE .* yE; init = zero(H))))
-    elseif phase == :presolve_OPT
-        # the objective values of the reduced model are zero; `objconstant` holds the
-        # objective value
-        optimizer.primalobj = zero(T)
-        optimizer.dualobj = zero(T)
     end
-    return optimizer
+    # For `:presolve_OPT`, the objective values of the reduced model are zero and
+    # `objconstant` holds the objective value.
+    return unscale_pre!(optimizer)
 end
 
 # Switches to the fallback: the model without reduction, with each equality constraint
 # written as two `Nonnegatives` rows, and returns it.
+# The number of fallbacks since the package was loaded (the tests check it).
+const FALLBACK_COUNT = Ref(0)
+
 function fallback_model!(optimizer::Optimizer{T}, reason::String) where {T}
+    FALLBACK_COUNT[] += 1
     data = optimizer.presolve_data
     data.mode = :fallback
     data.fallback_reason = reason
@@ -1006,9 +1216,10 @@ function fallback_model!(optimizer::Optimizer{T}, reason::String) where {T}
     end
     nnn = count(S -> S isa MOI.Nonnegatives, data.sets)
     data.fallback_block = isempty(data.bE) ? 0 : nnn + 1
+    A, b, c, AE, bE = data.original
     return with_work_precision(T) do
-        build_sdpa_model(T, data.pT, data.A, data.b, data.c, data.sets;
-                         A2 = vcat(data.AE, -data.AE), b2 = vcat(data.bE, -data.bE))
+        build_sdpa_model(T, data.pT, A, b, c, data.sets;
+                         A2 = vcat(AE, -AE), b2 = vcat(bE, -bE))
     end
 end
 
@@ -1020,13 +1231,15 @@ function postsolve!(optimizer::Optimizer{T}) where {T}
     data === nothing && return true
     primal_ray = MOI.get(optimizer, MOI.PrimalStatus()) == MOI.INFEASIBILITY_CERTIFICATE
     dual_ray = MOI.get(optimizer, MOI.DualStatus()) == MOI.INFEASIBILITY_CERTIFICATE
-    return with_work_precision(T) do
+    data.mode == :reduced && unscale_post!(optimizer)
+    ok = with_work_precision(T) do
         H = eltype(data.b)
         conv(v) = T[_to(T, data.pT, vi) for vi in v]
         m = length(data.bE)
         if data.mode == :fallback
+            _, _, _, AE, bE = data.original
             x = H.(optimizer.y)
-            data.eq_primal = conv(primal_ray ? data.AE * x : data.AE * x .+ data.bE)
+            data.eq_primal = conv(primal_ray ? AE * x : AE * x .+ bE)
             if m > 0
                 yy = H.(vectorize_block(optimizer.X, data.fallback_block, MOI.Nonnegatives))
                 data.eq_dual = conv(yy[1:m] .- yy[m+1:2m])
@@ -1041,21 +1254,30 @@ function postsolve!(optimizer::Optimizer{T}) where {T}
             x = expand_solution(data.elim, data.nvars, H.(optimizer.y); homogeneous = primal_ray)
         end
         xT = conv(x)
-        # check the original equality constraints at the returned point
+        # Check the original equality constraints at the returned point. The rows that
+        # were kept hold up to the rounding of `x` to `T`. A row `i` dropped as
+        # dependent holds up to the dependence tolerance times the terms of its
+        # combination `w` with other rows, plus the residuals of those rows.
         xr = H.(xT)
         r, rm = _apply(data.AE, xr)
         if !primal_ray
             r .+= data.bE
             rm .+= abs.(data.bE)
         end
-        # The rows that were not dropped must hold up to rounding to `T`. The rows that
-        # were dropped as dependent hold up to a multiple of `64 eps(T)` relative to the
-        # rows they depend on; they are checked with `gross_error_tol`.
+        all(isfinite, r) || return false
         ptol = 64 * eps_of(T, data.pT)
-        dep_tol = gross_error_tol(optimizer, H, data.pT)
-        independent = data.elim === nothing ? Set(eachindex(r)) : Set(data.elim.independent)
-        ok = all(abs(r[i]) <= (i in independent ? ptol : dep_tol) * rm[i] for i in eachindex(r))
-        ok || return false
+        dependence = data.elim === nothing ? Dict{Int,Dict{Int,H}}() : data.elim.dependence
+        for i in eachindex(r)
+            bound = ptol * rm[i]
+            if haskey(dependence, i)
+                for (k, w) in dependence[i]
+                    k == i && continue
+                    bound += abs(w) * (2 * data.data_tol * rm[k] + abs(r[k]))
+                end
+                bound += 2 * data.data_tol * rm[i]
+            end
+            abs(r[i]) <= bound || return false
+        end
         optimizer.y = xT
         data.eq_primal = conv(r)
         if data.elim === nothing
@@ -1065,21 +1287,25 @@ function postsolve!(optimizer::Optimizer{T}) where {T}
             g = dual_ray ? -(transpose(data.A) * yK) : data.c - transpose(data.A) * yK
             yE = equality_duals(data.elim, m, g)
             if MOI.get(optimizer, MOI.DualStatus()) == MOI.FEASIBLE_POINT
-                # check `A' y = c` on the original data. This catches gross errors from
-                # an ill-conditioned elimination.
-                dtol = gross_error_tol(optimizer, H, data.pT)
+                # The relative residual of `A' y = c` on the original data must not
+                # exceed that of the reduced problem solved by SDPA by much: the mapping
+                # back is exact up to rounding, and the dropped columns are consistent
+                # up to the dependence tolerance. This catches ill-conditioned
+                # eliminations that amplify the solver's error.
+                relres(res, scale) = maximum(abs, res; init = zero(H)) /
+                                     max(maximum(scale; init = zero(H)), floatmin(Float64))
                 res = g .- transpose(data.AE) * yE
                 scale = abs.(data.c) .+ transpose(abs.(data.A)) * abs.(yK) .+
                         transpose(abs.(data.AE)) * abs.(yE)
-                # relative to the largest term (and at least 1), since a column can have
-                # only tiny terms, and the duals of a feasibility problem can be tiny
-                S = max(maximum(scale; init = zero(H)), one(H))
-                if !all(abs(res[j]) <= dtol * S for j in eachindex(res))
+                res_red = data.cred .- transpose(data.Ared) * yK
+                scale_red = abs.(data.cred) .+ transpose(abs.(data.Ared)) * abs.(yK)
+                relres(res, scale) <= 100 * (relres(res_red, scale_red) + data.data_tol) ||
                     return false
-                end
             end
             data.eq_dual = conv(yE)
         end
         return true
     end
+    ok && data.mode == :reduced && unscale_pre!(optimizer)
+    return ok
 end
