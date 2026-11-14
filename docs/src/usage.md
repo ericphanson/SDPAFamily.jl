@@ -14,6 +14,9 @@ The main object of interest supplied by this package is
   additional warnings.
 * `presolve`: whether to run the presolve described in [Presolve](@ref) before
   calling the solver. Defaults to `true`.
+* `presolve_tol`: the tolerance of the presolve for linear dependence and
+  consistency, see [Arithmetic and tolerances](@ref). Defaults to `nothing`,
+  which means `64 * eps(T)`.
 * `binary_path`: a string representing a path to the SDPA-GMP binary to use. The
   default is chosen at `build` time. To change the default binaries, see [Custom
   binary](@ref).
@@ -111,41 +114,62 @@ machine epsilon of `T` (`eps(T)`, for `BigFloat` at the precision set by the
 caller), ``\epsilon_W`` that of the working type, and
 ``\tau = \sqrt{\epsilon_T \epsilon_W}``.
 
-Each decision compares a computed combination ``\sum_j w_j a_j`` of data vectors
-``a_j`` (rows of the equality constraints, or columns of the constraint matrix)
-with the final coefficients ``w_j`` against the same data. An entry ``r`` of the
-combination counts as zero at tolerance ``t`` if
-``|\sum_j w_j a_{jr}| \le t \sum_j |w_j| |a_{jr}| + \tau \sum_j |w_j| \max_s |a_{js}|``.
-The second term covers rounding errors of the working type that spread across
-the entries of a combination. There are two tolerances:
+Each number computed by the eliminations carries a running error bound
+(Wilkinson's running error analysis): a magnitude ``m``, computed alongside the
+number with the absolute values of all operands, such that the rounding error
+of the number is a small multiple of ``\epsilon_W m``. There are two
+tolerances:
 
-* ``\tau`` (rounding): entries that count as zero at tolerance ``\tau`` consist
-  of rounding errors of the working type. They are removed during the
-  elimination and the substitution.
-* ``\delta = 64 \epsilon_D`` (data): a row of the equality constraints, or a
-  matrix ``F_k``, is linearly dependent on the others if all its entries count as
-  zero at tolerance ``\delta`` after the elimination (confirmed by recomputing
-  the combination from the data), and a dependent row or matrix is consistent if
-  the same combination of the right-hand sides (objective coefficients) counts as
-  zero at tolerance ``\delta``. Here ``\epsilon_D = \epsilon_T``, except that
-  ``\epsilon_D = \epsilon_{\text{Float64}}`` if `T` has more precision than
-  `Float64` and all coefficients of the model are `Float64` numbers: such data
-  were most likely computed in `Float64` (for example decimal coefficients like
-  `0.1` widened to `BigFloat`), and relations between them hold only up to
-  rounding to `Float64`.
+* ``\tau`` (rounding): a computed number ``v`` with ``|v| \le \tau m`` consists of
+  rounding errors of the working type. It is removed during the elimination and
+  the substitution. Numbers that are exact in the data, such as a coefficient
+  ``10^{-100}`` next to a coefficient 1 in the same row, are not removed.
+* ``\delta`` (data), by default ``64 \epsilon_T``: a row of the equality
+  constraints, or a matrix ``F_k``, is linearly dependent on the others if,
+  after the elimination, each entry ``r`` satisfies
+  ``|v_r| \le \delta \sum_j |w_j| |a_{jr}| + \tau m_r``, where ``w_j`` are the
+  coefficients of the combination of data vectors ``a_j`` (rows of the equality
+  constraints, or columns of the constraint matrix). This is confirmed by
+  recomputing the combination from the data. A dependent row or matrix is
+  consistent if the same combination of the right-hand sides (objective
+  coefficients) is zero in the same sense.
+
+The data are taken as exact numbers of type `T`, also when they happen to be
+`Float64` numbers: the model with constraints ``(10^8+1) x + 10^8 y = 1`` and
+``10^8 x + (10^8-1) y = 0`` has the unique solution ``x = 1 - 10^8``, ``y = 10^8``
+also in `BigFloat`. Data that were rounded to a coarser type, such as decimal
+coefficients like `0.1` computed in `Float64` and then converted to `BigFloat`,
+satisfy linear relations only up to that rounding. For such data, pass
+`presolve_tol = 64 * eps(Float64)`; then rows and matrices that are dependent up
+to the rounding are treated as dependent. A larger `presolve_tol` treats more
+nearly dependent constraints as dependent, which changes the problem by up to
+that relative amount.
 
 ### Scaling
 
 Before the eliminations, each row of the equality and cone constraints is scaled
 to a largest coefficient near 1, so that the sizes of combinations of rows are
-comparable. After the reduction, the problem passed to SDPA is equilibrated by
-Ruiz's algorithm, which divides the rows (with the right-hand side counted in the
-row norms) and the variables repeatedly by the square roots of their largest
-coefficients; the rows of a positive semidefinite block share one factor, so
-that the scaling keeps the cone. Then the right-hand side and the objective are
-scaled so that their largest entries are between 1 and 2. All factors are powers
-of two, so the scaled data are exact. The solution is scaled back before the
-checks below.
+comparable. After the reduction, the problem passed to SDPA is scaled as conic
+solvers such as SCS do. The constraint matrix is equilibrated by Ruiz's
+algorithm, which divides the rows and the variables repeatedly by the square
+roots of their largest coefficients; the rows of a positive semidefinite block
+share one factor, so that the scaling keeps the cone. Then the right-hand side
+and the objective are each multiplied by one factor, so that their largest
+entries are between 1 and 2. All factors are powers of two, so the scaled data
+are exact, and their exponents are limited so that the factors are finite
+numbers of the working type. The solution is scaled back before the checks
+below.
+
+Rows of the cone constraints without coefficients (constants, for example from
+a variable that Convex.jl fixed, or rows whose variables were eliminated) are
+checked at the point given by the equality constraints, with the tolerance
+``\epsilon`` described below. If they hold, their constants are replaced by 1
+(or a constant positive semidefinite block by the identity matrix), which keeps
+the feasible set and gives SDPA a strictly feasible row, and they do not count
+for the factor of the right-hand side. Their primal values are the original
+constants and their dual values are zero. If a constant `Nonnegatives` row is
+violated, the termination status is `INFEASIBLE` with a certificate, and SDPA is
+not called.
 
 ### Checks and fallback
 
@@ -186,11 +210,25 @@ checked:
   residual of the dual equations of the reduced problem plus ``\delta``. The
   mapping back is exact up to rounding, so this only fails when the elimination
   amplifies the solver's error, for example for nearly dependent constraints.
+* Gross checks of the result against the model, with the tolerance
+  ``\gamma = \sqrt{\max(\delta, \epsilon^*, \epsilon')}``, where ``\epsilon^*``
+  and ``\epsilon'`` are the constraint and gap tolerances `epsilonStar` and
+  `epsilonDash` of the solver parameters (``\gamma = 10^{-4}`` if they are not
+  known). Residuals are compared with ``\gamma`` times the largest term of the
+  same kind, since the rows are equilibrated. A primal point must satisfy the
+  cone constraints and the equality constraints; a primal ray must also have
+  ``c^T d < 0``; a dual point must satisfy ``A^T y = c``; a certificate of
+  infeasibility must satisfy ``A^T y = 0`` and ``b^T y < 0``; and for the SDPA
+  status `pdOPT`, the primal and dual objective values must agree. These checks
+  catch results that are wrong, not results that are inaccurate.
 
 If any check fails, the presolve falls back: the problem is passed to SDPA
-without reduction and without scaling, with each equality constraint written as
-two inequalities, and a warning is printed unless `silent = true`. SDPA may then
-fail on the problem, but the result is the solver's own.
+without the reductions, with each equality constraint written as two
+inequalities, scaled in the same way, and a warning is printed unless
+`silent = true`. The result of the fallback is checked with the gross checks
+above. If it fails them, the termination status is `NUMERICAL_ERROR`, the
+primal and dual statuses are `UNKNOWN_RESULT_STATUS`, and `RawStatusString`
+gives the status that SDPA reported and the check that failed.
 
 ### Cost
 

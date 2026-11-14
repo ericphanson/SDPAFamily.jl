@@ -6,6 +6,7 @@ using LinearAlgebra
 
 import SDPAFamily
 using Random
+using Logging
 
 Random.seed!(5)
 setprecision(256)
@@ -445,9 +446,12 @@ vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in te
 
     @testset "rows and columns dependent up to rounding of the data, $T" for T in (Float64, BigFloat)
         # 0.1x + 0.3y == 0.4 and 0.3x + 0.9y == 1.3 are dependent up to rounding to
-        # `Float64` and inconsistent; the certificate is validated at the tolerance
-        # of the decision, so the presolve returns it instead of falling back.
-        model, optimizer = bridged_model(T; variant = :sdpa_gmp)
+        # `Float64` and inconsistent. With `Float64`, the presolve decides this with the
+        # default tolerance; with `BigFloat` data that were rounded to `Float64`, with
+        # `presolve_tol = 64 eps(Float64)`. The certificate is validated at the
+        # tolerance of the decision, so the presolve returns it instead of falling back.
+        ptol = T == Float64 ? nothing : 64 * eps(Float64)
+        model, optimizer = bridged_model(T; variant = :sdpa_gmp, presolve_tol = ptol)
         x, y = MOI.add_variables(model, 2)
         c1 = MOI.add_constraint(model, T(0.1) * x + T(0.3) * y, MOI.EqualTo(T(0.4)))
         c2 = MOI.add_constraint(model, T(0.3) * x + T(0.9) * y, MOI.EqualTo(T(1.3)))
@@ -459,7 +463,7 @@ vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in te
         @test MOI.get(model, MOI.TerminationStatus()) == MOI.INFEASIBLE
         @test MOI.get(model, MOI.DualStatus()) == MOI.INFEASIBILITY_CERTIFICATE
         # columns (0.1, 0.3) and (0.3, 0.9) with costs (1, 1): unbounded
-        model, optimizer = bridged_model(T; variant = :sdpa_gmp)
+        model, optimizer = bridged_model(T; variant = :sdpa_gmp, presolve_tol = ptol)
         x, y = MOI.add_variables(model, 2)
         MOI.add_constraint(model, T(0.1) * x + T(0.3) * y, MOI.GreaterThan(T(1)))
         MOI.add_constraint(model, T(0.3) * x + T(0.9) * y, MOI.GreaterThan(T(1)))
@@ -468,6 +472,109 @@ vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in te
         MOI.optimize!(model)
         @test optimizer.presolve_data.mode == :none
         @test MOI.get(model, MOI.TerminationStatus()) == MOI.DUAL_INFEASIBLE
+    end
+
+    # Regression tests from the fourth review of the presolve.
+    @testset "exact data that are Float64 numbers, BigFloat" begin
+        # The data are exact; that they are also `Float64` numbers does not make them
+        # rounded, so the default tolerance is 64 eps(BigFloat).
+        T = BigFloat
+        function solve(build!)
+            model, optimizer = bridged_model(T; variant = :sdpa_gmp)
+            build!(model)
+            MOI.optimize!(model)
+            return model, optimizer
+        end
+        # (a) (1e8+1)x + 1e8y == 1, 1e8x + (1e8-1)y == 0 (determinant -1), min x + y
+        model, optimizer = solve(m -> begin
+            x, y = MOI.add_variables(m, 2)
+            MOI.add_constraint(m, T(10^8 + 1) * x + T(10^8) * y, MOI.EqualTo(T(1)))
+            MOI.add_constraint(m, T(10^8) * x + T(10^8 - 1) * y, MOI.EqualTo(T(0)))
+            MOI.add_constraint(m, T(1) * x + T(1) * y, MOI.GreaterThan(T(-10)))
+            MOI.set(m, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+            MOI.set(m, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x + T(1) * y)
+        end)
+        @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
+        @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
+        @test MOI.get(model, MOI.ObjectiveValue()) ≈ 1 atol = 1e-25
+        # (b) x + y == 1 and x + y == 1 + 2^-50, x, y >= 0: infeasible
+        model, optimizer = solve(m -> begin
+            x, y = MOI.add_variables(m, 2)
+            MOI.add_constraint(m, T(1) * x + T(1) * y, MOI.EqualTo(T(1)))
+            MOI.add_constraint(m, T(1) * x + T(1) * y, MOI.EqualTo(1 + T(2)^-50))
+            MOI.add_constraint(m, MOI.VectorOfVariables([x, y]), MOI.Nonnegatives(2))
+            MOI.set(m, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+            MOI.set(m, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x)
+        end)
+        @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
+        @test MOI.get(model, MOI.TerminationStatus()) == MOI.INFEASIBLE
+        # (c) columns (1, 1) and (1, 1 + 2^-50) with costs (1, 1 + 2^-49): unbounded
+        model, optimizer = solve(m -> begin
+            x, y = MOI.add_variables(m, 2)
+            MOI.add_constraint(m, T(1) * x + T(1) * y, MOI.GreaterThan(T(1)))
+            MOI.add_constraint(m, T(1) * x + (1 + T(2)^-50) * y, MOI.GreaterThan(T(1)))
+            MOI.set(m, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+            MOI.set(m, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x + (1 + T(2)^-49) * y)
+        end)
+        @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
+        @test MOI.get(model, MOI.TerminationStatus()) == MOI.DUAL_INFEASIBLE
+    end
+
+    @testset "badly scaled small problems, $T and $var" for (T, var) in ((Float64, :sdpa), (Float64, :sdpa_gmp), (BigFloat, :sdpa_gmp))
+        tol = soltol(var, T)
+        # (A) x + y == 1, [K; x; y] >= 0 with a row without coefficients, min x + 2y:
+        # the optimum is 1 at (1, 0) for every K >= 0.
+        for K in (1e4, 1e10)
+            model, optimizer = bridged_model(T; variant = var)
+            x, y = MOI.add_variables(model, 2)
+            MOI.add_constraint(model, T(1) * x + T(1) * y, MOI.EqualTo(T(1)))
+            MOI.add_constraint(model, MOI.Utilities.operate(vcat, T, T(K), T(1) * x, T(1) * y), MOI.Nonnegatives(3))
+            MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+            MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x + T(2) * y)
+            MOI.optimize!(model)
+            @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
+            @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
+            @test MOI.get(model, MOI.ObjectiveValue()) ≈ 1 atol = tol
+            @test MOI.get(model, MOI.VariablePrimal(), [x, y]) ≈ [1, 0] atol = tol
+        end
+        # (B) x1 == x2, x1 >= R, x2 >= 0, min (x1 + x2) / R: the optimum is 2 at (R, R).
+        for R in (1e10, 1e30)
+            model, optimizer = bridged_model(T; variant = var)
+            x = MOI.add_variables(model, 2)
+            MOI.add_constraint(model, T(1) * x[1] - T(1) * x[2], MOI.EqualTo(T(0)))
+            MOI.add_constraint(model, T(1) * x[1], MOI.GreaterThan(T(R)))
+            MOI.add_constraint(model, T(1) * x[2], MOI.GreaterThan(T(0)))
+            MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+            MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), x[1] / T(R) + x[2] / T(R))
+            MOI.optimize!(model)
+            @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
+            @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
+            @test MOI.get(model, MOI.ObjectiveValue()) ≈ 2 rtol = tol
+            @test MOI.get(model, MOI.VariablePrimal(), x) ≈ [R, R] rtol = tol
+        end
+        # (C) s x1 + x2 == 1, x >= 0, min x2 - s x1: the optimum is -1 at (1/s, 0). The
+        # coefficient s must not be dropped as rounding residue next to the 1.
+        function caseC(s)
+            model, optimizer = bridged_model(T; variant = var)
+            x = MOI.add_variables(model, 2)
+            MOI.add_constraint(model, T(s) * x[1] + T(1) * x[2], MOI.EqualTo(T(1)))
+            MOI.add_constraint(model, MOI.VectorOfVariables(x), MOI.Nonnegatives(2))
+            MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+            MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x[2] - T(s) * x[1])
+            MOI.optimize!(model)
+            return model, optimizer
+        end
+        for s in (1e-20, 1e-300)
+            model, optimizer = caseC(s)
+            @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
+            @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
+            @test MOI.get(model, MOI.ObjectiveValue()) ≈ -1 atol = tol
+        end
+        # With the subnormal s = 1e-310, the minimizer 1e310 is not a `Float64` number;
+        # the solve must not fail (the scaling factors are finite). It may fall back,
+        # which the logger of the test suite would count.
+        model, optimizer = Logging.with_logger(() -> caseC(1e-310), Logging.NullLogger())
+        @test MOI.get(model, MOI.TerminationStatus()) isa MOI.TerminationStatusCode
     end
 
     @testset "constant row with a tiny negative constant" begin
@@ -526,9 +633,10 @@ vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in te
         # the same model through the fallback path, starting from the reduced model
         data = optimizer.presolve_data
         @test data.mode == :reduced
-        count = SDPAFamily.FALLBACK_COUNT[]
-        fb = SDPAFamily.fallback_model!(optimizer, "test")
-        SDPAFamily.FALLBACK_COUNT[] = count # an intentional fallback
+        # an intentional fallback, not counted by the logger of the tests
+        fb = Logging.with_logger(Logging.NullLogger()) do
+            SDPAFamily.fallback_model!(optimizer, "test")
+        end
         SDPAFamily.run_sdpa!(optimizer, fb, joinpath(optimizer.tempdir, "input.dat-s"),
                              joinpath(optimizer.tempdir, "output.dat"))
         SDPAFamily.postsolve!(optimizer)
@@ -566,24 +674,22 @@ vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in te
         @test all(v .>= x0 .- 1 .- soltol(var, T))
     end
 
-    include("presolve_scaled_cases.jl")
-    @testset "badly scaled random problem $(case.case)" for case in SCALED_CASES
-        T = BigFloat
-        model, optimizer = bridged_model(T; variant = :sdpa_gmp)
-        x = MOI.add_variables(model, case.n)
-        for (S, terms, constants) in case.constraints
-            f = MOI.VectorAffineFunction(
-                [MOI.VectorAffineTerm(o, MOI.ScalarAffineTerm(a, x[j])) for (o, j, a) in terms], constants)
-            MOI.add_constraint(model, f, S)
+    include("presolve_random.jl")
+    @testset "random badly scaled problems, $T and $var" for (T, var) in ((BigFloat, :sdpa_gmp), (Float64, :sdpa))
+        rng = Random.MersenneTwister(12)
+        # SDPA's gap tolerance is relative to the scaled problem; with rows scaled by
+        # up to 1e12, the gap of the model is larger for `Float64`
+        tol = T == Float64 ? 1e-3 : soltol(var, T)
+        for k in 1:20
+            p = random_conic_problem(rng, T; scale = true)
+            model, optimizer = bridged_model(T; variant = var)
+            add_random_conic_problem!(model, p, T)
+            MOI.optimize!(model)
+            @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
+            @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
+            pobj, dobj = MOI.get(model, MOI.ObjectiveValue()), MOI.get(model, MOI.DualObjectiveValue())
+            @test abs(pobj - dobj) <= tol * max(1, abs(pobj))
         end
-        MOI.set(model, MOI.ObjectiveSense(), case.sense)
-        MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(),
-                MOI.ScalarAffineFunction([MOI.ScalarAffineTerm(a, x[j]) for (j, a) in case.objective], case.constant))
-        MOI.optimize!(model)
-        @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
-        @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
-        p, d = MOI.get(model, MOI.ObjectiveValue()), MOI.get(model, MOI.DualObjectiveValue())
-        @test abs(p - d) <= 1e-20 * max(1, abs(p))
     end
 
     @testset "Convex: quantum state discrimination with variant $var" for var in (:sdpa_gmp,)

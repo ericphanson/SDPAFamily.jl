@@ -75,7 +75,11 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
 	variant::Symbol
     # `nothing`, or a `PresolveData{T}` (see `presolve.jl`) after a solve with presolve
     presolve_data::Any
-    function Optimizer{T}(; variant = :sdpa_gmp, presolve::Bool = true, 
+    # the dependence and consistency tolerance of the presolve, or `nothing` for the
+    # default `64 eps(T)` (see `data_tol` in `presolve.jl`)
+    presolve_tol::Union{Nothing,Real}
+    function Optimizer{T}(; variant = :sdpa_gmp, presolve::Bool = true,
+            presolve_tol::Union{Nothing,Real} = nothing,
             silent::Bool = false,
             verbose::Verbosity = silent ? SILENT : WARN,
             binary_path = BB_PATHS[variant],
@@ -95,7 +99,7 @@ mutable struct Optimizer{T} <: MOI.AbstractOptimizer
             T[], PrimalSolution{T}(Matrix{T}[]),
             VarDualSolution{T}(Matrix{T}[]), zero(T), zero(T), :not_called,
             TemporaryDirectory, [], presolve, binary_path, P, false, use_WSL,
-            variant, nothing)
+            variant, nothing, presolve_tol)
 
         if silent && verbose != SILENT
             throw(ArgumentError("Cannot set both `silent=true` and `verbose != SILENT`."))
@@ -168,6 +172,10 @@ const RAW_STATUS = Dict(
     :presolve_INF_cert => "The presolve determined all variables, and a `Nonnegatives` constraint is not satisfied. SDPA was not called. The dual solution is a certificate of infeasibility.")
 
 function MOI.get(optimizer::Optimizer, ::MOI.RawStatusString)
+    if optimizer.phasevalue == :unverified
+        data = optimizer.presolve_data
+        return "SDPA reported `$(data.sdpa_phase)` ($(RAW_STATUS[data.sdpa_phase])), but the result mapped back to the model did not pass the check: $(data.check_failure)."
+    end
 	return RAW_STATUS[optimizer.phasevalue]
 end
 function MOI.get(optimizer::Optimizer, ::MOI.SolveTimeSec)
@@ -265,11 +273,15 @@ function MOI.optimize!(dest::Optimizer{T}, src::MOI.ModelLike) where {T}
         end
     end
     run_sdpa!(dest, model, full_input_path, full_output_path)
-    if !dest.no_solve && dest.presolve && !postsolve!(dest)
-        # The expanded solution does not satisfy the original equality constraints.
-        model = fallback_model!(dest, "the solution of the reduced problem did not satisfy the original equality constraints")
-        run_sdpa!(dest, model, full_input_path, full_output_path)
-        postsolve!(dest)
+    if !dest.no_solve && dest.presolve
+        reason = postsolve!(dest)
+        if reason !== nothing
+            # The solution of the reduced problem did not pass the checks against the
+            # model; solve the model without reduction.
+            model = fallback_model!(dest, "the solution of the reduced problem did not pass the check: $reason")
+            run_sdpa!(dest, model, full_input_path, full_output_path)
+            postsolve!(dest)
+        end
     end
     dest.solve_time = time() - start_time
     return index_map, false
@@ -337,6 +349,8 @@ function MOI.get(m::Optimizer, ::MOI.TerminationStatus)
         return MOI.INFEASIBLE
     elseif status == :presolve_OPT
         return MOI.OPTIMAL
+    elseif status == :unverified
+        return MOI.NUMERICAL_ERROR
     end
 end
 
@@ -355,7 +369,7 @@ function MOI.get(m::Optimizer, attr::MOI.PrimalStatus)
         return MOI.FEASIBLE_POINT
     elseif status == :presolve_INF || status == :presolve_INF_cert
         return MOI.INFEASIBLE_POINT
-    elseif status == :noINFO
+    elseif status == :noINFO || status == :unverified
         return MOI.UNKNOWN_RESULT_STATUS
     elseif status == :pFEAS
         return MOI.FEASIBLE_POINT
@@ -390,7 +404,7 @@ function MOI.get(m::Optimizer, attr::MOI.DualStatus)
         return MOI.INFEASIBILITY_CERTIFICATE
     elseif status == :presolve_OPT
         return MOI.FEASIBLE_POINT
-    elseif status == :noINFO
+    elseif status == :noINFO || status == :unverified
         return MOI.UNKNOWN_RESULT_STATUS
     elseif status == :pFEAS
         return MOI.UNKNOWN_RESULT_STATUS
