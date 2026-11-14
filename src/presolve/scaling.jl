@@ -201,10 +201,9 @@ exponents. Only the binary exponents of the entries are used. Groups and columns
 without nonzero entries are not scaled.
 
 The scaling depends only on the largest entries, so entries that are small because
-they are rounding errors of the data do not influence it. (Geometric-mean scaling,
-which uses the smallest entries too, gave better scalings for sparse matrices whose
-variables have very different units, and factors of 2^100 and more for matrices with
-such entries.)
+they are rounding errors of the data do not influence it. Geometric-mean scaling uses
+the smallest entries too: it determines the factors of sparse matrices better, and
+gives factors of 2^100 and more when a matrix has rounding-level entries.
 """
 function equilibrate(M::SparseMatrixCSC, groups::Vector{Int}, ngroups::Int; iterations::Int = 100)
     n = size(M, 2)
@@ -292,7 +291,7 @@ function _components(M::SparseMatrixCSC, groups::Vector{Int}, ngroups::Int)
 end
 
 """
-    scaled_sdpa_model(T, pT, A, b, c, sets, crows, replacement) -> (model, scaling, (As, bs, cs))
+    scaled_sdpa_model(T, pT, A, b, c, sets, crows, replacement; border = false) -> (model, scaling, (As, bs, cs))
 
 The SDPA model of the problem `minimize c'x` subject to `A x + b ∈ sets`, scaled as
 conic solvers such as SCS do:
@@ -308,38 +307,64 @@ conic solvers such as SCS do:
 3. `c` is multiplied by the power of two that brings its largest absolute entry to
    [1, 2).
 
+Equilibrating `A` alone does not see which rows are bounds with a right-hand side
+that matters: in `-x + 1 ≥ 0`, `-s x + 1 ≥ 0` with a tiny `s`, both coefficients
+become 1 and one of the right-hand sides becomes tiny. With `border = true`, the
+second scaling of the presolve, the matrix bordered by `b` and `c`,
+
+    [A   b]
+    [c'  0],
+
+is equilibrated instead (the data matrix of the homogeneous embedding), so that each
+row is scaled by the larger of its coefficients and its right-hand side. This scaling
+fails where the first one works (for `x - R ≥ 0`, `x ≥ 0` it gives a solution of size
+`sqrt(R)`), so it is used when the result of the first one fails its checks.
+
 The constants of the rows `crows` (rows without coefficients that hold) are replaced
-by `replacement`, which keeps the feasible set and makes the rows strictly feasible.
-Returns the model, its `Scaling`, and the scaled data `(As, bs, cs)` written to the
-model.
+by `replacement`, which keeps the feasible set and makes the rows strictly feasible;
+they do not take part in the scaling. Returns the model, its `Scaling`, and the
+scaled data `(As, bs, cs)` written to the model.
 """
 function scaled_sdpa_model(::Type{T}, pT, A::SparseMatrixCSC{H}, b::Vector{H}, c::Vector{H},
-                           sets, crows, replacement) where {T,H}
+                           sets, crows, replacement; border::Bool = false) where {T,H}
+    n = size(A, 2)
     groups, ng = _row_groups(sets, 0)
-    ge, se = equilibrate(A, groups, ng)
-    # the exponent of the largest entry of the equilibrated `b` in each component
-    gcomp, ccomp = _components(A, groups, ng)
-    bmax = Dict{Int,Int}()
-    for i in eachindex(b)
-        iszero(b[i]) && continue
-        k = gcomp[groups[i]]
-        bmax[k] = max(get(bmax, k, typemin(Int)), _log2(abs(b[i])) + ge[groups[i]])
+    if border
+        bb = copy(b)
+        bb[crows] .= zero(H)
+        M = vcat(hcat(A, sparse(reshape(bb, :, 1))), hcat(sparse(reshape(c, 1, :)), spzeros(H, 1, 1)))
+        ge, se = equilibrate(M, vcat(groups, ng + 1), ng + 1)
+        # the factor `2^β` of the column of `b` is moved into the rows and columns:
+        # `x = diag(col) x̂ / 2^β`
+        β = se[n+1]
+        rows = H[_pow2(H, ge[g] + β) for g in groups]
+        cols = H[_pow2(H, e - β) for e in se[1:n]]
+        σ = _pow2(H, ge[ng+1] + β)
+    else
+        ge, se = equilibrate(A, groups, ng)
+        # the exponent of the largest entry of the equilibrated `b` in each component
+        gcomp, ccomp = _components(A, groups, ng)
+        bmax = Dict{Int,Int}()
+        for i in eachindex(b)
+            iszero(b[i]) && continue
+            k = gcomp[groups[i]]
+            bmax[k] = max(get(bmax, k, typemin(Int)), _log2(abs(b[i])) + ge[groups[i]])
+        end
+        for g in 1:ng
+            ge[g] -= get(bmax, gcomp[g], 0)
+        end
+        for j in eachindex(se)
+            se[j] += get(bmax, ccomp[j], 0)
+        end
+        rows = H[_pow2(H, ge[g]) for g in groups]
+        cols = H[_pow2(H, e) for e in se]
+        cmax = maximum(abs, cols .* c; init = zero(H))
+        σ = iszero(cmax) ? one(H) : _pow2(H, -_log2(cmax))
     end
-    for g in 1:ng
-        ge[g] -= get(bmax, gcomp[g], 0)
-    end
-    for j in eachindex(se)
-        se[j] += get(bmax, ccomp[j], 0)
-    end
-    rows = H[_pow2(H, ge[g]) for g in groups]
-    cols = H[_pow2(H, e) for e in se]
-    cs = cols .* c
-    cmax = maximum(abs, cs; init = zero(H))
-    σ = iszero(cmax) ? one(H) : _pow2(H, -_log2(cmax))
     bs = rows .* b
     bs[crows] .= H.(replacement)
     As = _scale(A, rows, cols)
-    cs .*= σ
+    cs = σ .* cols .* c
     model = build_sdpa_model(T, pT, As, bs, cs, sets)
     return model, Scaling{H}(rows, cols, σ), (As, bs, cs)
 end

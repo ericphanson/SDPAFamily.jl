@@ -1,5 +1,4 @@
-# Random feasible and bounded conic problems (the generator of the review of the
-# presolve): a strictly feasible primal point `x0` and a strictly feasible dual point
+# Random feasible and bounded conic problems: a strictly feasible primal point `x0` and a strictly feasible dual point
 # give the constraints and the objective. The problems have redundant and duplicated
 # equality constraints, duplicated variable columns, and (with `scale = true`) equality
 # rows scaled by 10^±12 and `Nonnegatives` rows by 10^±6, which does not change the

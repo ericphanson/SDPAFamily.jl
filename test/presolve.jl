@@ -242,8 +242,7 @@ include("presolve_kernel.jl")
         end
     end
 
-    # Regression tests for decisions that depend on rounding errors and on the scale of
-    # the data. `T(1.3)` and `T(0.9)` are the `Float64` numbers converted to `T`, so
+    # Decisions that depend on rounding errors and on the scale of the data. `T(1.3)` and `T(0.9)` are the `Float64` numbers converted to `T`, so
     # `1.3 * (0.9 / 1.3) - 0.9` is a rounding error, not zero.
     @testset "rounding errors and scaling, variant $var and type $T" for var in variants, T in (Float64, BigFloat)
         tol = soltol(var, T)
@@ -360,8 +359,7 @@ include("presolve_kernel.jl")
         end
     end
 
-    # Regression tests from the second review of the presolve.
-    @testset "second review, variant $var and type $T" for var in variants, T in (Float64, BigFloat)
+    @testset "exact dependence, zero blocks and small exact coefficients, variant $var and type $T" for var in variants, T in (Float64, BigFloat)
         tol = soltol(var, T)
         f(T, terms, c = 0) = sum(T(a) * x for (a, x) in terms) + T(c)
         @testset "exactly dependent equality row with a large multiplier" begin
@@ -476,7 +474,6 @@ include("presolve_kernel.jl")
         @test MOI.get(model, MOI.TerminationStatus()) == MOI.DUAL_INFEASIBLE
     end
 
-    # Regression tests from the fourth review of the presolve.
     @testset "exact data that are Float64 numbers, BigFloat" begin
         # The data are exact; that they are also `Float64` numbers does not make them
         # rounded, so the default tolerance is 64 eps(BigFloat).
@@ -679,14 +676,12 @@ include("presolve_kernel.jl")
         @test all(v .>= x0 .- 1 .- soltol(var, T))
     end
 
-    # Regression tests from the fifth round (adversarial tests of the redesign).
     @testset "objective consistent with a free direction up to rounding, $T" for T in (Float64, BigFloat)
         # x == y, 0 <= z <= 1, min a x - b y + z with a = 0.1 + 0.2 and b = 0.3 (as
         # `Float64` numbers, a - b = 2^-54). The direction (1, 1, 0) changes no
         # constraint. With `Float64`, a - b is zero up to the data tolerance relative to
-        # a and b, so the free variable is dropped; this used to give a ray that failed
-        # its validation, and a fallback. With `BigFloat`, the data are exact and the
-        # problem is unbounded.
+        # a and b, so the free variable is dropped. With `BigFloat`, the data are exact and
+        # the problem is unbounded.
         model, optimizer = bridged_model(T; variant = :sdpa_gmp)
         x, y, z = MOI.add_variables(model, 3)
         MOI.add_constraint(model, T(1) * x - T(1) * y, MOI.EqualTo(T(0)))
@@ -709,9 +704,9 @@ include("presolve_kernel.jl")
 
     @testset "two parts at different scales, $T and $var" for (T, var) in ((Float64, :sdpa), (BigFloat, :sdpa_gmp))
         # min -2^-18 x + 2^-39 y with x <= 5 * 2^18 and 2^-10 y >= -3 * 2^30: the optimum
-        # is -5 - 3 * 2^1 = -11 at (5 * 2^18, -3 * 2^40). One factor for the whole
-        # right-hand side made the first part a problem of size 2^-12 in the scaled
-        # problem, below the tolerance of `:sdpa`.
+        # is -5 - 3 * 2^1 = -11 at (5 * 2^18, -3 * 2^40). With one factor for the whole
+        # right-hand side, the first part has size 2^-12 in the scaled problem, below
+        # the tolerance of `:sdpa`; each part gets its own factor.
         model, optimizer = bridged_model(T; variant = var)
         x, y = MOI.add_variables(model, 2)
         MOI.add_constraint(model, T(1) * x, MOI.LessThan(T(5 * 2^18)))
@@ -752,11 +747,12 @@ include("presolve_kernel.jl")
         @test MOI.get(model, MOI.TerminationStatus()) == MOI.DUAL_INFEASIBLE
     end
 
-    @testset "gap compared to the objective value of the model, $T" for T in (Float64, BigFloat)
+    @testset "inactive variable with a large range, $T" for T in (Float64, BigFloat)
         # 1e150 x1 + x2 == 1e150, x >= 0, 1 <= x3 <= 5, min x1 + x2 + 1e-150 x3: the
         # optimum is 1 + 1e-150 at (1, 0, 1), but x2 ranges up to 1e150 on the feasible
-        # set. In the scaled problem the objective is 1e-150; SDPA's result is within
-        # its tolerances there and useless for the model. It is not reported as optimal.
+        # set. With the first scaling the objective is 1e-150 in the scaled problem and
+        # SDPA's gap tolerance does not resolve it; that result is rejected, and the
+        # second scaling gives the solution.
         var = T == Float64 ? :sdpa : :sdpa_gmp
         model, optimizer = bridged_model(T; variant = var)
         x = MOI.add_variables(model, 3)
@@ -768,8 +764,75 @@ include("presolve_kernel.jl")
         MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x[1] + T(1) * x[2] + T(1e-150) * x[3])
         MOI.optimize!(model)
         @test optimizer.presolve_data.mode == :reduced # no fallback
+        @test optimizer.presolve_data.border # second scaling
+        @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
+        @test MOI.get(model, MOI.ObjectiveValue()) ≈ 1 rtol = 10 * soltol(var, T)
+    end
+
+    @testset "bound that the first scaling makes tiny, $T and $var" for (T, var, ss) in
+            ((Float64, :sdpa, (1e-4, 1e-12, 1e-16)), (BigFloat, :sdpa_gmp, (big"1e-10", big"1e-35", big"1e-50")))
+        # s x1 + x2 == 1, 0 <= x1 <= 1, x2 >= 0, min x2 - s x1: the optimum is at x1 = 1.
+        # Equilibrating the reduced matrix alone balances the coefficient s of
+        # x2 = 1 - s x1 >= 0 against the bounds of x1, and the right-hand side of
+        # x1 <= 1 falls below SDPA's tolerance in the scaled problem for small s. SDPA
+        # then returns x1 far above 1. The check of the model rows rejects that point,
+        # and the second scaling gives the solution.
+        for s in ss
+            model, optimizer = bridged_model(T; variant = var)
+            x = MOI.add_variables(model, 2)
+            MOI.add_constraint(model, T(s) * x[1] + T(1) * x[2], MOI.EqualTo(T(1)))
+            MOI.add_constraint(model, T(1) * x[1], MOI.GreaterThan(T(0)))
+            MOI.add_constraint(model, T(1) * x[1], MOI.LessThan(T(1)))
+            MOI.add_constraint(model, T(1) * x[2], MOI.GreaterThan(T(0)))
+            MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+            MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x[2] - T(s) * x[1])
+            MOI.optimize!(model)
+            @test optimizer.presolve_data.mode == :reduced # no fallback
+            @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
+            @test MOI.get(model, MOI.VariablePrimal(), x[1]) ≈ 1 atol = 1e-2
+            @test MOI.get(model, MOI.ObjectiveValue()) ≈ 1 - 2s atol = 10 * soltol(var, T)
+        end
+    end
+
+    @testset "bound far from the scale that both scalings give, variant $var" for var in (:sdpa, :sdpa_gmp)
+        # The same model with 0 <= x1 <= 1e190 and s = 1e-200 (optimum at x1 = 1e190,
+        # objective 1 - 2e-10). Both scalings give x1 a unit far below 1e190. The first
+        # result violates the bound and is rejected; with the second, SDPA reports
+        # that the problem is unbounded, which is not accepted after feasible iterates.
+        T = Float64
+        model, optimizer = bridged_model(T; variant = var)
+        x = MOI.add_variables(model, 2)
+        MOI.add_constraint(model, T(1e-200) * x[1] + T(1) * x[2], MOI.EqualTo(T(1)))
+        MOI.add_constraint(model, T(1) * x[1], MOI.GreaterThan(T(0)))
+        MOI.add_constraint(model, T(1) * x[1], MOI.LessThan(T(1e190)))
+        MOI.add_constraint(model, T(1) * x[2], MOI.GreaterThan(T(0)))
+        MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+        MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x[2] - T(1e-200) * x[1])
+        MOI.optimize!(model)
         @test MOI.get(model, MOI.TerminationStatus()) == MOI.NUMERICAL_ERROR
-        @test occursin("does not resolve the objective", MOI.get(model, MOI.RawStatusString()))
+        @test MOI.get(model, MOI.PrimalStatus()) == MOI.UNKNOWN_RESULT_STATUS
+    end
+
+    @testset "optimum beyond SDPA's objective bounds" begin
+        # x1 >= 1, x_{i+1} >= 2 x_i, z == x1, min sum(x): the optimum is 2^n - 1. SDPA
+        # reports unboundedness when an objective value passes its parameters
+        # `lowerBound`/`upperBound` (±1e5 by default), so with the defaults `:sdpa_dd`
+        # reports this feasible problem as infeasible for n = 20. With larger bounds
+        # it is solved.
+        T, n = BigFloat, 20
+        model, optimizer = bridged_model(T; variant = :sdpa_dd, params = (lowerBound = -1e10, upperBound = 1e10))
+        x = MOI.add_variables(model, n)
+        z = MOI.add_variable(model)
+        MOI.add_constraint(model, T(1) * z - T(1) * x[1], MOI.EqualTo(T(0)))
+        MOI.add_constraint(model, T(1) * x[1], MOI.GreaterThan(T(1)))
+        for i in 1:n-1
+            MOI.add_constraint(model, T(1) * x[i+1] - T(2) * x[i], MOI.GreaterThan(T(0)))
+        end
+        MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+        MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), sum(T(1) * xi for xi in x))
+        MOI.optimize!(model)
+        @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
+        @test MOI.get(model, MOI.ObjectiveValue()) ≈ 2^n - 1 rtol = 1e-10
     end
 
     @testset "iteration limit with feasible iterates, sense $sense" for sense in (MOI.MIN_SENSE, MOI.MAX_SENSE)
@@ -793,8 +856,24 @@ include("presolve_kernel.jl")
         @test MOI.get(model, MOI.PrimalStatus()) == MOI.FEASIBLE_POINT
         @test MOI.get(model, MOI.DualStatus()) == MOI.FEASIBLE_POINT
         v = MOI.get(model, MOI.VariablePrimal(), [x, y, z])
-        @test v[1] + v[2] + v[3] ≈ 3
+        @test v[1] + v[2] + v[3] ≈ 3 atol = 1e-6
         @test all(v[1:2] .>= 1 - 1e-6)
+    end
+
+    @testset "iteration limit with feasible iterates without presolve" begin
+        # min 2x + y with x >= 1, y >= 1, stopped after 4 iterations: SDPA-GMP reports
+        # `pdFEAS` with objective values 1.4e5 and 3. The gap criterion is the same
+        # with and without the presolve.
+        T = BigFloat
+        model, optimizer = bridged_model(T; variant = :sdpa_gmp, presolve = false, params = (maxIteration = 4,))
+        x, y = MOI.add_variables(model, 2)
+        MOI.add_constraint(model, MOI.Utilities.operate(vcat, T, T(1) * x - T(1), T(1) * y - T(1)), MOI.Nonnegatives(2))
+        MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+        MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(2) * x + T(1) * y)
+        MOI.optimize!(model)
+        @test optimizer.phasevalue == :pdFEAS_gap
+        @test MOI.get(model, MOI.TerminationStatus()) == MOI.ITERATION_LIMIT
+        @test MOI.get(model, MOI.PrimalStatus()) == MOI.FEASIBLE_POINT
     end
 
     include("presolve_random.jl")

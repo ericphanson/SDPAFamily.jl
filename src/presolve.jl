@@ -56,7 +56,9 @@ using SparseArrays
 #   sense; otherwise the combination is a certificate of infeasibility (a ray).
 #
 # The eliminations are sparse LU factorizations with threshold pivoting (see
-# `eliminate`). After the back substitution, the reduced system is checked against the
+# `eliminate`). Among the pivot candidates the one with the fewest nonzeros is taken;
+# the counts are those of the data and are not updated during the elimination (a
+# static tie-break, not Markowitz pivoting). After the back substitution, the reduced system is checked against the
 # original rows of `A_E` at one point. If the working precision turns out to be
 # insufficient (the two ways of computing a vector disagree, or the check fails), the
 # presolve falls back.
@@ -73,6 +75,11 @@ using SparseArrays
 # without coefficients are constants; they are checked and replaced by strictly
 # feasible constants.
 #
+# Equilibration alone does not determine which magnitudes matter, so there is a
+# second scaling, which equilibrates the matrix bordered by the right-hand side and
+# the objective. It is used if the result with the first scaling is rejected by a
+# check (see `rescaled_model!`).
+#
 # ## Validation and fallback
 #
 # * Every result that the presolve returns without calling SDPA is validated against
@@ -83,13 +90,18 @@ using SparseArrays
 #   stopping criteria of SDPA at the square root of its tolerances (see
 #   `check_sdpa_result`); certificates of infeasibility are checked for the bound
 #   they prove.
+# * The solution in the units of the model is checked row by row and variable by
+#   variable with the same tolerance, relative to the terms of each row (see
+#   `check_model_result`). A row that the scaling made smaller than SDPA's tolerance
+#   is not enforced by SDPA; this check finds it.
 # * After the solution is mapped back, what the presolve removed is checked at the
 #   returned solution: the equality constraints (in particular the dependent rows),
 #   and the dual equations of the eliminated and of the dependent variables. Each
 #   must hold up to the rounding to `T` and the tolerance `δ` of the decision.
 #
-# A result of SDPA that fails the check on the scaled problem gets the status
-# `NUMERICAL_ERROR`. If the reduction itself is in doubt (the working precision was not
+# A result of SDPA that fails these checks is solved once more with the second
+# scaling. If that result fails too, or if SDPA then reports infeasibility after
+# feasible iterates with the first scaling, the status is `NUMERICAL_ERROR`. If the reduction itself is in doubt (the working precision was not
 # sufficient, a result of the presolve fails its validation, or what the presolve
 # removed does not hold at the solution), the presolve falls back to passing the
 # problem to SDPA without reduction, with each equality constraint written as two
@@ -145,6 +157,13 @@ mutable struct PresolveData{T,H}
     const_vals::Vector{H}
     # the scaled data `(A, b, c)` and the cone sets of the problem written for SDPA
     sdpa_problem::Any
+    # the same problem before the scaling, `(A, b, c, sets, crows, replacement)`, and
+    # whether it was scaled with `border = true` (see `scaled_sdpa_model`)
+    unscaled_problem::Any
+    border::Bool
+    # the status that SDPA reported with the first scaling, if the problem was solved
+    # again with the second
+    first_phase::Symbol
     # `:reduced` (SDPA solves the reduced problem), `:fallback` (SDPA solves the model
     # with each equality constraint as two inequalities), or `:none` (SDPA not called)
     mode::Symbol
@@ -183,7 +202,7 @@ function presolve!(optimizer::Optimizer{T}, model::SDPAModel{T},
         n = size(A_T, 2)
         data = PresolveData{T,H}(n, pT, sets, ctol, H.(A_T), H.(b_T), H.(c_T), H.(AE_T), H.(bE_T),
                                  eq_rows, nothing, Int[], Dict{Int,Dict{Int,H}}(), nothing, Int[],
-                                 Int[], H[], nothing, :reduced, 0, "", zero(T), T[], T[],
+                                 Int[], H[], nothing, nothing, false, :not_called, :reduced, 0, "", zero(T), T[], T[],
                                  :not_called, "")
         optimizer.presolve_data = data
         fallback(reason) = fallback_model!(optimizer, reason)
@@ -255,11 +274,9 @@ function presolve!(optimizer::Optimizer{T}, model::SDPAModel{T},
             data.const_rows = crows
             data.const_vals = s[crows]
         end
-        model, post, scaled = scaled_sdpa_model(T, pT, Ak, b, c[keep], sets, crows, replacement)
-        data.post = post
-        data.sdpa_problem = (scaled..., sets)
         data.keep = keep
-        return model
+        data.unscaled_problem = (Ak, b, c[keep], sets, crows, replacement)
+        return scaled_model!(optimizer, false)
     end
 end
 
@@ -466,14 +483,54 @@ function fallback_model!(optimizer::Optimizer{T}, reason::String) where {T}
             offset = last(rows)
         end
         crows, replacement = crows[holds], replacement[holds]
-        model, post, scaled = scaled_sdpa_model(T, data.pT, Af, bf, data.c, setsf, crows, replacement)
-        data.post = post
-        data.sdpa_problem = (scaled..., setsf)
         data.keep = collect(1:data.nvars)
         data.const_rows = crows
         data.const_vals = bf[crows]
-        model
+        data.unscaled_problem = (Af, bf, data.c, setsf, crows, replacement)
+        scaled_model!(optimizer, false)
     end
+end
+
+# Scales the problem to pass to SDPA (`data.unscaled_problem`) and returns its model.
+# Call inside `with_work_precision`.
+function scaled_model!(optimizer::Optimizer{T}, border::Bool) where {T}
+    data = optimizer.presolve_data
+    A, b, c, sets, crows, replacement = data.unscaled_problem
+    model, post, scaled = scaled_sdpa_model(T, data.pT, A, b, c, sets, crows, replacement; border = border)
+    data.post = post
+    data.sdpa_problem = (scaled..., sets)
+    data.border = border
+    return model
+end
+
+# If the result of SDPA was rejected by a check (status `:unverified`) and the problem
+# was scaled with the first scaling, returns the model with the second scaling, to be
+# solved again; otherwise `nothing`. The scaling is a heuristic and the checks decide
+# whether it served; see `scaled_sdpa_model`.
+function rescaled_model!(optimizer::Optimizer{T}) where {T}
+    data = optimizer.presolve_data
+    (optimizer.phasevalue == :unverified && !data.border && data.check_failure != OVERFLOW) || return nothing
+    if optimizer.verbosity == VERBOSE
+        @info "SDPAFamily presolve: the result did not pass the check ($(data.check_failure)); solving again with the second scaling."
+    end
+    data.first_phase = data.sdpa_phase
+    data.sdpa_phase = :not_called
+    data.check_failure = ""
+    return with_work_precision(() -> scaled_model!(optimizer, true), T)
+end
+
+# After the solve with the second scaling: SDPA's verdict that the problem is infeasible
+# or unbounded is not accepted if SDPA reported feasible iterates with the first
+# scaling. Such a verdict means that an objective value passed SDPA's bound in the
+# scaled problem, which depends on the scaling.
+function check_rescaled_result!(optimizer::Optimizer)
+    data = optimizer.presolve_data
+    status = MOI.get(optimizer, MOI.TerminationStatus())
+    if status in (MOI.INFEASIBLE, MOI.DUAL_INFEASIBLE, MOI.INFEASIBLE_OR_UNBOUNDED) &&
+       data.first_phase in (:pdOPT, :pdFEAS, :pFEAS, :dFEAS)
+        _set_unverified!(optimizer, "SDPA reported `$(data.first_phase)` with the first scaling of the problem and `$(optimizer.phasevalue)` with the second")
+    end
+    return optimizer
 end
 
 # Checks the result of SDPA on the scaled problem, maps it back to the model (it is in
@@ -495,7 +552,6 @@ function postsolve!(optimizer::Optimizer{T}) where {T}
         reason = nothing
     end
     unscale_post!(optimizer)
-    overflow = "the solution is not finite in the number type of the optimizer"
     if data.mode == :fallback
         with_work_precision(T) do
             H = eltype(data.b)
@@ -507,7 +563,15 @@ function postsolve!(optimizer::Optimizer{T}) where {T}
             nn = _nonnegative_rows(data.sets)
             data.eq_dual = conv(y[(nn+1):(nn+m)] .- y[(nn+m+1):(nn+2m)])
         end
-        reason === nothing && !_finite_result(optimizer) && (reason = overflow)
+        reason === nothing && !_finite_result(optimizer) && (reason = OVERFLOW)
+        reason === nothing && (reason = with_work_precision(T) do
+            H = eltype(data.b)
+            nn = _nonnegative_rows(data.sets)
+            m = length(data.bE)
+            y = weighted_dual_vector(optimizer, optimizer.X, H)
+            yK = vcat(y[1:nn], y[(nn+2m+1):end])
+            check_model_result(optimizer, H.(optimizer.y), yK, H.(data.eq_dual))
+        end)
         reason === nothing || _set_unverified!(optimizer, reason)
         return nothing
     end
@@ -537,8 +601,9 @@ function postsolve!(optimizer::Optimizer{T}) where {T}
         # posed than the model with its equality constraints as pairs of
         # inequalities, so the fallback would not give a more reliable result.
         if reason === nothing && (!_finite_result(optimizer) || !all(isfinite, data.eq_dual))
-            reason = overflow
+            reason = OVERFLOW
         end
+        reason === nothing && (reason = check_model_result(optimizer, xr, yK, H.(data.eq_dual)))
         if reason !== nothing
             _set_unverified!(optimizer, reason)
             return nothing
@@ -581,6 +646,8 @@ function postsolve!(optimizer::Optimizer{T}) where {T}
         return nothing
     end
 end
+
+const OVERFLOW = "the solution is not finite in the number type of the optimizer"
 
 # Sets the status `:unverified` (`NUMERICAL_ERROR`): the result of SDPA is kept, with
 # the status reported by SDPA and the failed check in `MOI.RawStatusString`.
