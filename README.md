@@ -5,15 +5,14 @@
 [![](https://img.shields.io/badge/docs-stable-blue.svg)](https://ericphanson.github.io/SDPAFamily.jl/stable)
 [![](https://img.shields.io/badge/docs-dev-blue.svg)](https://ericphanson.github.io/SDPAFamily.jl/dev)
 
-Note: in v0.3.0, which updated the package for MOI v1, the `presolve` option
-had no effect, even when set to `true`. Without a presolve, SDPA can stop at the
-iteration limit or return inaccurate results for problems with equality
-constraints or linearly dependent constraints. The presolve is restored, and
-enabled by default, in the development version; see issue
-[#67](https://github.com/ericphanson/SDPAFamily.jl/issues/67) and the
-[documentation](https://ericphanson.github.io/SDPAFamily.jl/dev/usage/#Presolve).
-The exported function `presolve(optimizer)`, which raised an error since v0.3.0,
-is removed; the presolve runs inside `MOI.optimize!`.
+Note: in v0.3.0 the `presolve` option had no effect. SDPA then fails on many
+models written with JuMP or Convex.jl, because they contain equality constraints
+and redundant constraints. In the development version the presolve is restored
+and on by default; see the
+[documentation](https://ericphanson.github.io/SDPAFamily.jl/dev/usage/#Presolve)
+and issue [#67](https://github.com/ericphanson/SDPAFamily.jl/issues/67). The
+exported function `presolve(optimizer)`, which raised an error in v0.3.0, is
+removed.
 
 An interface to using SDPA-GMP, SDPA-DD, and SDPA-QD in Julia
 (<http://sdpa.sourceforge.net>). This package is registered in the

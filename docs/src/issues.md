@@ -34,67 +34,46 @@ parameters. See [Choice of parameters](@ref).
 
 ## Limitations of the presolve
 
-The presolve described in [Presolve](@ref) takes the data as exact numbers of
-type `T` and decides with tolerances. The following limitations remain.
+The [Presolve](@ref) checks every result against the model and reports
+`NUMERICAL_ERROR` when a check fails. The cases below are where that happens, or
+where a result can be misleading.
 
-* Constraints that are nearly dependent, but not dependent up to the data
-  tolerance, are kept. The elimination then divides by small numbers. If what
-  the presolve removed does not hold at the mapped-back solution, the presolve
-  falls back to the unreduced problem.
-* Data rounded to a coarser type than `T` (such as `Float64` decimals in a
-  `BigFloat` model) satisfy linear relations only up to that rounding; the
-  presolve treats such rows as independent unless `presolve_tol` is set (see
-  [Arithmetic and tolerances](@ref)). A coefficient that is a rounding error of
-  the data (for example `1e-17` where the model means zero) is a coefficient
-  like any other.
-* A computed number that is genuinely nonzero but more than ``1.5 p + 32`` bits
-  below its largest term (a dynamic range of about `1e33` for `Float64` and
-  `1e125` for `BigFloat` at 256 bits within one computation) is treated as zero.
-* SDPA's tolerances are absolute and apply to the scaled problem. A quantity
-  that is small in the scaled problem is not resolved, also when it is large in
-  the units of the model:
-  - A variable whose whole feasible range is below the tolerance in its scaled
-    unit can violate its bounds by that amount (with `1e-310 x + y == 1`,
-    `0 <= x <= 1e300`, `y >= 0`, the unit of `x` is `1e310`).
-  - A constraint that is violated by less than the tolerance relative to its
-    equilibrated row is satisfied for SDPA; an infeasible problem of this kind
-    is reported as `OPTIMAL`. This occurs when variables in very different
-    units meet in one constraint and the tolerance is `1e-7` (the variant
-    `:sdpa`, or `T = Float64`).
-  - Ruiz equilibration makes the largest entries of all rows and variables 1.
-    For a sparse matrix this does not determine the scaling, and a part of the
-    problem can end up at a size below the tolerance of the variant `:sdpa`.
-  - If the optimal objective value is far smaller than the product of the
-    largest entries of the equilibrated right-hand side and objective, the gap
-    tolerance does not resolve it. This case is detected (see
-    [Checks and fallback](@ref)) and gives `NUMERICAL_ERROR`; an example is an
-    inactive variable with cost 1 that may reach `1e150` on the feasible set.
-* SDPA reports unboundedness when the objective of the scaled problem passes
-  its parameters `lowerBound` or `upperBound` (`±1e5` by default). A problem
-  whose optimal value in the scaled problem is beyond these bounds is reported
-  as `DUAL_INFEASIBLE` or `INFEASIBLE`.
-* The checks of the solution returned by SDPA are at the square root of SDPA's
-  tolerances. A solution that is close to optimal for a slightly perturbed
-  problem passes them, also when it is far from the solution of the given
-  problem because the problem is ill-conditioned.
-* The fallback drops all reductions, even when only one step of the presolve
-  failed its check.
-* The equality elimination computes the reduced constraints explicitly. For
-  `m` dense equality constraints this takes time proportional to `m^3` in
-  `BigFloat` arithmetic (about 6 seconds for `m = 400` at 256 bits).
+* **Variables or constraints in very different units.** SDPA's tolerances are
+  absolute. The presolve rescales the problem so that coefficients are near 1,
+  but it cannot always tell which of two very different magnitudes in one
+  constraint matters. If the coefficients of a model span more than about 7
+  orders of magnitude with `variant = :sdpa` or `T = Float64` (tolerance `1e-7`),
+  or more than about 30 with `:sdpa_gmp`, expect `NUMERICAL_ERROR` for some
+  models. In tests with random problems whose variables were scaled by factors
+  between `1e-6` and `1e6`, this affected about 4% of the feasible problems at
+  tolerance `1e-7` and almost none with the high-precision variants. Choose
+  units so that variables and constraints have comparable sizes.
+* **Infeasibility by a margin below the tolerance.** A model whose constraints
+  contradict each other by less than SDPA's tolerance, relative to the sizes of
+  the terms in those constraints, is reported as `OPTIMAL`.
+* **Optimal value far from the scale of the data.** SDPA reports a problem as
+  unbounded when an objective value passes its parameters `lowerBound` or
+  `upperBound`, which are `-1e5` and `1e5` by default, in the rescaled problem.
+  A feasible, bounded model whose solution is very large compared to its data is
+  then reported as `INFEASIBLE` or `DUAL_INFEASIBLE`. An example is the chain
+  `x[1] >= 1`, `x[i+1] >= 2 x[i]` for 20 variables with objective `sum(x)`,
+  whose optimal value is about `1e6`. Pass larger bounds, for example
+  `params = (lowerBound = -1e10, upperBound = 1e10)`. This also happens with
+  `presolve = false`.
+* **Almost redundant constraints.** A constraint that follows from others only
+  up to more than `presolve_tol` is kept. The reduced problem is then
+  ill-conditioned, and the result can fail the checks. If the data were rounded
+  to a coarser type than `T`, set `presolve_tol` (see [Options](@ref)).
+* **Rounding errors in the data.** A coefficient such as `1e-17` where the model
+  means zero is a coefficient like any other.
+* **Results that do not fit the number type.** If a variable of the solution is
+  larger than the largest number of type `T` (about `1.8e308` for `Float64`),
+  the status is `NUMERICAL_ERROR`.
+* **Dense equality constraints.** The time of the presolve grows with the cube
+  of the number of dense equality constraints (see [Cost](@ref)).
 
-In these cases, `presolve = false` passes the problem to SDPA unchanged.
-
-Two properties of the SDPA interface are independent of the presolve:
-
-* With `presolve = false`, the SDPA status `pdFEAS` (both iterates feasible,
-  iteration limit reached) is reported as `OPTIMAL`, even when the duality gap
-  is not small. With the presolve, it is reported as `OPTIMAL` only if the gap
-  passes the checks described in [Checks and fallback](@ref), and as
-  `ITERATION_LIMIT` otherwise.
-* With `presolve = false`, an `INFEASIBILITY_CERTIFICATE` computed by SDPA is
-  SDPA's last iterate, which need not be a ray (`A^T y = 0`). With the presolve,
-  certificates are checked as described in [Checks and fallback](@ref).
+With `presolve = false`, the model is passed to SDPA unchanged. Then an
+`INFEASIBILITY_CERTIFICATE` is SDPA's last iterate and is not checked.
 
 ## Choice of parameters
 
