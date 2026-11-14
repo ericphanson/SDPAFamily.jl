@@ -33,25 +33,33 @@ using SparseArrays
 #
 # ## Arithmetic and decisions
 #
-# The problem data, given in the number type `T` of the optimizer, are converted exactly
-# to a working type with more precision (`Float64x3` for `Float64`, otherwise `BigFloat`
-# with `2 * precision(T) + 64` bits), and the presolve computes in that type. Each
-# computed number carries a running error bound (a magnitude `m` computed alongside with
-# the absolute values of the operands). A number `v` with `|v| ≤ τ m`, where
-# `τ = sqrt(eps(T) * eps(working type))`, consists of rounding errors and is dropped.
-# Rounding errors of the working type are far below `τ m`, while numbers that are exact
-# in the data of type `T` (such as an exact cancellation `L - L + s` with small `s`, or a
-# small coefficient next to a large one) are far above it unless the dynamic range
-# within one computation exceeds about `1/τ`.
+# The problem data, given in the number type `T` of the optimizer, are taken as exact
+# numbers. They are converted to `BigFloat` with twice the precision of `T` plus 64 bits
+# (the working precision; `Rational` data are used as they are), and the presolve
+# computes in that type. There are two tolerances (see `Tolerances`):
 #
-# * A row of `A_E` (or column of `A_K`) is dependent if every entry `v_r` of the
-#   eliminated vector satisfies `|v_r| ≤ δ Σ_j |w_j| |a_jr| + τ m_r` for the
-#   combination `w` of the data vectors `a_j`, where `δ = data_tol`; this is confirmed
-#   by recomputing the combination directly from the data. It is consistent if the
-#   same combination of the right-hand sides (objective coefficients) is zero in the
-#   same sense.
-# * After the back substitution, the reduced system is checked against the original
-#   rows of `A_E` at one point.
+# * Rounding residue. A computed number is set to zero if its terms cancelled so far
+#   that its leading bit lies more than `(precision(T) + working precision) / 2` bits
+#   below the leading bit of its largest term. An exact cancellation leaves a residue
+#   near the working precision, far below this threshold; numbers that are exact
+#   consequences of the data (such as `L - L + s` with small `s`, or a small
+#   coefficient next to a large one) are far above it unless the dynamic range of
+#   one computation exceeds the threshold.
+# * Dependence, with `δ = 64 eps(T)` (or the `presolve_tol` option if it is larger).
+#   A row of `A_E` (or a column of `A_K`) is dependent on the rows (columns) before it
+#   if a combination `w` of them satisfies `|Σ_j w_j a_j| ≤ δ Σ_j |w_j| |a_j|` in every
+#   entry, computed directly from the data vectors `a_j`. This is the componentwise
+#   relative backward error (Oettli and Prager): relative perturbations of the data of
+#   at most `δ` make the vectors exactly dependent. The criterion does not change when
+#   rows or columns are scaled. The row (column) is consistent if the same
+#   combination of the right-hand sides (objective coefficients) is zero in the same
+#   sense; otherwise the combination is a certificate of infeasibility (a ray).
+#
+# The eliminations are sparse LU factorizations with threshold pivoting (see
+# `eliminate`). After the back substitution, the reduced system is checked against the
+# original rows of `A_E` at one point. If the working precision turns out to be
+# insufficient (the two ways of computing a vector disagree, or the check fails), the
+# presolve falls back.
 #
 # ## Validation, scaling and fallback
 #
@@ -155,11 +163,8 @@ function presolve!(optimizer::Optimizer{T}, model::SDPAModel{T},
     A_T, b_T, c_T, sets = constraint_matrix(model)
     return with_work_precision(T) do
         H = work_type(T)
-        tol = rounding_tol(T, pT)
-        ctol = data_tol(T, pT)
-        if optimizer.presolve_tol !== nothing && !(T <: _EXACT)
-            ctol = max(ctol, H(optimizer.presolve_tol))
-        end
+        tol = Tolerances(T, pT; data_tol = optimizer.presolve_tol)
+        ctol = tol.data
         n = size(A_T, 2)
         A0, b0, c0, AE0, bE0 = H.(A_T), H.(b_T), H.(c_T), H.(AE_T), H.(bE_T)
         # Scale the rows of the equality and cone constraints (not the variables) before
@@ -184,7 +189,7 @@ function presolve!(optimizer::Optimizer{T}, model::SDPAModel{T},
         if !isempty(data.bE)
             # the number of nonzeros of each variable, to choose pivots with little fill-in
             pivot_cost = [length(nzrange(A, j)) + length(nzrange(data.AE, j)) for j in 1:n]
-            elim = _eliminate_equalities(data.AE, data.bE, tol, ctol, pivot_cost)
+            elim = _eliminate_equalities(data.AE, data.bE, tol, pivot_cost)
             elim.failed && return fallback("the equality elimination did not pass its check")
             if elim.infeasible !== nothing
                 y = elim.infeasible
@@ -196,7 +201,7 @@ function presolve!(optimizer::Optimizer{T}, model::SDPAModel{T},
             data.elim = elim
             A, b, c, delta = substitute(A, b, c, elim, tol)
         end
-        result = _find_redundant_columns(A, c, tol, ctol)
+        result = _find_redundant_columns(A, c, tol)
         redundant = result.failed ? Int[] : result.redundant
         if result.ray !== nothing
             d = data.elim === nothing ? result.ray :
@@ -211,7 +216,7 @@ function presolve!(optimizer::Optimizer{T}, model::SDPAModel{T},
         data.objconstant_delta = optimizer.objsign * _to(T, pT, delta)
         optimizer.objconstant += data.objconstant_delta
         if isempty(keep)
-            return determined_point!(optimizer, data, tol, ctol)
+            return determined_point!(optimizer, data)
         end
         Ak = A[:, keep]
         # Rows without coefficients are constants: check them at the point given by the
@@ -263,10 +268,10 @@ end
 # All variables are determined: the equality constraints give the point `x0`, and the
 # cone constraints do not depend on the remaining variables. Checks `x0` against the
 # original data.
-function determined_point!(optimizer::Optimizer{T}, data::PresolveData{T,H}, tol, ctol) where {T,H}
+function determined_point!(optimizer::Optimizer{T}, data::PresolveData{T,H}) where {T,H}
     x0, s, m = equality_point(data)
     rE, mE = _apply(data.AE, x0)
-    _all_zero(rE .+ data.bE, mE .+ abs.(data.bE), ctol) ||
+    _all_zero(rE .+ data.bE, mE .+ abs.(data.bE), data.data_tol) ||
         return fallback_model!(optimizer, "the point determined by the equality constraints did not pass its check")
     all(isfinite, s) && all(isfinite, m) ||
         return fallback_model!(optimizer, "the determined point is not finite")

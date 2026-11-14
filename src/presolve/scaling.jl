@@ -83,59 +83,65 @@ function build_sdpa_model(::Type{T}, pT, A, b, c, sets; A2 = nothing, b2 = nothi
 end
 
 # The cone data after substituting the expressions of `elim` for the eliminated
-# variables. A coefficient is dropped if it counts as zero against the products it was
-# computed from. Returns `A`, `b`, `c` of the reduced problem and the constant `c'x`
-# that the substitution adds to the objective.
+# variables: column `l` of the reduced matrix is the column of the free variable `l`
+# minus the columns of the pivot variables times their coefficients of `l`. A
+# coefficient that is rounding residue (see `Tolerances`) is dropped. Returns `A`,
+# `b`, `c` of the reduced problem and the constant `c'x` that the substitution adds to
+# the objective.
 function substitute(A::SparseMatrixCSC{H}, b::Vector{H}, c::Vector{H},
-                    elim::EqualityElimination{H}, tol) where {H}
-    n = size(A, 2)
+                    elim::EqualityElimination{H}, tol::Tolerances{H}) where {H}
+    m, n = size(A)
+    nfree = length(elim.free)
     new_index = zeros(Int, n)
     for (i, j) in enumerate(elim.free)
         new_index[j] = i
     end
-    pivot_of = Dict{Int,Int}(p => q for (q, p) in enumerate(elim.pivots))
-    val = Dict{Tuple{Int,Int},H}()
-    mag = Dict{Tuple{Int,Int},H}()
-    bnew = copy(b)
+    # for each free variable, the pivot rows `q` in which it occurs, and its coefficients
+    occurrences = [Tuple{Int,H}[] for _ in 1:nfree]
+    for q in eachindex(elim.pivots), (j, w) in _pairs(elim.rows[q])
+        push!(occurrences[new_index[j]], (q, w))
+    end
     rv = rowvals(A)
     nz = nonzeros(A)
-    for j in 1:n
+    acc = Accumulator{H}(m, tol.exact)
+    colptr = ones(Int, nfree + 1)
+    I, V = Int[], H[]
+    cnew = Vector{H}(undef, nfree)
+    for (i, j) in enumerate(elim.free)
+        _reset!(acc)
+        cj = c[j]
+        cemax = iszero(cj) || tol.exact ? 0 : _exponent(cj)
         for p in nzrange(A, j)
-            r, α = rv[p], nz[p]
-            if new_index[j] != 0
-                key = (r, new_index[j])
-                val[key] = get(val, key, zero(H)) + α
-                mag[key] = get(mag, key, zero(H)) + abs(α)
-            else
-                q = pivot_of[j]
-                bnew[r] += α * elim.rhs[q]
-                for (l, w) in elim.rows[q]
-                    key = (r, new_index[l])
-                    val[key] = get(val, key, zero(H)) - α * w
-                    mag[key] = get(mag, key, zero(H)) + abs(α) * elim.rows_mag[q][l]
-                end
+            iszero(nz[p]) || _add!(acc, rv[p], nz[p])
+        end
+        for (q, w) in occurrences[i]
+            pv = elim.pivots[q]
+            for p in nzrange(A, pv)
+                iszero(nz[p]) || _add!(acc, rv[p], -(nz[p] * w))
+            end
+            if !iszero(c[pv])
+                t = c[pv] * w
+                tol.exact || (cemax = iszero(cj) ? _exponent(t) : max(cemax, _exponent(t)))
+                cj -= t
             end
         end
-    end
-    I, J, V = Int[], Int[], H[]
-    for (key, v) in val
-        (iszero(v) || _counts_as_zero(v, mag[key], tol)) && continue
-        push!(I, key[1]); push!(J, key[2]); push!(V, v)
-    end
-    Anew = sparse(I, J, V, size(A, 1), length(elim.free))
-    cnew = c[elim.free]
-    cmag = abs.(cnew)
-    delta = zero(H)
-    for (q, p) in enumerate(elim.pivots)
-        iszero(c[p]) && continue
-        delta += c[p] * elim.rhs[q]
-        for (l, w) in elim.rows[q]
-            cnew[new_index[l]] -= c[p] * w
-            cmag[new_index[l]] += abs(c[p]) * elim.rows_mag[q][l]
+        for r in sort!(acc.pattern)
+            _is_residue(tol, acc.val[r], acc.emax[r]) && continue
+            push!(I, r)
+            push!(V, acc.val[r])
         end
+        colptr[i+1] = length(I) + 1
+        cnew[i] = _is_residue(tol, cj, cemax) ? zero(H) : cj
     end
-    for i in eachindex(cnew)
-        _counts_as_zero(cnew[i], cmag[i], tol) && (cnew[i] = zero(H))
+    Anew = SparseMatrixCSC(m, nfree, colptr, I, V)
+    bnew = copy(b)
+    delta = zero(H)
+    for (q, pv) in enumerate(elim.pivots)
+        iszero(elim.rhs[q]) && continue
+        for p in nzrange(A, pv)
+            bnew[rv[p]] += nz[p] * elim.rhs[q]
+        end
+        delta += c[pv] * elim.rhs[q]
     end
     return Anew, bnew, cnew, delta
 end
@@ -157,14 +163,11 @@ struct Scaling{H}
     rhs::H
 end
 
-# `exponent` of a positive number (for `MultiFloat`, that of its leading limb)
-_exponent(x::BigFloat) = exponent(x)
-_exponent(x::Rational) = exponent(Float64(x))
-_exponent(x) = exponent(Float64(x))
 _pow2(::Type{H}, k::Int) where {H} = H(2)^k
 
-# the power of two closest to `1 / sqrt(x)` for `x > 0`
-_inv_sqrt_pow2(x::H) where {H} = _pow2(H, -round(Int, _exponent(x) / 2))
+# `floor(log2(x))` for `x > 0`
+_log2(x::BigFloat) = exponent(x)
+_log2(x::Rational) = ndigits(numerator(x); base = 2) - ndigits(denominator(x); base = 2)
 
 # The row group of each cone row: each `Nonnegatives` row is its own group, and the rows
 # of a PSD block share one group, so that the scaling of a block is a congruence
@@ -186,12 +189,6 @@ function _row_groups(sets, offset::Int)
     return groups, g
 end
 
-# The largest absolute value of the exponent of a scaling factor: the factors are
-# finite numbers of the working type (`2^1000` is close to the largest `Float64`, and
-# the range of `MultiFloat` is that of `Float64`).
-_max_scale_exponent(::Type{BigFloat}) = 100_000
-_max_scale_exponent(::Type) = 1000
-
 """
     equilibrate(M::SparseMatrixCSC{H}, groups, ngroups; scale_columns = true, iterations = 20)
         -> (groupfactors, colfactors)
@@ -200,8 +197,8 @@ Ruiz equilibration (D. Ruiz, "A scaling algorithm to equilibrate both rows and c
 norms in matrices", 2001), as used by production conic solvers such as SCS: the row
 groups and the columns of `M` are divided simultaneously by the square roots of their
 largest absolute entries, until all of these are within a factor of 2 of 1. The
-factors are powers of two, so scaling by them is exact, and their exponents are at most
-`_max_scale_exponent(H)` in absolute value. Groups without coefficients are not scaled.
+factors are powers of two, so scaling by them is exact. Groups without coefficients are
+not scaled.
 """
 function equilibrate(M::SparseMatrixCSC{H}, groups::Vector{Int}, ngroups::Int;
                      scale_columns::Bool = true, iterations::Int = 20) where {H}
@@ -211,7 +208,6 @@ function equilibrate(M::SparseMatrixCSC{H}, groups::Vector{Int}, ngroups::Int;
     # the factors are `2^ge` and `2^se`
     ge = zeros(Int, ngroups)
     se = zeros(Int, n)
-    emax = _max_scale_exponent(H)
     pow2(e) = _pow2(H, e)
     for _ in 1:iterations
         g, s = pow2.(ge), pow2.(se)
@@ -228,8 +224,8 @@ function equilibrate(M::SparseMatrixCSC{H}, groups::Vector{Int}, ngroups::Int;
             (e === se && !scale_columns) && continue
             for k in eachindex(e)
                 x = norms[k]
-                (iszero(x) || !isfinite(x) || (x >= one(H) / 2 && x <= 2)) && continue
-                new = clamp(e[k] - round(Int, _exponent(x) / 2), -emax, emax)
+                (iszero(x) || (x >= one(H) / 2 && x <= 2)) && continue
+                new = e[k] - round(Int, _log2(x) / 2)
                 changed |= new != e[k]
                 e[k] = new
             end
@@ -284,9 +280,7 @@ function scaled_sdpa_model(::Type{T}, pT, A::SparseMatrixCSC{H}, b::Vector{H}, c
     gf, cf = equilibrate(A, groups, ng)
     rows = gf[groups]
     # the power of two that brings the largest absolute entry of `v` to [1, 2)
-    emax = _max_scale_exponent(H)
-    to_unit(v) = (m = maximum(abs, v; init = zero(H));
-                  iszero(m) || !isfinite(m) ? one(H) : _pow2(H, clamp(-_exponent(m), -emax, emax)))
+    to_unit(v) = (m = maximum(abs, v; init = zero(H)); iszero(m) ? one(H) : _pow2(H, -_log2(m)))
     β = to_unit(view(rows .* b, setdiff(1:length(b), crows)))
     σ = to_unit(cf .* c)
     bs = β .* rows .* b

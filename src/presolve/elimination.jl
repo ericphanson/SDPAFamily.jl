@@ -3,279 +3,353 @@
 
 const _EXACT = Union{Rational,Integer}
 
-work_type(::Type{T}) where {T} = T <: _EXACT ? T : T === Float64 ? MultiFloats.Float64x3 : BigFloat
-work_precision(::Type{T}) where {T} = 2 * precision(T) + 64
+# The working type: `BigFloat` with `work_precision` bits, or `T` itself for exact types.
+work_type(::Type{T}) where {T} = T <: _EXACT ? T : BigFloat
+# Twice the precision of the data, so that sums of products of two data numbers are
+# exact, plus guard bits.
+work_precision(p::Integer) = 2 * p + 64
+
+# The precision of `T`; `pT` is the precision of `BigFloat` of the caller.
+_precision(::Type{T}, pT) where {T} = T === BigFloat ? pT : precision(T)
 
 # Runs `f()` with the `BigFloat` precision set to the working precision for `T`.
 function with_work_precision(f, ::Type{T}) where {T}
-    work_type(T) === BigFloat || return f()
-    return setprecision(f, BigFloat, work_precision(T))
+    T <: _EXACT && return f()
+    return setprecision(f, BigFloat, work_precision(precision(T)))
 end
 
-# `eps(T)` in the working precision; `pT` is the precision of `T = BigFloat` of the
-# caller (`eps(BigFloat)` depends on the current precision). Call inside
-# `with_work_precision`.
+# `eps(T)` in the working type. Call inside `with_work_precision`.
 eps_of(::Type{T}, pT) where {T} =
-    T <: _EXACT ? zero(T) : work_type(T)(2)^(1 - (T === BigFloat ? pT : precision(T)))
-
-# ## Tolerances
-#
-# The presolve uses two tolerances for its decisions, both relative to the terms that
-# are combined (see the description above):
-#
-# * `rounding_tol` (`τ = sqrt(eps(T) * eps(W))` for the working type `W`): a computed
-#   number that is at most `τ` times its terms consists of rounding errors of the
-#   working precision. Such numbers are removed during the eliminations and the
-#   substitution, and the reduced row echelon form is checked with `τ`.
-# * `data_tol` (`64 eps(T)`, or the `presolve_tol` option of the optimizer if it is
-#   larger): a row or column is dependent, and a dependent row or column is consistent,
-#   if the combination is zero up to `data_tol`. Results that rest on these decisions
-#   (certificates, rays, the determined point) are validated against the scaled
-#   original data with the same tolerance. The data are taken as exact numbers of type
-#   `T`; for data that were rounded to a coarser type (such as `Float64` numbers in a
-#   `BigFloat` model), `presolve_tol` set to `64 eps` of that type lets the presolve
-#   treat rows and columns that are dependent up to that rounding as dependent.
-#
-# The determined point is accepted as feasible with `max(data_tol, epsilonStar)`, the
-# constraint tolerance of the solver. After the solve, the residuals of the mapped-back
-# solution are compared with the tolerances above and with the residuals of the
-# reduced problem (see `postsolve!`).
-#
-# Call these inside `with_work_precision`.
-rounding_tol(::Type{T}, pT) where {T} =
-    T <: _EXACT ? zero(T) : sqrt(eps_of(T, pT) * eps(work_type(T)))
-data_tol(::Type{T}, pT) where {T} = T <: _EXACT ? zero(T) : 64 * eps_of(T, pT)
-
-_counts_as_zero(value, bound, tol) = abs(value) <= tol * bound
+    T <: _EXACT ? zero(T) : BigFloat(2)^(1 - _precision(T, pT))
 
 # Converts `x` from the working type to `T`; for `T = BigFloat` with the precision
 # `pT` of the caller.
 _to(::Type{T}, pT, x) where {T} = T === BigFloat ? BigFloat(x; precision = pT) : T(x)
 
 """
-    Elimination{T}
+    Tolerances{H}
 
-Result of [`SDPAFamily.eliminate`](@ref).
+The tolerances of the presolve for the working type `H` (see the description at the top
+of `src/presolve.jl`).
+
+* `drop_bits`: a computed number whose leading bit is more than `drop_bits` bits below
+  the leading bit of the largest term it was computed from (catastrophic cancellation
+  of the terms) is rounding residue of the working precision and is set to zero.
+* `data`: the tolerance `δ` for linear dependence and consistency, relative to the
+  absolute values of the terms of a combination of data vectors.
+* `suspect_bits`: a reduced vector all of whose entries lost at least this many bits
+  is tested for dependence at `δ`.
+
+For exact types (`exact = true`) only numbers that are exactly zero count as zero.
 """
-mutable struct Elimination{T}
-    # basis vector `q` has the entry `one(T)` in row `pivots[q]`, and zeros in the pivot
-    # rows of the basis vectors before it; it is `Σ_j comb[q][j] * A[:, j]` up to
-    # entries that count as zero
-    pivots::Vector{Int}
-    basis::Vector{Dict{Int,T}}
-    basis_c::Vector{T}
-    comb::Vector{Dict{Int,T}}
-    independent::Vector{Int}
+struct Tolerances{H}
+    exact::Bool
+    drop_bits::Int
+    suspect_bits::Int
+    data::H
+end
+
+# Call inside `with_work_precision`. `data_tol` is the `presolve_tol` option.
+function Tolerances(::Type{T}, pT; data_tol = nothing) where {T}
+    T <: _EXACT && return Tolerances{T}(true, 0, 0, zero(T))
+    p = _precision(T, pT)
+    δ = 64 * eps_of(T, pT)
+    data_tol === nothing || (δ = max(δ, BigFloat(data_tol)))
+    return Tolerances{BigFloat}(false, (p + work_precision(p)) ÷ 2, max(1, -exponent(δ) ÷ 2), δ)
+end
+
+# The binary exponent of a nonzero number (only called for inexact types).
+_exponent(x::BigFloat) = exponent(x)
+_exponent(x) = exponent(Float64(x))
+
+# Whether the computed number `v`, whose largest term has the exponent `emax`, is
+# rounding residue.
+_is_residue(tol::Tolerances, v, emax::Int) =
+    iszero(v) || (!tol.exact && _exponent(v) < emax - tol.drop_bits)
+
+_counts_as_zero(value, bound, tol) = abs(value) <= tol * bound
+
+# A sparse vector: indices (not sorted) and values.
+struct Entries{H}
+    idx::Vector{Int}
+    val::Vector{H}
+end
+Entries{H}() where {H} = Entries{H}(Int[], H[])
+Base.length(e::Entries) = length(e.idx)
+_pairs(e::Entries) = zip(e.idx, e.val)
+
+# A sparse accumulator (J. R. Gilbert, C. Moler, R. Schreiber, "Sparse matrices in
+# MATLAB: design and implementation", 1992): a dense vector of values with the list
+# of the positions in use. It also records the exponent of the largest term added to
+# each position, for `_is_residue`.
+struct Accumulator{H}
+    val::Vector{H}
+    emax::Vector{Int}
+    marked::Vector{Bool}
+    pattern::Vector{Int}
+    exact::Bool
+end
+Accumulator{H}(n::Int, exact::Bool) where {H} =
+    Accumulator{H}(Vector{H}(undef, n), zeros(Int, n), fill(false, n), Int[], exact)
+
+# Adds the nonzero term `t` at position `r`; returns `true` if the position is new.
+@inline function _add!(acc::Accumulator, r::Int, t)
+    e = acc.exact ? 0 : _exponent(t)
+    if acc.marked[r]
+        acc.val[r] += t
+        e > acc.emax[r] && (acc.emax[r] = e)
+        return false
+    end
+    acc.marked[r] = true
+    push!(acc.pattern, r)
+    acc.val[r] = t
+    acc.emax[r] = e
+    return true
+end
+
+function _reset!(acc::Accumulator)
+    for r in acc.pattern
+        acc.marked[r] = false
+    end
+    empty!(acc.pattern)
+    return acc
+end
+
+"""
+    Elimination{H}
+
+Result of [`SDPAFamily.eliminate`](@ref): an LU factorization of the independent
+columns ("basis vectors") of a matrix `A`, in the order in which they were found.
+
+Basis vector `q` is column `vec[q]` of `A`. Its reduced form
+`U[q] = A[:, vec[q]] - Σ_{q' < q} L[q][q'] * U[q']` has the entry `pivot[q]` in row
+`coord[q]` and is zero in the rows `coord[q']` for `q' < q`; `Uc[q]` is the same
+combination of the entries of `c`.
+"""
+mutable struct Elimination{H}
+    vec::Vector{Int}
+    coord::Vector{Int}
+    pivot::Vector{H}
+    U::Vector{Entries{H}}
+    Uc::Vector{H}
+    L::Vector{Entries{H}}
+    # the columns found dependent on earlier columns and consistent with `c`, and for
+    # each such column `k` the coefficients `w` (with `w[k] = 1`) such that `A w` is
+    # zero up to the dependence tolerance
     redundant::Vector{Int}
-    # for each redundant column `k`, coefficients `w` (with `w[k] = 1`) such that
-    # `A w` is zero up to the dependence tolerance
-    dependence::Dict{Int,Dict{Int,T}}
+    dependence::Dict{Int,Dict{Int,H}}
     # the first column that is dependent but inconsistent with `c`, or 0
     inconsistent::Int
     # if `inconsistent > 0`: coefficients `d` with `A d ≈ 0` and `c'd < 0`
-    certificate::Dict{Int,T}
-    # `true` if a computed result did not pass its check against the data
+    certificate::Dict{Int,H}
+    # `true` if the working precision was not sufficient (two ways of computing the
+    # same vector disagree)
     failed::Bool
-    # Running error bounds (J. H. Wilkinson; N. J. Higham, "Accuracy and Stability of
-    # Numerical Algorithms", 2002, section 3.3): the rounding error of each entry of
-    # `basis`, `basis_c` and `comb` is at most a small multiple of `eps(T)` times the
-    # corresponding magnitude, which is computed alongside with the absolute values of
-    # all operands. A magnitude is at least the absolute value of its entry.
-    basis_mag::Vector{Dict{Int,T}}
-    basis_c_mag::Vector{T}
-    comb_mag::Vector{Dict{Int,T}}
 end
 
-# The magnitude of `y - a b`, given magnitudes `ym`, `am`, `bm` of `y`, `a` and `b`
-_mag_sub(ym, a, am, b, bm) = ym + abs(a) * bm + am * abs(b)
-# The magnitude of `y / p`, given magnitudes `ym` and `pm` of `y` and `p`
-_mag_div(y, ym, p, pm) = (ym + abs(y / p) * pm) / abs(p)
+Elimination{H}() where {H} =
+    Elimination{H}(Int[], Int[], H[], Entries{H}[], H[], Entries{H}[], Int[],
+                   Dict{Int,Dict{Int,H}}(), 0, Dict{Int,H}(), false)
 
-# `Σ_j |comb_j| |A[r, j]|` for each row `r` in `rows`
-function _bound(A::SparseMatrixCSC{T}, comb::Dict{Int,T}, rows) where {T}
-    bound = Dict{Int,T}(r => zero(T) for r in rows)
-    rv = rowvals(A)
-    nz = nonzeros(A)
-    for (j, w) in comb
-        aw = abs(w)
-        for p in nzrange(A, j)
-            r = rv[p]
-            haskey(bound, r) && (bound[r] += aw * abs(nz[p]))
-        end
-    end
-    return bound
-end
-
-# `Σ_j comb_j A[:, j]`, `Σ_j |comb_j| |A[:, j]|` and `Σ_j combm_j |A[:, j]|` (a bound
-# of the effect of the rounding errors of `comb`), computed directly
-function _combination(A::SparseMatrixCSC{T}, comb::Dict{Int,T}, combm::Dict{Int,T}) where {T}
-    val = Dict{Int,T}()
-    mag = Dict{Int,T}()
-    emag = Dict{Int,T}()
-    rv = rowvals(A)
-    nz = nonzeros(A)
-    for (j, w) in comb
-        for p in nzrange(A, j)
-            r = rv[p]
-            val[r] = get(val, r, zero(T)) + w * nz[p]
-            mag[r] = get(mag, r, zero(T)) + abs(w) * abs(nz[p])
-            emag[r] = get(emag, r, zero(T)) + combm[j] * abs(nz[p])
-        end
-    end
-    return val, mag, emag
-end
+# The threshold of the pivot choice: a pivot is at least this fraction of the largest
+# entry of its vector. 0.1 is the usual value of sparse LU codes (MA28, UMFPACK, LUSOL).
+const PIVOT_THRESHOLD = 10
 
 """
-    eliminate(A::SparseMatrixCSC{T}, c::AbstractVector{T}; tol = 0, data_tol = tol, pivot_cost = nothing) -> Elimination{T}
+    eliminate(A::SparseMatrixCSC{H}, c::AbstractVector{H}, tol::Tolerances{H}; pivot_cost = nothing) -> Elimination{H}
 
-Gaussian elimination on the columns of `A`, in the number type `T`. The columns are
-processed in order. Each computed entry carries a running error bound (a magnitude
-`m`, see `Elimination`); an entry `v` with `|v| ≤ tol * m` consists of rounding errors
-and is dropped. After the elimination of column `k`, with `w` the coefficients of the
-result in terms of the original columns, column `k` is linearly dependent on the
-previous columns if each remaining entry satisfies
-`|v_r| ≤ data_tol * Σ_j |w_j| |A[r, j]| + tol * m_r`, which is confirmed by recomputing
-`A w` directly. The same combination of `c` decides whether it is consistent, with
-`data_tol`; if not, the elimination stops and records a certificate `d` with
-`A d ≈ 0` and `c'd < 0`.
+Gaussian elimination on the columns of `A` in the number type `H`, column by column
+(a left-looking sparse LU factorization with threshold pivoting, as in J. R. Gilbert
+and T. Peierls, "Sparse partial pivoting in time proportional to arithmetic
+operations", 1988, with the roles of rows and columns exchanged).
+
+Each column is reduced by the basis vectors found before it. Entries of the result
+that are rounding residue (see [`SDPAFamily.Tolerances`](@ref)) are removed. If nothing
+remains, or if every remaining entry is small compared to its terms, the column is
+tested for dependence on the data: with `w` the coefficients of the reduced column in
+terms of the columns of `A` (from a triangular solve), the column is dependent if
+`|A w| ≤ δ |A| |w|` holds for every entry, with `δ = tol.data`. This is the
+componentwise relative backward error of W. Oettli and W. Prager (1964): some matrix
+whose entries differ from those of `A` by relative perturbations of at most `δ` has
+`w` in its null space. The test does not depend on the scaling of the rows or columns
+of `A`. A dependent column is consistent with `c` if `|c'w| ≤ δ |c|'|w|`; if not, the
+elimination stops and records the certificate `d = ±w` with `c'd < 0`.
 
 The pivot of a new basis vector is chosen among its entries whose absolute value is at
 least `1/10` of the largest one: the entry in the row `r` with the smallest
 `pivot_cost[r]` (if given), then the largest entry, then the smallest row.
-
-With `tol = 0` (the default for `Rational` and `Integer` element types) the
-computation is exact.
 """
-function eliminate(A::SparseMatrixCSC{T}, c::AbstractVector{T};
-                   tol = zero(T), data_tol = tol,
-                   pivot_cost::Union{Nothing,AbstractVector{Int}} = nothing) where {T}
-    n = size(A, 2)
+function eliminate(A::SparseMatrixCSC{H}, c::AbstractVector{H}, tol::Tolerances{H};
+                   pivot_cost::Union{Nothing,AbstractVector{Int}} = nothing) where {H}
+    m, n = size(A)
     length(c) == n || throw(DimensionMismatch("`c` must have one entry per column of `A`"))
-    colmax = [maximum(abs, view(nonzeros(A), nzrange(A, j)); init = zero(T)) for j in 1:n]
-    E = Elimination{T}(Int[], Dict{Int,T}[], T[], Dict{Int,T}[], Int[], Int[],
-                       Dict{Int,Dict{Int,T}}(), 0, Dict{Int,T}(), false,
-                       Dict{Int,T}[], T[], Dict{Int,T}[])
-    row_to_basis = Dict{Int,Int}()
+    E = Elimination{H}()
+    coord_to_basis = zeros(Int, m)
+    acc = Accumulator{H}(m, tol.exact)
     rows_A = rowvals(A)
     vals_A = nonzeros(A)
+    todo = BitSet()
     for k in 1:n
-        # the column, its magnitudes, and the same for `c` and the combination
-        v = Dict{Int,T}()
-        vm = Dict{Int,T}()
+        _reset!(acc)
+        empty!(todo)
         for p in nzrange(A, k)
             iszero(vals_A[p]) && continue
             r = rows_A[p]
-            v[r] = get(v, r, zero(T)) + vals_A[p]
-            vm[r] = get(vm, r, zero(T)) + abs(vals_A[p])
-        end
-        cv, cvm = c[k], abs(c[k])
-        comb = Dict{Int,T}(k => one(T))
-        combm = Dict{Int,T}(k => one(T))
-        todo = BitSet()
-        for r in keys(v)
-            q = get(row_to_basis, r, 0)
+            _add!(acc, r, vals_A[p])
+            q = coord_to_basis[r]
             q > 0 && push!(todo, q)
         end
-        # Eliminate with the basis vectors in the order they were added: basis vector
-        # `q` is zero in the pivot rows of all basis vectors added before it.
+        cv = c[k]
+        cemax = iszero(cv) || tol.exact ? 0 : _exponent(cv)
+        l = Entries{H}()
+        # Reduce with the basis vectors in the order in which they were found: basis
+        # vector `q` is zero in the pivot rows of the basis vectors before it.
         while !isempty(todo)
             q = first(todo)
             delete!(todo, q)
-            prow = E.pivots[q]
-            a = get(v, prow, zero(T))
-            iszero(a) && continue
-            am = vm[prow]
-            bm = E.basis_mag[q]
-            for (r, val) in E.basis[q]
+            prow = E.coord[q]
+            a = acc.val[prow]
+            acc.val[prow] = zero(H)
+            _is_residue(tol, a, acc.emax[prow]) && continue
+            λ = a / E.pivot[q]
+            push!(l.idx, q)
+            push!(l.val, λ)
+            u = E.U[q]
+            for i in eachindex(u.idx)
+                r = u.idx[i]
                 r == prow && continue
-                newval = get(v, r, zero(T)) - a * val
-                newmag = _mag_sub(get(vm, r, zero(T)), a, am, val, bm[r])
-                if iszero(newval)
-                    delete!(v, r)
-                    delete!(vm, r)
-                else
-                    v[r] = newval
-                    vm[r] = newmag
-                    q2 = get(row_to_basis, r, 0)
-                    q2 > q && push!(todo, q2)
+                if _add!(acc, r, -(λ * u.val[i]))
+                    q2 = coord_to_basis[r]
+                    q2 > 0 && push!(todo, q2)
                 end
             end
-            delete!(v, prow)
-            delete!(vm, prow)
-            cvm = _mag_sub(cvm, a, am, E.basis_c[q], E.basis_c_mag[q])
-            cv -= a * E.basis_c[q]
-            for (j, w) in E.comb[q]
-                combm[j] = _mag_sub(get(combm, j, zero(T)), a, am, w, E.comb_mag[q][j])
-                comb[j] = get(comb, j, zero(T)) - a * w
+            if !iszero(E.Uc[q])
+                t = λ * E.Uc[q]
+                tol.exact || (cemax = iszero(cv) ? _exponent(t) : max(cemax, _exponent(t)))
+                cv -= t
             end
         end
-        # rounding residue
-        for r in collect(keys(v))
-            if abs(v[r]) <= tol * vm[r]
-                delete!(v, r)
-                delete!(vm, r)
-            end
+        _is_residue(tol, cv, cemax) && (cv = zero(H))
+        # the reduced column without rounding residue
+        v = Entries{H}()
+        suspect = true
+        for r in acc.pattern
+            x = acc.val[r]
+            (coord_to_basis[r] > 0 || _is_residue(tol, x, acc.emax[r])) && continue
+            push!(v.idx, r)
+            push!(v.val, x)
+            suspect = suspect && !tol.exact && _exponent(x) < acc.emax[r] - tol.suspect_bits
         end
-        # Dependence. `S = Σ_j |w_j| max|A[:, j]|` bounds the one-level bounds, which
-        # are only computed if `v` may be dependent.
-        S = sum(abs(w) * colmax[j] for (j, w) in comb)
-        dependent = all(abs(v[r]) <= data_tol * S + tol * vm[r] for r in keys(v)) &&
-            (bound = _bound(A, comb, keys(v));
-             all(abs(v[r]) <= data_tol * bound[r] + tol * vm[r] for r in keys(v)))
-        if dependent
-            # dependent column; confirm with the combination computed directly
-            val, mag, emag = _combination(A, comb, combm)
-            if !all(abs(val[r]) <= data_tol * mag[r] + tol * emag[r] for r in keys(val))
+        if suspect
+            w = _combination(E, l, k, tol)
+            if _is_dependent(A, w, tol)
+                cd = zero(H)
+                cmag = zero(H)
+                for (j, wj) in w
+                    cd += wj * c[j]
+                    cmag += abs(wj) * abs(c[j])
+                end
+                if !_counts_as_zero(cd, cmag, tol.data)
+                    E.inconsistent = k
+                    s = cd > 0 ? -one(H) : one(H)
+                    for (j, wj) in w
+                        E.certificate[j] = s * wj
+                    end
+                    return E
+                end
+                push!(E.redundant, k)
+                E.dependence[k] = w
+                continue
+            elseif isempty(v.idx)
+                # the reduced column is rounding residue, but the same combination
+                # computed from the data is not zero
                 E.failed = true
                 return E
             end
-            cd = zero(T)
-            cmag = zero(T)
-            cemag = zero(T)
-            for (j, w) in comb
-                cd += w * c[j]
-                cmag += abs(w) * abs(c[j])
-                cemag += combm[j] * abs(c[j])
-            end
-            if abs(cd) > data_tol * cmag + tol * cemag
-                E.inconsistent = k
-                s = cd > 0 ? -one(T) : one(T)
-                for (j, w) in comb
-                    iszero(w) || (E.certificate[j] = s * w)
-                end
-                return E
-            end
-            push!(E.redundant, k)
-            E.dependence[k] = comb
-        else
-            maxabs = maximum(abs, values(v))
-            prow, pval = 0, zero(T)
-            for (r, val) in v
-                abs(val) >= maxabs / 10 || continue
-                if prow == 0
-                    prow, pval = r, val
-                    continue
-                end
-                if pivot_cost !== nothing && pivot_cost[r] != pivot_cost[prow]
-                    pivot_cost[r] < pivot_cost[prow] && ((prow, pval) = (r, val))
-                elseif abs(val) > abs(pval) || (abs(val) == abs(pval) && r < prow)
-                    prow, pval = r, val
-                end
-            end
-            pm = vm[prow]
-            push!(E.pivots, prow)
-            push!(E.basis, Dict{Int,T}(r => val / pval for (r, val) in v))
-            push!(E.basis_mag, Dict{Int,T}(r => _mag_div(val, vm[r], pval, pm) for (r, val) in v))
-            E.basis[end][prow] = one(T)
-            push!(E.basis_c, cv / pval)
-            push!(E.basis_c_mag, _mag_div(cv, cvm, pval, pm))
-            push!(E.comb, Dict{Int,T}(j => w / pval for (j, w) in comb))
-            push!(E.comb_mag, Dict{Int,T}(j => _mag_div(w, combm[j], pval, pm) for (j, w) in comb))
-            push!(E.independent, k)
-            row_to_basis[prow] = length(E.pivots)
         end
+        prow, pval = _choose_pivot(v, pivot_cost)
+        push!(E.vec, k)
+        push!(E.coord, prow)
+        push!(E.pivot, pval)
+        push!(E.U, v)
+        push!(E.Uc, cv)
+        push!(E.L, l)
+        coord_to_basis[prow] = length(E.vec)
     end
     return E
+end
+
+function _choose_pivot(v::Entries{H}, pivot_cost) where {H}
+    maxabs = maximum(abs, v.val)
+    prow, pval = 0, zero(H)
+    for (r, val) in _pairs(v)
+        PIVOT_THRESHOLD * abs(val) >= maxabs || continue
+        if prow == 0
+            prow, pval = r, val
+        elseif pivot_cost !== nothing && pivot_cost[r] != pivot_cost[prow]
+            pivot_cost[r] < pivot_cost[prow] && ((prow, pval) = (r, val))
+        elseif abs(val) > abs(pval) || (abs(val) == abs(pval) && r < prow)
+            prow, pval = r, val
+        end
+    end
+    return prow, pval
+end
+
+# Solves `L' z = l` in place (`z` holds `l` on entry), for the unit lower triangular
+# matrix `L` of the elimination. With `tol`, entries of `z` that are rounding residue
+# are set to zero.
+function _solve_Lt!(z::Vector{H}, E::Elimination{H}, tol::Union{Nothing,Tolerances{H}} = nothing) where {H}
+    track = tol !== nothing && !tol.exact
+    emax = track ? [iszero(x) ? 0 : _exponent(x) for x in z] : Int[]
+    for q in length(z):-1:1
+        zq = z[q]
+        iszero(zq) && continue
+        if track && _is_residue(tol, zq, emax[q])
+            z[q] = zero(H)
+            continue
+        end
+        for (q2, λ) in _pairs(E.L[q])
+            t = λ * zq
+            if track
+                e = _exponent(t)
+                emax[q2] = iszero(z[q2]) && emax[q2] == 0 ? e : max(emax[q2], e)
+            end
+            z[q2] -= t
+        end
+    end
+    return z
+end
+
+# The coefficients `w` (with `w[k] = 1`) of the column `k` reduced with the multipliers
+# `l`, in terms of the columns of `A`: `A[:, k] - Σ_q l[q] U[q] = A w`.
+function _combination(E::Elimination{H}, l::Entries{H}, k::Int, tol::Tolerances{H}) where {H}
+    z = zeros(H, length(E.vec))
+    for (q, λ) in _pairs(l)
+        z[q] = λ
+    end
+    _solve_Lt!(z, E, tol)
+    w = Dict{Int,H}(k => one(H))
+    for q in eachindex(z)
+        iszero(z[q]) || (w[E.vec[q]] = -z[q])
+    end
+    return w
+end
+
+# Whether `|A w| ≤ δ |A| |w|` holds for every entry, computed from the data.
+function _is_dependent(A::SparseMatrixCSC{H}, w::Dict{Int,H}, tol::Tolerances{H}) where {H}
+    val = Dict{Int,H}()
+    mag = Dict{Int,H}()
+    rv = rowvals(A)
+    nz = nonzeros(A)
+    for (j, wj) in w
+        for p in nzrange(A, j)
+            r = rv[p]
+            t = wj * nz[p]
+            val[r] = get(val, r, zero(H)) + t
+            mag[r] = get(mag, r, zero(H)) + abs(t)
+        end
+    end
+    return all(_counts_as_zero(val[r], mag[r], tol.data) for r in keys(val))
 end
 
 """
@@ -284,10 +358,10 @@ end
 Result of [`SDPAFamily.find_redundant_columns`](@ref).
 
 * `redundant::Vector{Int}`: the sorted indices of the columns that are linear
-  combinations of other columns. The corresponding variables are fixed to zero.
+  combinations of earlier columns. The corresponding variables are fixed to zero.
 * `ray::Union{Nothing,Vector{T}}`: `nothing`, or a vector `d` with `A d ≈ 0` and
   `c'd < 0`, which shows that the dual problem is infeasible.
-* `failed::Bool`: `true` if a computed result did not pass its check; then the other
+* `failed::Bool`: `true` if the working precision was not sufficient; then the other
   fields are empty.
 """
 struct PresolveResult{T}
@@ -310,21 +384,21 @@ function find_redundant_columns(A::SparseMatrixCSC{T}, c::AbstractVector{T}) whe
     pT = T === BigFloat ? precision(BigFloat) : 0
     return with_work_precision(T) do
         H = work_type(T)
-        r = _find_redundant_columns(H.(A), H.(c), rounding_tol(T, pT), data_tol(T, pT))
+        r = _find_redundant_columns(H.(A), H.(c), Tolerances(T, pT))
         ray = r.ray === nothing ? nothing : T[_to(T, pT, x) for x in r.ray]
         return PresolveResult{T}(r.redundant, ray, r.failed)
     end
 end
 
-function _find_redundant_columns(A::SparseMatrixCSC{T}, c::AbstractVector{T}, tol, dtol) where {T}
-    E = eliminate(A, c; tol = tol, data_tol = dtol)
-    E.failed && return PresolveResult{T}(Int[], nothing, true)
-    E.inconsistent == 0 && return PresolveResult{T}(E.redundant, nothing, false)
-    ray = zeros(T, size(A, 2))
+function _find_redundant_columns(A::SparseMatrixCSC{H}, c::AbstractVector{H}, tol::Tolerances{H}) where {H}
+    E = eliminate(A, c, tol)
+    E.failed && return PresolveResult{H}(Int[], nothing, true)
+    E.inconsistent == 0 && return PresolveResult{H}(E.redundant, nothing, false)
+    ray = zeros(H, size(A, 2))
     for (j, w) in E.certificate
         ray[j] = w
     end
-    return PresolveResult{T}(Int[], ray, false)
+    return PresolveResult{H}(Int[], ray, false)
 end
 
 """
@@ -339,10 +413,8 @@ where all `j` are in `free`.
 """
 struct EqualityElimination{T}
     pivots::Vector{Int}
-    rows::Vector{Dict{Int,T}}
+    rows::Vector{Entries{T}}
     rhs::Vector{T}
-    # row `q` of the reduced system is `Σ_r comb[q][r] * (row r of A_E)`
-    comb::Vector{Dict{Int,T}}
     free::Vector{Int}
     # the rows of `A_E` that were not found to be dependent, and for each dependent
     # row `r` the coefficients `w` (`w[r] = 1`) of the combination of rows that is zero
@@ -350,118 +422,112 @@ struct EqualityElimination{T}
     dependence::Dict{Int,Dict{Int,T}}
     # `nothing`, or `y` with `A_E' y ≈ 0` and `b_E' y < 0`
     infeasible::Union{Nothing,Vector{T}}
-    # `true` if a computed result did not pass its check against `A_E` and `b_E`
+    # `true` if the working precision was not sufficient
     failed::Bool
-    # running error bounds of `rows` and `rhs` (see `Elimination`)
-    rows_mag::Vector{Dict{Int,T}}
-    rhs_mag::Vector{T}
+    # the factorization of the independent rows (the columns of `A_E'`), for the duals
+    factors::Elimination{T}
 end
+
+_failed_elimination(::Type{T}, n; infeasible = nothing, failed = true) where {T} =
+    EqualityElimination{T}(Int[], Entries{T}[], T[], collect(1:n), Int[],
+                           Dict{Int,Dict{Int,T}}(), infeasible, failed, Elimination{T}())
 
 """
     eliminate_equalities(AE::SparseMatrixCSC{T}, bE::Vector{T}; pivot_cost = nothing) -> EqualityElimination{T}
 
-Reduces the system `AE * x + bE = 0` to reduced row echelon form by Gaussian
-elimination in the number type `T` (see [`SDPAFamily.eliminate`](@ref)), and checks
-each resulting row against the original rows. The computation is done in the working
-precision and the result is converted to `T`. With `pivot_cost[j]` the number of
-nonzeros of variable `j` in the whole model, the pivots are chosen to limit the
-fill-in of the substitution.
+Solves the system `AE * x + bE = 0` for one variable per linearly independent row, by
+Gaussian elimination on the rows of `AE` (see [`SDPAFamily.eliminate`](@ref)) followed
+by back substitution, and checks the result against `AE` and `bE`. The computation is
+done in the working precision and the result is converted to `T`. With `pivot_cost[j]`
+the number of nonzeros of variable `j` in the whole model, the pivots are chosen to
+limit the fill-in of the substitution.
 """
 function eliminate_equalities(AE::SparseMatrixCSC{T}, bE::Vector{T};
                               pivot_cost::Union{Nothing,AbstractVector{Int}} = nothing) where {T}
     pT = T === BigFloat ? precision(BigFloat) : 0
     return with_work_precision(T) do
         H = work_type(T)
-        e = _eliminate_equalities(H.(AE), H.(bE), rounding_tol(T, pT), data_tol(T, pT), pivot_cost)
+        e = _eliminate_equalities(H.(AE), H.(bE), Tolerances(T, pT), pivot_cost)
         conv(v) = T[_to(T, pT, x) for x in v]
+        conve(v) = Entries{T}(v.idx, conv(v.val))
         convd(d) = Dict{Int,T}(k => _to(T, pT, x) for (k, x) in d)
-        return EqualityElimination{T}(e.pivots, convd.(e.rows), conv(e.rhs), convd.(e.comb),
-                                      e.free, e.independent,
+        F = e.factors
+        factors = Elimination{T}(F.vec, F.coord, conv(F.pivot), conve.(F.U), conv(F.Uc), conve.(F.L),
+                                 F.redundant, Dict{Int,Dict{Int,T}}(), 0, Dict{Int,T}(), F.failed)
+        return EqualityElimination{T}(e.pivots, conve.(e.rows), conv(e.rhs), e.free, e.independent,
                                       Dict{Int,Dict{Int,T}}(r => convd(w) for (r, w) in e.dependence),
                                       e.infeasible === nothing ? nothing : conv(e.infeasible),
-                                      e.failed, convd.(e.rows_mag), conv(e.rhs_mag))
+                                      e.failed, factors)
     end
 end
 
-function _eliminate_equalities(AE::SparseMatrixCSC{T}, bE::Vector{T}, tol, dtol,
-                               pivot_cost) where {T}
+function _eliminate_equalities(AE::SparseMatrixCSC{H}, bE::Vector{H}, tol::Tolerances{H},
+                               pivot_cost) where {H}
     m, n = size(AE)
-    failed() = EqualityElimination{T}(Int[], Dict{Int,T}[], T[], Dict{Int,T}[],
-                                      collect(1:n), Int[], Dict{Int,Dict{Int,T}}(), nothing, true,
-                                      Dict{Int,T}[], T[])
-    # The columns of the transpose are the rows of `AE`.
+    # The columns of the transpose are the rows of `AE`; row `k` reads `AE[k, :] x = -bE[k]`.
     AEt = sparse(transpose(AE))
-    E = eliminate(AEt, -bE; tol = tol, data_tol = dtol,
-                  pivot_cost = pivot_cost)
-    E.failed && return failed()
+    E = eliminate(AEt, -bE, tol; pivot_cost = pivot_cost)
+    E.failed && return _failed_elimination(H, n)
     if E.inconsistent != 0
         # `d` satisfies `AE' d ≈ 0` and `-bE' d < 0`; a certificate needs `bE' y < 0`.
-        y = zeros(T, m)
+        y = zeros(H, m)
         for (r, w) in E.certificate
             y[r] = -w
         end
-        return EqualityElimination{T}(Int[], Dict{Int,T}[], T[], Dict{Int,T}[],
-                                      collect(1:n), Int[], Dict{Int,Dict{Int,T}}(), y, false,
-                                      Dict{Int,T}[], T[])
+        return _failed_elimination(H, n; infeasible = y, failed = false)
     end
-    Q = length(E.pivots)
-    rows, rows_mag = E.basis, E.basis_mag
-    rhs, rhs_mag = E.basis_c, E.basis_c_mag
-    comb, comb_mag = E.comb, E.comb_mag
-    pivot_index = Dict{Int,Int}(E.pivots[q] => q for q in 1:Q)
-    # Back substitution: after the iteration for `s`, row `s` is zero in the pivot
-    # columns of all other rows.
-    for s in Q-1:-1:1
-        row, rowm = rows[s], rows_mag[s]
-        for j in collect(keys(row))
-            q = get(pivot_index, j, 0)
-            q > s || continue
-            a, am = row[j], rowm[j]
-            for (l, w) in rows[q]
-                l == j && continue
-                newval = get(row, l, zero(T)) - a * w
-                newmag = _mag_sub(get(rowm, l, zero(T)), a, am, w, rows_mag[q][l])
-                if iszero(newval)
-                    delete!(row, l)
-                    delete!(rowm, l)
-                else
-                    row[l] = newval
-                    rowm[l] = newmag
+    # Back substitution. Reduced row `q` reads `Σ_j U[q][j] x[j] = Uc[q]`, and is zero
+    # in the pivot variables of the rows before it. Going backwards, the pivot
+    # variables of the later rows are replaced by their expressions.
+    Q = length(E.vec)
+    is_pivot = zeros(Int, n)
+    for q in 1:Q
+        is_pivot[E.coord[q]] = q
+    end
+    rows = Vector{Entries{H}}(undef, Q)
+    rhs = Vector{H}(undef, Q)
+    acc = Accumulator{H}(n, tol.exact)
+    for q in Q:-1:1
+        _reset!(acc)
+        β = E.Uc[q]
+        βemax = iszero(β) || tol.exact ? 0 : _exponent(β)
+        for (j, u) in _pairs(E.U[q])
+            s = is_pivot[j]
+            if s == 0
+                _add!(acc, j, u)
+            elseif s != q
+                for (l, w) in _pairs(rows[s])
+                    _add!(acc, l, -(u * w))
+                end
+                if !iszero(rhs[s])
+                    t = u * rhs[s]
+                    tol.exact || (βemax = iszero(β) ? _exponent(t) : max(βemax, _exponent(t)))
+                    β -= t
                 end
             end
-            delete!(row, j)
-            delete!(rowm, j)
-            rhs_mag[s] = _mag_sub(rhs_mag[s], a, am, rhs[q], rhs_mag[q])
-            rhs[s] -= a * rhs[q]
-            for (r, w) in comb[q]
-                comb_mag[s][r] = _mag_sub(get(comb_mag[s], r, zero(T)), a, am, w, comb_mag[q][r])
-                comb[s][r] = get(comb[s], r, zero(T)) - a * w
-            end
         end
-    end
-    # Drop the rounding residue of the back substitution.
-    for q in 1:Q
-        for l in collect(keys(rows[q]))
-            if l == E.pivots[q] || abs(rows[q][l]) <= tol * rows_mag[q][l]
-                delete!(rows[q], l)
-                delete!(rows_mag[q], l)
-            end
+        row = Entries{H}()
+        for l in acc.pattern
+            _is_residue(tol, acc.val[l], acc.emax[l]) && continue
+            push!(row.idx, l)
+            push!(row.val, acc.val[l] / E.pivot[q])
         end
+        rows[q] = row
+        rhs[q] = _is_residue(tol, β, βemax) ? zero(H) : β / E.pivot[q]
     end
-    free = sort!(collect(setdiff(1:n, E.pivots)))
-    # A posteriori check of the reduction (a Freivalds-type test, O(nnz) instead of
-    # comparing every reduced row with its combination of original rows): at a point
-    # with free values spread over [1, 2), the rows that were not found dependent must
-    # hold, up to `sqrt(tol * dtol)` relative to their terms. The values are the
-    # fractional parts of multiples of the golden ratio, which are reproducible and do
-    # not repeat. (The dependent rows were checked when they were found.)
-    result = EqualityElimination{T}(E.pivots, rows, rhs, comb, free, E.independent,
-                                    E.dependence, nothing, false, rows_mag, rhs_mag)
+    free = [j for j in 1:n if is_pivot[j] == 0]
+    result = EqualityElimination{H}(E.coord, rows, rhs, free, E.vec, E.dependence, nothing, false, E)
+    # A posteriori check of the reduction (a test of R. Freivalds' kind, O(nnz)): at a
+    # point with free values spread over [1, 2), the rows that were not found
+    # dependent must hold, up to the geometric mean of the rounding and the data
+    # tolerance, relative to their terms. The values are the fractional parts of
+    # multiples of the golden ratio, which are reproducible and do not repeat. (The
+    # dependent rows were checked when they were found.)
     phi = (sqrt(5.0) - 1) / 2
-    x = expand_solution(result, n, [one(T) + T(mod(k * phi, 1.0)) for k in 1:length(free)])
+    x = expand_solution(result, n, [one(H) + H(mod(k * phi, 1.0)) for k in 1:length(free)])
     r, rm = AE * x .+ bE, abs.(AE) * abs.(x) .+ abs.(bE)
-    check_tol = T <: _EXACT ? zero(T) : sqrt(tol * dtol)
-    all(abs(r[i]) <= check_tol * rm[i] for i in E.independent) || return failed()
+    check_tol = tol.exact ? zero(H) : sqrt(H(2)^(-tol.drop_bits) * tol.data)
+    all(abs(r[i]) <= check_tol * rm[i] for i in E.vec) || return _failed_elimination(H, n)
     return result
 end
 
@@ -473,7 +539,7 @@ function expand_solution(elim::EqualityElimination{T}, n::Int, xfree::AbstractVe
     x[elim.free] = xfree
     for q in eachindex(elim.pivots)
         val = homogeneous ? zero(T) : elim.rhs[q]
-        for (j, w) in elim.rows[q]
+        for (j, w) in _pairs(elim.rows[q])
             val -= w * x[j]
         end
         x[elim.pivots[q]] = val
@@ -481,15 +547,26 @@ function expand_solution(elim::EqualityElimination{T}, n::Int, xfree::AbstractVe
     return x
 end
 
-# Solves `AE' y = g` for `g` in the row space of `AE`.
+# Solves `AE' y = g` for `g` in the row space of `AE`, with `y` zero in the dependent
+# rows: the independent rows are `L U` (see `Elimination`), so `U' t = g` (forward
+# substitution on the pivot variables) and `L' y = t`.
 function equality_duals(elim::EqualityElimination{T}, m::Int, g::AbstractVector) where {T}
-    y = zeros(T, m)
-    for q in eachindex(elim.pivots)
-        β = g[elim.pivots[q]]
-        iszero(β) && continue
-        for (r, w) in elim.comb[q]
-            y[r] += β * w
+    E = elim.factors
+    Q = length(E.vec)
+    res = Vector{T}(g)
+    t = zeros(T, Q)
+    for q in 1:Q
+        tq = res[E.coord[q]] / E.pivot[q]
+        iszero(tq) && continue
+        t[q] = tq
+        for (j, u) in _pairs(E.U[q])
+            res[j] -= u * tq
         end
+    end
+    _solve_Lt!(t, E)
+    y = zeros(T, m)
+    for q in 1:Q
+        y[E.vec[q]] = t[q]
     end
     return y
 end
