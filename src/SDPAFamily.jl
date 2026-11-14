@@ -5,9 +5,7 @@ using SDPA_DD_jll: SDPA_DD_jll
 using SDPA_QD_jll: SDPA_QD_jll
 using LinearAlgebra # for diag()
 using DelimitedFiles # for writing SDPA input file
-using MathOptInterface
-const MOI = MathOptInterface
-const MOIB = MOI.Bridges
+import MathOptInterface as MOI
 using Scratch
 
 """

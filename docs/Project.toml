@@ -10,4 +10,4 @@ SumOfSquares = "4b9e565b-77fc-50a5-a571-1244f986bda1"
 
 [compat]
 Convex = "0.15"
-Documenter = "0.27"
+Documenter = "1"
