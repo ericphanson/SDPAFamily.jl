@@ -34,21 +34,33 @@ parameters. See [Choice of parameters](@ref).
 
 ## Limitations of the presolve
 
-The presolve described in [Presolve](@ref) treats a computed number as zero
-only if it may consist of rounding errors. Three cases follow from this.
+The presolve described in [Presolve](@ref) takes the data as exact numbers of
+type `T` and decides with tolerances. The following cases follow from this.
 
-* Constraints that are nearly, but not exactly, linearly dependent (for example
-  because the problem data were rounded to `Float64` before they were converted
-  to `BigFloat`) are kept. SDPA then receives a problem whose Schur complement
-  matrix is close to singular.
-* The presolve does not rescale the problem. After the substitution, the rows
-  of the cone constraints can have very different scales, and SDPA can then
-  fail on a problem that it solves without the presolve.
-* The presolve is not optimized for speed. In one test with 1000 random sparse
-  equality constraints on a 60×60 matrix variable, the presolve and writing the
-  input file took about 12 seconds with `BigFloat`.
+* Constraints that are nearly dependent but not dependent up to rounding to `T`
+  are kept. The elimination then divides by small numbers, and SDPA receives a
+  badly scaled problem. If the mapped-back solution fails the checks, the
+  presolve falls back to the unreduced problem.
+* A number that is genuinely nonzero but smaller than about `τ` times the terms
+  that are combined to compute it (a dynamic range above about `1/τ`, which is
+  `1e33` for `Float64` and `1e125` for `BigFloat` at 256 bits) is treated as zero.
+* The presolve does not rescale the problem. After the substitution, the rows of
+  the cone constraints can have very different scales, and SDPA can then fail on
+  a problem that it solves without the presolve.
+* The checks do not cover the cone constraints of the solution returned by SDPA;
+  that solution is SDPA's own, as without the presolve.
+* The presolve is slower than arithmetic in `T`; see [Presolve](@ref) for a
+  measured example.
 
 In these cases, `presolve = false` passes the problem to SDPA unchanged.
+
+Two properties of the SDPA interface are independent of the presolve:
+
+* The SDPA status `pdFEAS` (both iterates feasible, iteration limit reached) is
+  reported as `OPTIMAL`, even when the duality gap is not small.
+* For an `INFEASIBILITY_CERTIFICATE` computed by SDPA, the values are SDPA's last
+  iterate, which need not be a ray (`A^T y = 0`); the certificates that the
+  presolve returns are checked rays.
 
 ## Choice of parameters
 
