@@ -1,5 +1,15 @@
 export read_results!
 
+# `parse(T, str)`, except that a number outside the range of `T` gives an infinity or
+# zero instead of an error (SDPA-GMP prints numbers such as `1e+8366`).
+function parse_number(::Type{T}, str::AbstractString) where {T}
+    try
+        return parse(T, str)
+    catch
+        return T(parse(BigFloat, str))
+    end
+end
+
 """
     read_results!(optimizer::Optimizer{T}, filepath::String, redundant_entries::Vector)
 
@@ -68,9 +78,9 @@ function read_results!(
             while !startswith(line, "}")
                 xMatstring = remove_brackets!(line)
                 if endswith(xMatstring, ",")
-                    append!(xMatvec, parse.(T, split(xMatstring[1:end-1], ",")))
+                    append!(xMatvec, parse_number.(T, split(xMatstring[1:end-1], ",")))
                 else
-                    append!(xMatvec, parse.(T, split(xMatstring, ",")))
+                    append!(xMatvec, parse_number.(T, split(xMatstring, ",")))
                 end
                 line = getnextline(io)
             end
@@ -80,9 +90,9 @@ function read_results!(
             while !startswith(line, "}")
                 yMatstring = remove_brackets!(line)
                 if endswith(yMatstring, ",")
-                    append!(yMatvec, parse.(T, split(yMatstring[1:end-1], ",")))
+                    append!(yMatvec, parse_number.(T, split(yMatstring[1:end-1], ",")))
                 else
-                    append!(yMatvec, parse.(T, split(yMatstring, ",")))
+                    append!(yMatvec, parse_number.(T, split(yMatstring, ",")))
                 end
                 line = getnextline(io)
             end
@@ -93,12 +103,12 @@ function read_results!(
     #end
     xVecstring = remove_brackets!(xVecstring)
     xVecstring = split(xVecstring, ",")
-    xVec = parse.(T, xVecstring)
+    xVec = parse_number.(T, xVecstring)
     # The variables of the MOI model are SDPA's `xVec`, so SDPA's primal objective
     # `objValPrimal = c'x` is the primal objective of the MOI model, and
     # `objValDual = F_0 • Y` is its dual objective.
-    optimizer.primalobj = parse(T, objValPrimalstring)
-    optimizer.dualobj = parse(T, objValDualstring)
+    optimizer.primalobj = parse_number(T, objValPrimalstring)
+    optimizer.dualobj = parse_number(T, objValDualstring)
     for i in redundant_entries
         splice!(xVec, i:i-1, zero(T))
     end

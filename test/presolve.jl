@@ -860,6 +860,13 @@ include("presolve_kernel.jl")
         @test all(v[1:2] .>= 1 - 1e-6)
     end
 
+    @testset "numbers in SDPA's output outside the range of the number type" begin
+        @test SDPAFamily.parse_number(Float64, "+2.5e+8366") == Inf
+        @test SDPAFamily.parse_number(Float64, "-2.5e+8366") == -Inf
+        @test SDPAFamily.parse_number(Float64, "+1.5e+00") == 1.5
+        @test SDPAFamily.parse_number(BigFloat, "+2.5e+8366") > big"1e8366"
+    end
+
     @testset "iteration limit with feasible iterates without presolve" begin
         # min 2x + y with x >= 1, y >= 1, stopped after 4 iterations: SDPA-GMP reports
         # `pdFEAS` with objective values 1.4e5 and 3. The gap criterion is the same
