@@ -813,6 +813,47 @@ include("presolve_kernel.jl")
         end
     end
 
+    @testset "bounds written with tiny coefficients, $T and $var" for (T, var, s) in
+            ((Float64, :sdpa, 1e-12), (Float64, :sdpa_gmp, 1e-12), (BigFloat, :sdpa_gmp, big"1e-35"))
+        # The same model with the bounds of x1 multiplied by 1e-10:
+        # 1e-10 x1 >= 0 and 1e-10 (1 - x1) >= 0. A violation of these rows is small in
+        # absolute terms and large relative to the rows; the check of the model rows
+        # does not depend on the factor of a row.
+        t = T(1e-10)
+        model, optimizer = bridged_model(T; variant = var)
+        x = MOI.add_variables(model, 2)
+        MOI.add_constraint(model, T(s) * x[1] + T(1) * x[2], MOI.EqualTo(T(1)))
+        MOI.add_constraint(model, t * x[1], MOI.GreaterThan(T(0)))
+        MOI.add_constraint(model, -t * x[1], MOI.GreaterThan(-t))
+        MOI.add_constraint(model, T(1) * x[2], MOI.GreaterThan(T(0)))
+        MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+        MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x[2] - T(s) * x[1])
+        MOI.optimize!(model)
+        status = MOI.get(model, MOI.TerminationStatus())
+        @test status == MOI.OPTIMAL || (var == :sdpa && no_claim(status))
+        if status == MOI.OPTIMAL
+            @test -1e-2 <= MOI.get(model, MOI.VariablePrimal(), x[1]) <= 1 + 1e-2
+        end
+    end
+
+    @testset "result of SDPA that is not finite, without presolve" begin
+        # x1 == x2, x1 >= 1e300, x2 >= 0, min (x1 + x2) / 1e300 with `:sdpa`: SDPA
+        # returns NaN with the status `pdFEAS`.
+        T = Float64
+        model, optimizer = bridged_model(T; variant = :sdpa, presolve = false)
+        x = MOI.add_variables(model, 2)
+        MOI.add_constraint(model, T(1) * x[1] - T(1) * x[2], MOI.EqualTo(T(0)))
+        MOI.add_constraint(model, T(1) * x[1], MOI.GreaterThan(T(1e300)))
+        MOI.add_constraint(model, T(1) * x[2], MOI.GreaterThan(T(0)))
+        MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+        MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1e-300) * x[1] + T(1e-300) * x[2])
+        MOI.optimize!(model)
+        if !all(isfinite, MOI.get(model, MOI.VariablePrimal(), x))
+            @test MOI.get(model, MOI.TerminationStatus()) == MOI.NUMERICAL_ERROR
+            @test MOI.get(model, MOI.PrimalStatus()) == MOI.UNKNOWN_RESULT_STATUS
+        end
+    end
+
     @testset "bound far from the scale that both scalings give, variant $var" for var in (:sdpa, :sdpa_gmp)
         # The same model with 0 <= x1 <= 1e190 and s = 1e-200 (optimum at x1 = 1e190,
         # objective 1 - 2e-10). Both scalings give x1 a unit far below 1e190. The first
