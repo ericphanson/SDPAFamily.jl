@@ -2,8 +2,7 @@ using Test
 using Convex
 import MathOptInterface as MOI
 using SparseArrays
-const MOIT = MOI.Test
-const MOIB = MOI.Bridges
+using LinearAlgebra
 
 import SDPAFamily
 using Random
@@ -28,74 +27,203 @@ function Random.rand(rng::AbstractRNG, ::Random.SamplerTrivial{RandomRationalTyp
     return N // D
 end
 
+random_rational_matrix(m, n, p) =
+    1000 * sprand(m, n, p, k -> [rand(RandomRational) for _ = 1:k], Rational{BigInt})
+
+# A model with the optimizer behind a cache and bridges, as JuMP and Convex use it.
+function bridged_model(::Type{T}; kwargs...) where {T}
+    optimizer = SDPAFamily.Optimizer{T}(; silent = true, presolve = true, kwargs...)
+    cache = MOI.Utilities.UniversalFallback(MOI.Utilities.Model{T}())
+    cached = MOI.Utilities.CachingOptimizer(cache, optimizer)
+    return MOI.Bridges.full_bridge_optimizer(cached, T), optimizer
+end
+
+vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in terms) + T(constant)])
+
 @testset "Presolve" begin
 
-    @testset "reduce subroutine" begin
+    @testset "find_redundant_columns, exact arithmetic" begin
         for i in 1:10
-            # make sprand generate its nonzeros via our `RandomRational`'s
-            M = 1000*sprand(10, 20000, 0.003, n -> [ rand(RandomRational) for _ = 1:n ], Rational{BigInt})
-            M[:, 20] .= big"0.0" # reduce does not consider the last column
-            dropzeros!(M)
-            j = rand(setdiff(1:10,i))
-            k = rand(setdiff(1:10,i))
+            A = random_rational_matrix(2000, 10, 0.01)
+            j = rand(setdiff(1:10, i))
+            k = rand(setdiff(1:10, i, j))
             λ = rand(RandomRational)
-            M[i, :] = λ*M[j, :] + (1-λ)*M[k, :]
-            rows = Set(rowvals(SDPAFamily.reduce!(M)[:, 1:end-1]))
-            redundant = collect(setdiff!(Set(1:10), rows))
-            @test length(redundant) == 1
-            @test redundant[1] ∈ (i, j, k)
+            A[:, i] = λ * A[:, j] + (1 - λ) * A[:, k]
+            dropzeros!(A)
+            # consistent objective: `c` is in the row space of `A`
+            c = transpose(A) * [rand(RandomRational) for _ in 1:2000]
+            result = SDPAFamily.find_redundant_columns(A, c)
+            @test result.ray === nothing
+            @test length(result.redundant) == 1
+            @test result.redundant[1] ∈ (i, j, k)
+            # inconsistent objective: the result is a ray `d` with `A d = 0`, `c'd < 0`
+            c[i] += 1
+            result = SDPAFamily.find_redundant_columns(A, c)
+            @test isempty(result.redundant)
+            @test iszero(A * result.ray)
+            @test dot(c, result.ray) < 0
         end
-        for i in 1:10
-            M = 1000*sprand(10, 2000, 0.01, n -> [ rand(RandomRational) for _ = 1:n ], Rational{BigInt})
-            M[:, 20] .= big"0.0" # reduce does not consider the last column
-            dropzeros!(M)
-            j = rand(setdiff(1:10,i))
-            k = rand(setdiff(1:10,i))
-            l = rand(setdiff(1:10,i))
-            λ = rand(RandomRational)
-            M[i, :] = λ*M[j, :] + (1-λ)*M[k, :] + λ/2*M[l, :]
-            rows = Set(rowvals(SDPAFamily.reduce!(M)[:, 1:end-1]))
-            redundant = collect(setdiff!(Set(1:10), rows))
-            @test length(redundant) == 1
-            @test redundant[1] ∈ (i, j, k, l)
-        end
-        for i in 1:20
-            M = sprand(20, 100, 0.5)
-            M[i, :] .= eps(norm(M, Inf))
-            M[:, 1] .= eps(norm(M, Inf))
-            M = SDPAFamily.reduce!(M)
-            I, J, V = findnz(M)
-            @test i ∉ I
-        end
-
     end
 
-#    # Presolve removed
-#    @testset "redundant constraints" begin
-#        for n in 2:5
-#            opt = SDPAFamily.Optimizer{Float64}(;silent = true, variant = :sdpa, presolve = true)
-#            opt.no_solve = true
-#            A = rand(Float64, n,n) + im*rand(Float64, n,n)
-#            A = A + A' # now A is hermitian
-#            x = ComplexVariable(n,n)
-#            p = minimize(sumsquares(A - x), [x in :SDP])
-#
-#            @test_throws BoundsError solve!(p, opt)
-#            @test length(SDPAFamily.presolve(opt)) == n^2 - n
-#        end
-#    end
-#
-#    @testset "inconsistent constraints" begin
-#        m = SDPAFamily.Optimizer(verbose = SDPAFamily.WARN)
-#        m.blockdims = [3]
-#        m.elemdata = [(1, 1, 1, 1, big"1.0"), (1, 1, 2, 2, big"1.0"), (1, 1, 3, 3, big"1.0"),
-#            (2, 1, 1, 2, big"2.0"), (2, 1, 2, 1, big"2.0"),
-#            (3, 1, 1, 1, big"2.0"), (3, 1, 2, 2, big"2.0"), (3, 1, 3, 3, big"2.0"),
-#            (3, 1, 1, 2, big"3.0"), (3, 1, 2, 1, big"3.0")]
-#        m.b = [big"2.2", big"3.1", big"9.05"]
-#        @test length(SDPAFamily.presolve(m))==1
-#        m.b = [big"2.2", big"3.1", big"9.05"-eps(9.05)]
-#        @test_logs (:warn, "Inconsistency at constraint index 1. Problem is dual infeasible.") SDPAFamily.presolve(m)
-#    end
+    @testset "find_redundant_columns, $T" for T in (Float64, BigFloat)
+        A = sparse(T.(rand(-5:5, 40, 6)))
+        A[:, 6] = A[:, 1] / 3 + A[:, 2] * T(7) / 10 - A[:, 5]
+        c = transpose(A) * T.(rand(40))
+        result = SDPAFamily.find_redundant_columns(A, c)
+        @test result.redundant == [6]
+        @test result.ray === nothing
+        # a perturbation that is large compared to the tolerance makes the columns independent
+        A[1, 6] += T(1) / 1000
+        result = SDPAFamily.find_redundant_columns(A, c)
+        @test isempty(result.redundant)
+    end
 
+    @testset "eliminate_equalities, $T" for T in (Rational{BigInt}, Float64, BigFloat)
+        AE = T.(rand(-3:3, 4, 7))
+        AE[4, :] = AE[1, :] + 2 * AE[2, :]
+        AE = sparse(AE)
+        x0 = T.(rand(-3:3, 7))
+        bE = -AE * x0
+        elim = SDPAFamily.eliminate_equalities(AE, bE)
+        @test elim.infeasible === nothing
+        @test length(elim.pivots) == 3
+        @test length(elim.free) == 4
+        # every choice of the free variables gives a solution
+        x = SDPAFamily.expand_solution(elim, 7, T.(rand(-3:3, 4)))
+        @test norm(AE * x + bE, Inf) <= 1e-10
+        # duals: `AE' y = g` for `g` in the row space of `AE`
+        g = transpose(AE) * T.(rand(-3:3, 4))
+        y = SDPAFamily.equality_duals(elim, 4, g)
+        @test norm(transpose(AE) * y - g, Inf) <= 1e-10
+        @test iszero(y[4]) # the dependent row has dual zero
+        # inconsistent right-hand side
+        bE[4] += 1
+        elim = SDPAFamily.eliminate_equalities(AE, bE)
+        y = elim.infeasible
+        @test norm(transpose(AE) * y, Inf) <= 1e-10
+        @test dot(bE, y) < 0
+    end
+
+    @testset "MOI with variant $var and type $T" for var in variants, T in (Float64, BigFloat)
+        @testset "linearly dependent variables" begin
+            # The columns of `x` and `y` are equal; without presolve, SDPA-DD and SDPA-QD
+            # stop at the iteration limit and SDPA-GMP returns a point whose objective
+            # value differs from the reported optimal value.
+            model, optimizer = bridged_model(T; variant = var)
+            x, y = MOI.add_variables(model, 2)
+            c = MOI.add_constraint(model, vaf(T, [(1, x), (1, y)], -1), MOI.Nonnegatives(1))
+            MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+            MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x + T(1) * y)
+            MOI.optimize!(model)
+            @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
+            @test MOI.get(model, MOI.ObjectiveValue()) ≈ 1 atol = 1e-6
+            vx = MOI.get(model, MOI.VariablePrimal(), x)
+            vy = MOI.get(model, MOI.VariablePrimal(), y)
+            @test vx + vy ≈ 1 atol = 1e-6
+            @test iszero(vx) || iszero(vy) # one of them was fixed to zero
+            @test MOI.get(model, MOI.ConstraintDual(), c) ≈ [1] atol = 1e-6
+        end
+
+        @testset "dual infeasible" begin
+            # minimize x - y subject to x + y ≥ 1 is unbounded; the presolve finds a ray
+            model, optimizer = bridged_model(T; variant = var)
+            x, y = MOI.add_variables(model, 2)
+            MOI.add_constraint(model, vaf(T, [(1, x), (1, y)], -1), MOI.Nonnegatives(1))
+            MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+            MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x - T(1) * y)
+            MOI.optimize!(model)
+            @test optimizer.phasevalue == :presolve_dINF
+            @test MOI.get(model, MOI.TerminationStatus()) == MOI.DUAL_INFEASIBLE
+            @test MOI.get(model, MOI.PrimalStatus()) == MOI.INFEASIBILITY_CERTIFICATE
+            @test MOI.get(model, MOI.DualStatus()) == MOI.NO_SOLUTION
+            dx = MOI.get(model, MOI.VariablePrimal(), x)
+            dy = MOI.get(model, MOI.VariablePrimal(), y)
+            @test dx + dy ≈ 0 atol = 1e-12
+            @test dx - dy < 0
+            @test MOI.get(model, MOI.ObjectiveValue()) ≈ dx - dy
+        end
+
+        @testset "equality constraint with PSD constraint, sense $sense" for sense in (MOI.MIN_SENSE, MOI.MAX_SENSE)
+            # minimize x1 + x3 subject to [x1 x2; x2 x3] ⪰ 0, x2 == 1.
+            # The solution is x = (1, 1, 1). The dual of the PSD constraint is the
+            # triangle (1, -1, 1) of the matrix [1 -1; -1 1], and the dual of the
+            # equality constraint is 2: the objective is 2t for x2 == t.
+            model, optimizer = bridged_model(T; variant = var)
+            x = MOI.add_variables(model, 3)
+            psd = MOI.add_constraint(model, MOI.VectorOfVariables(x), MOI.PositiveSemidefiniteConeTriangle(2))
+            eq = MOI.add_constraint(model, T(1) * x[2], MOI.EqualTo(T(1)))
+            s = sense == MOI.MIN_SENSE ? 1 : -1
+            MOI.set(model, MOI.ObjectiveSense(), sense)
+            MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(s) * x[1] + T(s) * x[3] + T(5))
+            MOI.optimize!(model)
+            @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
+            @test MOI.get(model, MOI.PrimalStatus()) == MOI.FEASIBLE_POINT
+            @test MOI.get(model, MOI.DualStatus()) == MOI.FEASIBLE_POINT
+            @test MOI.get(model, MOI.ObjectiveValue()) ≈ 2s + 5 atol = 1e-5
+            @test MOI.get(model, MOI.DualObjectiveValue()) ≈ 2s + 5 atol = 1e-5
+            @test MOI.get(model, MOI.VariablePrimal(), x) ≈ [1, 1, 1] atol = 1e-5
+            @test MOI.get(model, MOI.ConstraintPrimal(), eq) ≈ 1 atol = 1e-8
+            @test MOI.get(model, MOI.ConstraintDual(), psd) ≈ [1, -1, 1] atol = 1e-5
+            @test MOI.get(model, MOI.ConstraintDual(), eq) ≈ 2 atol = 1e-5
+        end
+
+        @testset "inconsistent equality constraints" begin
+            model, optimizer = bridged_model(T; variant = var)
+            x = MOI.add_variables(model, 2)
+            MOI.add_constraint(model, MOI.VectorOfVariables(x), MOI.Nonnegatives(2))
+            c1 = MOI.add_constraint(model, T(1) * x[1] + T(1) * x[2], MOI.EqualTo(T(1)))
+            c2 = MOI.add_constraint(model, T(2) * x[1] + T(2) * x[2], MOI.EqualTo(T(3)))
+            MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+            MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x[1])
+            MOI.optimize!(model)
+            @test optimizer.phasevalue == :presolve_pINF
+            @test MOI.get(model, MOI.TerminationStatus()) == MOI.INFEASIBLE
+            @test MOI.get(model, MOI.PrimalStatus()) == MOI.NO_SOLUTION
+            @test MOI.get(model, MOI.DualStatus()) == MOI.INFEASIBILITY_CERTIFICATE
+            y1 = MOI.get(model, MOI.ConstraintDual(), c1)
+            y2 = MOI.get(model, MOI.ConstraintDual(), c2)
+            # `A' y = 0` and `b' y < 0`, where `b = (-1, -3)`
+            @test y1 + 2y2 ≈ 0 atol = 1e-12
+            @test -y1 - 3y2 < 0
+            @test MOI.get(model, MOI.DualObjectiveValue()) ≈ y1 + 3y2
+        end
+
+        @testset "all variables fixed by equality constraints" begin
+            for (rhs, status) in ((1, MOI.OPTIMAL), (-1, MOI.INFEASIBLE))
+                model, optimizer = bridged_model(T; variant = var)
+                x = MOI.add_variables(model, 2)
+                MOI.add_constraint(model, MOI.VectorOfVariables(x), MOI.Nonnegatives(2))
+                c1 = MOI.add_constraint(model, T(1) * x[1], MOI.EqualTo(T(rhs)))
+                c2 = MOI.add_constraint(model, T(1) * x[1] + T(1) * x[2], MOI.EqualTo(T(3)))
+                MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+                MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x[1] + T(2) * x[2])
+                MOI.optimize!(model)
+                @test MOI.get(model, MOI.TerminationStatus()) == status
+                @test MOI.get(model, MOI.VariablePrimal(), x) ≈ [rhs, 3 - rhs]
+                if status == MOI.OPTIMAL
+                    @test optimizer.phasevalue == :presolve_OPT
+                    @test MOI.get(model, MOI.ObjectiveValue()) ≈ rhs + 2 * (3 - rhs)
+                    @test MOI.get(model, MOI.DualStatus()) == MOI.FEASIBLE_POINT
+                    # c = A_E' y with A_E = [1 0; 1 1] and c = (1, 2)
+                    @test MOI.get(model, MOI.ConstraintDual(), c1) ≈ -1
+                    @test MOI.get(model, MOI.ConstraintDual(), c2) ≈ 2
+                else
+                    @test optimizer.phasevalue == :presolve_INF
+                    @test MOI.get(model, MOI.DualStatus()) == MOI.NO_SOLUTION
+                end
+            end
+        end
+    end
+
+    @testset "Convex: quantum state discrimination with variant $var" for var in (:sdpa_gmp,)
+        ρ₁ = Complex{BigFloat}[1 0; 0 0]
+        ρ₂ = (1//2) * Complex{BigFloat}[1 -im; im 1]
+        E₁ = ComplexVariable(2, 2)
+        E₂ = ComplexVariable(2, 2)
+        problem = maximize(real((1//2) * tr(ρ₁ * E₁) + (1//2) * tr(ρ₂ * E₂)),
+                           [E₁ ⪰ 0, E₂ ⪰ 0, E₁ + E₂ == Diagonal(ones(2))];
+                           numeric_type = BigFloat)
+        solve!(problem, () -> SDPAFamily.Optimizer(presolve = true, variant = var, silent = true))
+        @test problem.optval ≈ 1//2 + 1 / (2 * sqrt(big(2))) atol = 1e-25
+    end
 end

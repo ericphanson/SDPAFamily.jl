@@ -17,6 +17,13 @@ function MOI.get(model::ObjectiveFunctionFilter, attr::MOI.ObjectiveFunction)
     return MOI.Utilities.canonical(func)
 end
 
+# Equality constraints are not copied; see `equality_constraints` in `MOI_wrapper.jl`.
+function MOI.get(model::ObjectiveFunctionFilter, attr::MOI.ListOfConstraintTypesPresent)
+    return filter(MOI.get(model.inner, attr)) do (F, S)
+        return !(S == MOI.Zeros && F <: MOI.VectorAffineFunction)
+    end
+end
+
 # These just forward the attributes into the inner model.
 
 function MOI.get(model::ObjectiveFunctionFilter, attr::MOI.AbstractModelAttribute)
