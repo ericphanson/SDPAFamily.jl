@@ -310,7 +310,7 @@ function check_sdpa_result(optimizer::Optimizer{T}) where {T}
 end
 
 """
-    model_violations(data::PresolveData, x, yK, yE, γ) -> (primal, dual)
+    model_violations(data::PresolveData, x, yK, yE, γ, xunit, yunit) -> (primal, dual)
 
 Check the point `x` and the duals `yK` (cone constraints, weighted as in
 `weighted_dual_vector`) and `yE` (equality constraints) against the model, in the
@@ -322,37 +322,72 @@ whatever its size in the model. For `s x1 + x2 == 1`, `0 ≤ x1 ≤ 1`, `x2 ≥ 
 tiny `s`, the first scaling gives `x1` the unit `1/sqrt(s)`, and the bound `x1 ≤ 1`
 becomes such a row.
 
-The conditions are SDPA's, with the tolerance `γ` and relative to the terms of each row
-(column), where a variable (dual variable) counts with at least the size 1:
+The conditions are relative to the terms of each row (column), with the tolerance `γ`:
 
 * row `i` of the cone constraints: `(A x + b)_i ≥ -γ m_i` with
-  `m = |A| max.(|x|, 1) + |b|` (a PSD block `S` with the entries `M` of `m`:
+  `m = |A| max.(|x|, xunit) + |b|` (a PSD block `S` with the entries `M` of `m`:
   `S + γ ‖M‖_F I ⪰ 0`);
-* row `i` of the equality constraints: `|A_E x + b_E|_i ≤ γ (|A_E| max.(|x|, 1) + |b_E|)_i`;
-* variable `j`: `|c - A'y|_j ≤ γ (|c| + |A|' max.(|y|, 1))_j`.
+* row `i` of the equality constraints: `|A_E x + b_E|_i ≤ γ (|A_E| max.(|x|, xunit) + |b_E|)_i`;
+* variable `j`: `|c - A'y|_j ≤ γ (|c| + |A|' max.(|y_K|, yunit) + |A_E|' max.(|y_E|, 1))_j`.
 
-The floor 1 is an absolute tolerance for a variable that is zero at the solution, in
-the units of that variable. The conditions do not change when a row of the model is
-multiplied by a factor (a column, for the dual condition).
+A row that is active at a point where its variables are near zero (`x ≥ 0` at
+`x = -1e-9`) has a residual as large as its terms. For such rows there is an absolute
+tolerance in the units of the variables: `xunit[j]` is the smaller of 1 and the size
+that an entry 1 of variable `j` in the scaled problem has in the model (`yunit[i]`
+likewise for the duals), so the tolerance of a variable is never looser than SDPA's
+in the scaled problem, nor than SDPA's in the model. For given units, the conditions
+do not change when a row of the model is multiplied by a factor (a column, for the
+dual condition).
 """
-function model_violations(data::PresolveData{T,H}, x::Vector{H}, yK::Vector{H}, yE::Vector{H}, γ) where {T,H}
+function model_violations(data::PresolveData{T,H}, x::Vector{H}, yK::Vector{H}, yE::Vector{H}, γ,
+                          xunit::Vector{H}, yunit::Vector{H}) where {T,H}
     all(isfinite, x) && all(isfinite, yK) && all(isfinite, yE) || return OVERFLOW, OVERFLOW
-    floor1(v) = max.(abs.(v), one(H))
+    xm = max.(abs.(x), xunit)
     primal = nothing
     s = data.A * x .+ data.b
-    m = abs.(data.A) * floor1(x) .+ abs.(data.b)
+    m = abs.(data.A) * xm .+ abs.(data.b)
     r = data.AE * x .+ data.bE
-    rm = abs.(data.AE) * floor1(x) .+ abs.(data.bE)
+    rm = abs.(data.AE) * xm .+ abs.(data.bE)
     if !in_cone(data.sets, s, m, γ)[1]
         primal = "a cone constraint of the model is violated at the point by more than the tolerance relative to its terms"
     elseif !all(abs(r[i]) <= γ * rm[i] for i in eachindex(r))
         primal = "an equality constraint of the model is violated at the point by more than the tolerance relative to its terms"
     end
     r = data.c .- transpose(data.A) * yK .- transpose(data.AE) * yE
-    m = abs.(data.c) .+ transpose(abs.(data.A)) * floor1(yK) .+ transpose(abs.(data.AE)) * floor1(yE)
+    m = abs.(data.c) .+ transpose(abs.(data.A)) * max.(abs.(yK), yunit) .+
+        transpose(abs.(data.AE)) * max.(abs.(yE), one(H))
     dual = all(abs(r[j]) <= γ * m[j] for j in eachindex(r)) ? nothing :
            "a dual equation of the model is violated by more than the tolerance relative to its terms"
     return primal, dual
+end
+
+# The units `xunit`, `yunit` of `model_violations`: the sizes in the model of an entry
+# 1 of each variable and of each cone dual in the scaled problem, at most 1. A variable
+# that the equality constraints express by others has the unit of that expression; a
+# variable fixed to zero has the unit zero.
+function model_units(data::PresolveData{T,H}) where {T,H}
+    post = data.post
+    cap(v) = min.(v, one(H))
+    if data.mode == :fallback
+        nn = _nonnegative_rows(data.sets)
+        m = length(data.bE)
+        yunit = post.row ./ post.obj
+        return cap(post.col), cap(vcat(yunit[1:nn], yunit[(nn+2m+1):end]))
+    end
+    elim = data.elim
+    free = elim === nothing ? collect(1:data.nvars) : elim.free
+    xunit = zeros(H, data.nvars)
+    xunit[free[data.keep]] = cap(post.col)
+    if elim !== nothing
+        for (q, p) in enumerate(elim.pivots)
+            u = abs(elim.rhs[q])
+            for (j, w) in _pairs(elim.rows[q])
+                u += abs(w) * xunit[j]
+            end
+            xunit[p] = min(u, one(H))
+        end
+    end
+    return xunit, cap(post.row ./ post.obj)
 end
 
 # Applies `model_violations` to the solution that SDPA reports as feasible. Records in
@@ -360,7 +395,7 @@ end
 # Returns `nothing`, or the violated condition.
 function check_model_result(optimizer::Optimizer, x::Vector{H}, yK::Vector{H}, yE::Vector{H}) where {H}
     data = optimizer.presolve_data
-    primal, dual = model_violations(data, x, yK, yE, check_tol(optimizer, data))
+    primal, dual = model_violations(data, x, yK, yE, check_tol(optimizer, data), model_units(data)...)
     data.model_feasible = (primal === nothing, dual === nothing)
     MOI.get(optimizer, MOI.PrimalStatus()) == MOI.FEASIBLE_POINT && primal !== nothing && return primal
     MOI.get(optimizer, MOI.DualStatus()) == MOI.FEASIBLE_POINT && dual !== nothing && return dual
