@@ -5,9 +5,13 @@
 [![](https://img.shields.io/badge/docs-stable-blue.svg)](https://ericphanson.github.io/SDPAFamily.jl/stable)
 [![](https://img.shields.io/badge/docs-dev-blue.svg)](https://ericphanson.github.io/SDPAFamily.jl/dev)
 
-Note: v0.3.0 was released, which updates the package for MOI v1. This is also **disables the presolve in all cases** (even if it is set to `true`),
-which can cause incorrect results. See issue [#67](https://github.com/ericphanson/SDPAFamily.jl/issues/67) which tracks the status of restoring
-presolve functionality.
+Note: in v0.3.0, which updated the package for MOI v1, the `presolve` option
+had no effect, even when set to `true`. Without a presolve, SDPA can stop at the
+iteration limit or return inaccurate results for problems with equality
+constraints or linearly dependent constraints. The presolve is restored, and
+enabled by default, in the development version; see issue
+[#67](https://github.com/ericphanson/SDPAFamily.jl/issues/67) and the
+[documentation](https://ericphanson.github.io/SDPAFamily.jl/dev/usage/#Presolve).
 
 An interface to using SDPA-GMP, SDPA-DD, and SDPA-QD in Julia
 (<http://sdpa.sourceforge.net>). This package is registered in the
@@ -41,7 +45,7 @@ using SDPAFamily, LinearAlgebra
 using Convex
 y = Semidefinite(3)
 p = maximize(eigmin(y), tr(y) <= 5; numeric_type = BigFloat)
-solve!(p, () -> SDPAFamily.Optimizer(presolve=true))
+solve!(p, () -> SDPAFamily.Optimizer())
 @show p.optval
 ```
 
