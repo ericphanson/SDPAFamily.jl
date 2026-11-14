@@ -245,48 +245,66 @@ function MOI.optimize!(dest::Optimizer{T}, src::MOI.ModelLike) where {T}
     # and filter it out in the copy
     dest.objconstant = MOI.constant(MOI.get(src, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}()))
     index_map = MOI.copy_to(sdpa, ObjectiveFunctionFilter(src))
-    # `MOI.FileFormats.SDPA` writes linear block first and then PSD blocks
-    NNG = MOI.Nonnegatives
-    for ci in MOI.get(sdpa, MOI.ListOfConstraintIndices{AFF{T},NNG}())
-        set = MOI.get(sdpa, MOI.ConstraintSet(), ci)
-        push!(dest.blockdims, -set.dimension)
-        dest.nn_block_idx[ci.value] = length(dest.blockdims)
-    end
-    PSD = MOI.PositiveSemidefiniteConeTriangle
-    for ci in MOI.get(sdpa, MOI.ListOfConstraintIndices{AFF{T},PSD}())
-        set = MOI.get(sdpa, MOI.ConstraintSet(), ci)
-        push!(dest.blockdims, set.side_dimension)
-        dest.sd_block_idx[ci.value] = length(dest.blockdims)
-    end
+    set_blocks!(dest, sdpa)
 	start_time = time()
+    model = sdpa
     if dest.presolve
         # The equality constraints were not copied to `sdpa`.
         AE, bE, eq_rows = equality_constraints(src, index_map, T,
                                                 MOI.get(sdpa, MOI.NumberOfVariables()))
-        reduced = presolve!(dest, sdpa, AE, bE, eq_rows)
+        model = presolve!(dest, sdpa, AE, bE, eq_rows)
         data = dest.presolve_data
         if dest.verbosity == VERBOSE
             neq = data.elim === nothing ? 0 : length(data.elim.pivots)
-            @info "Presolve finished in $(time() - start_time) seconds. $neq variable(s) eliminated using equality constraints, $(length(data.redundant)) linearly dependent variable(s) fixed to zero."
+            @info "Presolve finished in $(time() - start_time) seconds ($(data.mode)). $neq variable(s) eliminated using equality constraints, $(length(data.redundant)) linearly dependent variable(s) fixed to zero."
         end
-        if reduced === nothing
+        if model === nothing
             # The presolve has determined the result; SDPA is not called.
             dest.solve_time = time() - start_time
             return index_map, false
         end
-        sdpa = reduced
     end
-    open(full_input_path, "w") do io
-        write(io, sdpa)
-    end
-    if !dest.no_solve
-        redundant = dest.presolve ? dest.presolve_data.redundant : Int[]
-        sdpa_gmp_binary_solve!(dest, full_input_path, full_output_path;
-                               redundant_entries = redundant)
+    run_sdpa!(dest, model, full_input_path, full_output_path)
+    if !dest.no_solve && dest.presolve && !postsolve!(dest)
+        # The expanded solution does not satisfy the original equality constraints.
+        model = fallback_model!(dest, "the solution of the reduced problem did not satisfy the original equality constraints")
+        run_sdpa!(dest, model, full_input_path, full_output_path)
         postsolve!(dest)
     end
     dest.solve_time = time() - start_time
     return index_map, false
+end
+
+# `MOI.FileFormats.SDPA` writes the `Nonnegatives` blocks first and then the PSD blocks.
+function set_blocks!(dest::Optimizer{T}, model) where {T}
+    empty!(dest.blockdims)
+    empty!(dest.nn_block_idx)
+    empty!(dest.sd_block_idx)
+    for ci in MOI.get(model, MOI.ListOfConstraintIndices{AFF{T},MOI.Nonnegatives}())
+        set = MOI.get(model, MOI.ConstraintSet(), ci)
+        push!(dest.blockdims, -set.dimension)
+        dest.nn_block_idx[ci.value] = length(dest.blockdims)
+    end
+    for ci in MOI.get(model, MOI.ListOfConstraintIndices{AFF{T},MOI.PositiveSemidefiniteConeTriangle}())
+        set = MOI.get(model, MOI.ConstraintSet(), ci)
+        push!(dest.blockdims, set.side_dimension)
+        dest.sd_block_idx[ci.value] = length(dest.blockdims)
+    end
+    return dest
+end
+
+function run_sdpa!(dest::Optimizer, model, full_input_path, full_output_path)
+    set_blocks!(dest, model)
+    open(full_input_path, "w") do io
+        write(io, model)
+    end
+    if !dest.no_solve
+        data = dest.presolve_data
+        redundant = data !== nothing && data.mode == :reduced ? data.redundant : Int[]
+        sdpa_gmp_binary_solve!(dest, full_input_path, full_output_path;
+                               redundant_entries = redundant)
+    end
+    return dest
 end
 
 function MOI.get(m::Optimizer, ::MOI.TerminationStatus)
