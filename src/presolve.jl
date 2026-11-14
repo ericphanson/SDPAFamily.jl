@@ -248,14 +248,21 @@ function eliminate(A::SparseMatrixCSC{T}, c::AbstractVector{T};
             end
         end
         # entries that count as zero, measured against the original columns
-        bound = _bound(A, comb, keys(v))
-        # the rounding errors of the working precision in the computation of `v`, which
-        # can exceed `tol` times the one-level bound when `comb` has small entries
-        spread = tol * sum(abs(w) * colmax[j] for (j, w) in comb)
+        # Rounding errors of the working precision in `v` are at most a small multiple
+        # of `eps(W)` times the size of the combination, `S = Σ_j |w_j| max|A[:, j]|`
+        # (which bounds the one-level bound of every entry); entries up to `2 tol S`
+        # are rounding residue.
+        S = sum(abs(w) * colmax[j] for (j, w) in comb)
+        spread = tol * S
         for r in collect(keys(v))
-            abs(v[r]) <= tol * bound[r] + spread && delete!(v, r)
+            abs(v[r]) <= 2 * spread && delete!(v, r)
         end
-        if all(abs(v[r]) <= data_tol * bound[r] + spread for r in keys(v))
+        vmax = maximum(abs, values(v); init = zero(T))
+        # the one-level bounds are only needed if `v` may be dependent
+        dependent = vmax <= data_tol * S + spread &&
+            (bound = _bound(A, comb, keys(v));
+             all(abs(v[r]) <= data_tol * bound[r] + spread for r in keys(v)))
+        if dependent
             # dependent column; confirm with the combination computed directly
             val, mag = _combination(A, comb)
             if !all(abs(val[r]) <= data_tol * mag[r] + spread for r in keys(val))
@@ -452,37 +459,29 @@ function _eliminate_equalities(AE::SparseMatrixCSC{T}, bE::Vector{T}, tol, dtol,
             end
         end
     end
-    # Drop entries that count as zero, and check each row and right-hand side against
-    # the combination of the original rows.
+    # Drop the rounding residue of the back substitution.
     for q in 1:Q
-        val, mag = _combination(AEt, comb[q])
         spread = tol * sum(abs(w) * rowmax[r] for (r, w) in comb[q])
         for l in collect(keys(rows[q]))
-            l == E.pivots[q] && continue
-            if abs(rows[q][l]) <= tol * get(mag, l, zero(T)) + spread
-                delete!(rows[q], l)
-            end
-        end
-        for l in union(keys(val), keys(rows[q]))
-            target = l == E.pivots[q] ? one(T) : get(rows[q], l, zero(T))
-            if abs(get(val, l, zero(T)) - target) > tol * get(mag, l, zero(T)) + spread
-                return failed()
-            end
-        end
-        rd = zero(T)
-        rmag = zero(T)
-        for (r, w) in comb[q]
-            rd -= w * bE[r]
-            rmag += abs(w) * abs(bE[r])
-        end
-        if abs(rd - rhs[q]) > tol * (2 * rmag + sum(abs(w) * rowmax[r] for (r, w) in comb[q]))
-            return failed()
+            l != E.pivots[q] && abs(rows[q][l]) <= 2 * spread && delete!(rows[q], l)
         end
         delete!(rows[q], E.pivots[q])
     end
     free = sort!(collect(setdiff(1:n, E.pivots)))
-    return EqualityElimination{T}(E.pivots, rows, rhs, comb, free, E.independent,
-                                  E.dependence, nothing, false)
+    # A posteriori check of the reduction (a Freivalds-type test, O(nnz) instead of
+    # comparing every reduced row with its combination of original rows): at a point
+    # with free values spread over [1, 2), the rows that were not found dependent must
+    # hold, up to `sqrt(tol * dtol)` relative to their terms. The values are the
+    # fractional parts of multiples of the golden ratio, which are reproducible and do
+    # not repeat. (The dependent rows were checked when they were found.)
+    result = EqualityElimination{T}(E.pivots, rows, rhs, comb, free, E.independent,
+                                    E.dependence, nothing, false)
+    phi = (sqrt(5.0) - 1) / 2
+    x = expand_solution(result, n, [one(T) + T(mod(k * phi, 1.0)) for k in 1:length(free)])
+    r, rm = AE * x .+ bE, abs.(AE) * abs.(x) .+ abs.(bE)
+    check_tol = T <: _EXACT ? zero(T) : sqrt(tol * dtol)
+    all(abs(r[i]) <= check_tol * rm[i] for i in E.independent) || return failed()
+    return result
 end
 
 # Values of all variables, given the values of the free variables. With
