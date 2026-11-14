@@ -76,9 +76,7 @@ primal-dual interior point method of SDPA handles poorly:
    warnings, stops at the iteration limit, or returns an inaccurate point.
 
 With `presolve = true` (the default), SDPAFamily removes both before it writes
-the input file. The computations use the number type `T` of
-`SDPAFamily.Optimizer{T}`, so with `BigFloat` they are carried out at the
-precision of `BigFloat`.
+the input file:
 
 1. Gaussian elimination on the equality constraints expresses one variable for
    each linearly independent equality constraint as an affine function of the
@@ -102,45 +100,84 @@ the dual values ``y_K`` of the cone constraints by solving
 matrices of the equality and cone constraints. Dropped equality constraints
 have the dual value zero.
 
-Each number that the presolve computes is a sum of products of the problem
-data. The presolve also computes the sum of the absolute values of these
-products, called the magnitude of the number. A computed number counts as zero
-if its absolute value is at most `64 * eps(T)` times its magnitude, that is, if
-it may consist of rounding errors only. The presolve uses this rule for every
-decision:
+### Arithmetic and tolerances
 
-* An equality constraint or a matrix ``F_k`` counts as linearly dependent on the
-  others if all its entries count as zero after the elimination. Constraints or
-  matrices that are close to dependent but not dependent up to rounding errors
-  are kept.
-* A dependent equality constraint is consistent if the same combination of the
-  right-hand sides counts as zero, and a dependent matrix ``F_k`` is consistent
-  with the objective if the same combination of the objective coefficients
-  counts as zero. So the decision for one row or column does not depend on the
+The problem data of type `T` are taken as exact numbers. They are converted to
+`BigFloat` with `2 * precision(T) + 64` bits (the working precision), and the
+presolve computes in that precision. In this section, ``\epsilon_T`` is the
+machine epsilon of `T` (`eps(T)`, for `BigFloat` at the precision set by the
+caller), ``\epsilon_W`` that of the working precision, and
+``\tau = \sqrt{\epsilon_T \epsilon_W}``.
+
+Each decision compares a computed combination ``\sum_j w_j a_j`` of data vectors
+``a_j`` (rows of the equality constraints, or columns of the constraint matrix)
+with the final coefficients ``w_j`` against the same data. An entry ``r`` of the
+combination counts as zero at tolerance ``t`` if
+``|\sum_j w_j a_{jr}| \le t \sum_j |w_j| |a_{jr}| + \tau \sum_j |w_j| \max_s |a_{js}|``.
+The second term covers rounding errors of the working precision that spread
+across the entries of a combination.
+
+* Entries that count as zero at tolerance ``\tau`` (rounding errors of the
+  working precision) are removed during the elimination and the substitution.
+* A row of the equality constraints, or a matrix ``F_k``, is linearly dependent
+  on the others if all its entries count as zero at tolerance ``64 \epsilon_T``
+  after the elimination; this is confirmed by recomputing the combination from
+  the original data. So rows or matrices that are combinations of others up to
+  rounding to `T` are dependent.
+* A dependent row or matrix is consistent if the same combination of the
+  right-hand sides (objective coefficients) counts as zero at tolerance
+  ``64 \epsilon_T``. The decision for one row or column does not depend on the
   size of unrelated entries of the problem.
-* Coefficients that count as zero after the substitution of the eliminated
-  variables are removed.
 
-If no variable is left after these steps (because the equality constraints
-determine all variables, or because the model has no variables with nonzero
-coefficients), SDPA is not called, and the presolve checks the constraints at
-the only remaining point. A `Nonnegatives` entry with value ``b_i`` and magnitude
-``m_i`` is accepted if ``b_i \ge -\epsilon m_i``, and a positive semidefinite
-block ``B`` is accepted if ``B + \epsilon \|M\|_F I`` is positive definite,
-where ``M`` holds the magnitudes of the entries of ``B``. Here ``\epsilon`` is
-the larger of `64 * eps(T)` and the constraint tolerance `epsilonStar` of the
-solver parameters (zero when the parameters are given as a file or as
-`UNSTABLE_BUT_FAST` or `STABLE_BUT_SLOW`). If all constraints are accepted, the
-termination status is `OPTIMAL`. Otherwise it is `INFEASIBLE`; if a
-`Nonnegatives` entry is violated, the dual status is
+### Checks and fallback
+
+Every result that the presolve returns without calling SDPA is checked against
+the original data before it is returned: a certificate of infeasibility must
+satisfy ``A^T y = 0`` and ``b^T y < 0`` (at tolerance ``\tau``), a ray must
+satisfy ``A_E d = 0``, ``A_K d \in K`` and ``c^T d < 0``, and the expressions for
+the eliminated variables are checked against the original equality constraints.
+
+If no variable is left (because the equality constraints determine all
+variables, or because the model has no variables with nonzero coefficients),
+SDPA is not called, and the presolve checks the constraints at the only
+remaining point, computed from the original data. A `Nonnegatives` entry with
+value ``b_i`` and magnitude ``m_i`` (the sum of the absolute values of the terms
+that give ``b_i``) is accepted if ``b_i \ge -\epsilon m_i``, and a positive
+semidefinite block ``B`` if ``B + \epsilon \|M\|_F I`` is positive
+semidefinite, where ``M`` holds the magnitudes of the entries of ``B``. Here
+``\epsilon`` is the larger of ``\tau`` and the constraint tolerance
+`epsilonStar` of the solver parameters (zero when the parameters are given as a
+file or as `UNSTABLE_BUT_FAST` or `STABLE_BUT_SLOW`). Semidefiniteness is tested
+by symmetric elimination that accepts zero pivots with zero rows, so the zero
+matrix and other singular positive semidefinite matrices are accepted. If all
+constraints are accepted, the termination status is `OPTIMAL`. Otherwise it is
+`INFEASIBLE`; if a `Nonnegatives` entry is violated, the dual status is
 `INFEASIBILITY_CERTIFICATE`, and otherwise `NO_SOLUTION`.
+
+After SDPA has solved the reduced problem, the original equality constraints are
+checked at the returned point: the rows that were kept must hold up to
+``64 \epsilon_T`` relative to the sizes of their terms, and the rows that were
+dropped as dependent up to the square root of the larger of ``\epsilon_T`` and
+`epsilonStar` (but at least `1e-15`). When the dual status is `FEASIBLE_POINT`,
+the dual equations ``A^T y = c`` are checked with the same tolerance, relative to
+the largest term of these equations or 1, whichever is larger. These checks catch gross errors, for example
+from an ill-conditioned elimination; they do not replace the accuracy of SDPA.
+
+If any check fails, the presolve falls back: the problem is passed to SDPA
+without reduction, with each equality constraint written as two inequalities,
+and a warning is printed unless `silent = true`. SDPA may then fail on the
+problem, but the result is the solver's own.
+
+### Cost
 
 Eliminating variables can fill in sparse rows of the constraints. The presolve
 chooses as pivots variables with few nonzero coefficients, among those whose
 coefficient is at least a tenth of the largest one in the row. In a test with
 400 variables, 200 random equality constraints with 3 nonzero coefficients
-each, and `x ≥ 0`, the SDPA input file was 84 KiB with the presolve and 34 KiB
-without it.
+each, and `x ≥ 0`, the SDPA input file was 83 KiB with the presolve and 34 KiB
+without it. The working precision makes the presolve slower than arithmetic in
+`T`: for 1000 random sparse equality constraints on a 60×60 matrix variable, the
+presolve took about 10 seconds with `Float64` and 14 seconds with `BigFloat`.
 
 With `presolve = false`, the problem is passed to SDPA unchanged, with equality
 constraints bridged into pairs of inequalities.
