@@ -28,7 +28,8 @@ jobs:
       matrix:
         version:
           - '1.6'
-          - '1'
+          # BinaryProvider cannot be installed on Julia 1.11 and later.
+          - '1.10'
         os:
           - ubuntu-latest
           - macOS-latest
