@@ -4,8 +4,8 @@ import MathOptInterface as MOI
 
 import SDPAFamily
 
-function MOI_tests(var, ::Type{T}) where {T}
-    optimizer = SDPAFamily.Optimizer{T}(presolve = true, variant = var)
+function MOI_tests(var, ::Type{T}; presolve::Bool = true) where {T}
+    optimizer = SDPAFamily.Optimizer{T}(presolve = presolve, variant = var)
     MOI.set(optimizer, MOI.Silent(), true)
     MOI.set(optimizer, MOI.RawOptimizerAttribute("maxIteration"), 5000)
     @testset "SolverName" begin
@@ -71,6 +71,28 @@ function MOI_tests(var, ::Type{T}) where {T}
         )
     end
 
+    if !presolve
+        append!(
+            exclude,
+            [
+                # Without the presolve, SDPA fails on these models (no variables, or
+                # equality constraints bridged into pairs of inequalities).
+                # The output file is possibly corrupted.
+                r"test_attribute_RawStatusString$",
+                r"test_attribute_SolveTimeSec$",
+                r"test_conic_empty_matrix$",
+                r"test_objective_ObjectiveFunction_blank$",
+                r"test_solve_TerminationStatus_DUAL_INFEASIBLE$",
+                # ITERATION_LIMIT or wrong objective value
+                r"test_conic_SecondOrderCone_negative_post_bound_2$",
+                r"test_conic_SecondOrderCone_negative_post_bound_3$",
+                r"test_conic_SecondOrderCone_no_initial_bound$",
+                r"test_linear_transform$",
+                r"test_linear_FEASIBILITY_SENSE$", # fails for BigFloat
+            ],
+        )
+    end
+
     MOI.Test.runtests(
         bridged,
         config;
@@ -86,6 +108,13 @@ function MOI_tests()
         )
             MOI_tests(var, T)
         end
+    end
+    # A smaller check of the path without presolve: one variant, both number types.
+    @testset "MOI tests without presolve, variant sdpa_gmp, type T=$T" for T in (
+        Float64,
+        BigFloat
+    )
+        MOI_tests(:sdpa_gmp, T; presolve = false)
     end
 end
 
