@@ -163,9 +163,9 @@ const RAW_STATUS = Dict(
     :dUNBD => "The dual problem is expected to be unbounded.",
     :presolve_dINF => "The presolve found that the dual problem is infeasible, and SDPA was not called. The primal solution is a ray that certifies the dual infeasibility.",
     :presolve_pINF => "The presolve found that the equality constraints are inconsistent, and SDPA was not called. The dual solution is a certificate of infeasibility.",
-    :presolve_OPT => "The presolve determined all variables, and the constraints are satisfied. SDPA was not called.",
-    :presolve_NEARLY => "The presolve determined all variables, and the constraints are satisfied up to a relative tolerance of `sqrt(eps(Float64))`. SDPA was not called.",
-    :presolve_INF => "The presolve determined all variables, and the constraints are not satisfied. SDPA was not called.")
+    :presolve_OPT => "The presolve determined all variables, and the constraints are satisfied up to the constraint tolerance `epsilonStar`. SDPA was not called.",
+    :presolve_INF => "The presolve determined all variables, and a positive semidefinite constraint is not satisfied. SDPA was not called.",
+    :presolve_INF_cert => "The presolve determined all variables, and a `Nonnegatives` constraint is not satisfied. SDPA was not called. The dual solution is a certificate of infeasibility.")
 
 function MOI.get(optimizer::Optimizer, ::MOI.RawStatusString)
 	return RAW_STATUS[optimizer.phasevalue]
@@ -315,12 +315,10 @@ function MOI.get(m::Optimizer, ::MOI.TerminationStatus)
         return MOI.INFEASIBLE
     elseif status == :presolve_dINF
         return MOI.DUAL_INFEASIBLE
-    elseif status == :presolve_pINF || status == :presolve_INF
+    elseif status == :presolve_pINF || status == :presolve_INF || status == :presolve_INF_cert
         return MOI.INFEASIBLE
     elseif status == :presolve_OPT
         return MOI.OPTIMAL
-    elseif status == :presolve_NEARLY
-        return MOI.ALMOST_OPTIMAL
     end
 end
 
@@ -337,9 +335,7 @@ function MOI.get(m::Optimizer, attr::MOI.PrimalStatus)
         return MOI.NO_SOLUTION
     elseif status == :presolve_OPT
         return MOI.FEASIBLE_POINT
-    elseif status == :presolve_NEARLY
-        return MOI.NEARLY_FEASIBLE_POINT
-    elseif status == :presolve_INF
+    elseif status == :presolve_INF || status == :presolve_INF_cert
         return MOI.INFEASIBLE_POINT
     elseif status == :noINFO
         return MOI.UNKNOWN_RESULT_STATUS
@@ -372,9 +368,9 @@ function MOI.get(m::Optimizer, attr::MOI.DualStatus)
     status = m.phasevalue
     if status == :not_called || status == :presolve_dINF || status == :presolve_INF
         return MOI.NO_SOLUTION
-    elseif status == :presolve_pINF
+    elseif status == :presolve_pINF || status == :presolve_INF_cert
         return MOI.INFEASIBILITY_CERTIFICATE
-    elseif status == :presolve_OPT || status == :presolve_NEARLY
+    elseif status == :presolve_OPT
         return MOI.FEASIBLE_POINT
     elseif status == :noINFO
         return MOI.UNKNOWN_RESULT_STATUS
