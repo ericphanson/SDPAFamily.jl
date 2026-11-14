@@ -120,8 +120,7 @@ end
 
 # Checks a ray `d` of the problem with cone constraints `A x + b ∈ sets`, equality
 # constraints `AE x + bE = 0` and objective `c'x`: `AE d = 0`, `A d ∈ K`, `c'd < 0`.
-# The checks also reject non-finite values: with `MultiFloat` as the working type, an
-# overflow gives `NaN`, for which every comparison is false.
+# The checks also reject non-finite values.
 function valid_ray(sets, A, AE, c, d, tol)
     all(isfinite, d) || return false
     rE, mE = _apply(AE, d)
@@ -150,9 +149,10 @@ end
 valid_certificate(data::PresolveData, yK, yE, tol) =
     valid_certificate(data.A, data.b, data.AE, data.bE, yK, yE, tol)
 
-# The tolerances `epsilonStar` and `epsilonDash` of the solver parameters. The preset
-# parameter modes of SDPA use `1e-7` for both. If the parameters are given as a file
-# that cannot be read as a parameter file of SDPA, returns `nothing`.
+# The tolerances `epsilonStar` and `epsilonDash` of the solver parameters. For the
+# preset parameter modes (the options `-pt 1` and `-pt 2` of the binaries), the values
+# of SDPA, `1e-7` for both, are assumed for all variants. If the parameters are given
+# as a file that cannot be read as a parameter file of SDPA, returns `nothing`.
 function solver_tolerances(optimizer::Optimizer{T}) where {T}
     P = optimizer.params
     if P isa ParamsSetting
