@@ -30,14 +30,8 @@ function MOI_tests(var, ::Type{T}) where {T}
     )
 
     exclude = [
-        # The infeasibility certificates returned from SDPA's output do not satisfy
-        # the relations between ray, objective and duals that these tests check. See https://github.com/jump-dev/MathOptInterface.jl/issues/1759
-        # Expression: isapprox(T(11 // 5) * d, obj, config)
-        #  Evaluated: isapprox(-158862.07316834212, -10.999999999999995, ...
-        r"test_unbounded_MIN_SENSE$",
-        r"test_unbounded_MIN_SENSE_offset$",
-        r"test_unbounded_MAX_SENSE$",
-        r"test_unbounded_MAX_SENSE_offset$",
+        # For INFEASIBILITY_CERTIFICATE, the dual values are SDPA's last dual iterate,
+        # which satisfies A'y = c instead of A'y = 0 (here dl + du = 11/5 = c).
         # Expression: isapprox(dl + du, T(0), config)
         #  Evaluated: isapprox(-2.199999999254942, 0.0, ...
         r"test_infeasible_MAX_SENSE$",
