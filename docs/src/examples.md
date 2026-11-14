@@ -228,7 +228,12 @@ function relaxed_pop(r::Int, T)
 end
 
 p1 = relaxed_pop(5, Float64);
-solve!(p1, () -> SCS.Optimizer(max_iters = 10000, verbose = 0));
+solve!(p1, () -> begin
+    scs = SCS.Optimizer()
+    SDPAFamily.MOI.set(scs, SDPAFamily.MOI.RawOptimizerAttribute("max_iters"), 10000)
+    SDPAFamily.MOI.set(scs, SDPAFamily.MOI.Silent(), true)
+    scs
+end);
 p2 = relaxed_pop(5, BigFloat);
 solve!(p2, () -> SDPAFamily.Optimizer(verbose = SDPAFamily.SILENT,
             params = ( epsilonStar = 1e-90,
