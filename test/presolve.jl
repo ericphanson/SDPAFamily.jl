@@ -772,6 +772,31 @@ include("presolve_kernel.jl")
         @test occursin("does not resolve the objective", MOI.get(model, MOI.RawStatusString()))
     end
 
+    @testset "iteration limit with feasible iterates, sense $sense" for sense in (MOI.MIN_SENSE, MOI.MAX_SENSE)
+        # SDPA stops after 4 iterations with the status `pdFEAS` and a relative gap of
+        # about 1e-2. This is reported as `ITERATION_LIMIT`, not as `OPTIMAL`.
+        T = Float64
+        s = sense == MOI.MIN_SENSE ? 1 : -1
+        model, optimizer = bridged_model(T; variant = :sdpa, params = (maxIteration = 4,))
+        x, y, z = MOI.add_variables(model, 3)
+        MOI.add_constraint(model, T(1) * x, MOI.GreaterThan(T(1)))
+        MOI.add_constraint(model, T(1) * y, MOI.GreaterThan(T(1)))
+        MOI.add_constraint(model, T(1) * x + T(1) * y + T(1) * z, MOI.EqualTo(T(3)))
+        MOI.add_constraint(model, MOI.Utilities.operate(vcat, T, T(1) * z, T(0.5), T(1) * y),
+                           MOI.PositiveSemidefiniteConeTriangle(2))
+        MOI.set(model, MOI.ObjectiveSense(), sense)
+        MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(2s) * x + T(s) * y + T(3s) * z)
+        MOI.optimize!(model)
+        @test optimizer.presolve_data.mode == :reduced # no fallback
+        @test optimizer.phasevalue == :pdFEAS_gap
+        @test MOI.get(model, MOI.TerminationStatus()) == MOI.ITERATION_LIMIT
+        @test MOI.get(model, MOI.PrimalStatus()) == MOI.FEASIBLE_POINT
+        @test MOI.get(model, MOI.DualStatus()) == MOI.FEASIBLE_POINT
+        v = MOI.get(model, MOI.VariablePrimal(), [x, y, z])
+        @test v[1] + v[2] + v[3] ≈ 3
+        @test all(v[1:2] .>= 1 - 1e-6)
+    end
+
     include("presolve_random.jl")
     @testset "random badly scaled problems, $T and $var" for (T, var) in ((BigFloat, :sdpa_gmp), (Float64, :sdpa))
         # Rows scaled by 10^±12 or 10^±6 and variables by 2^±20. The result must be

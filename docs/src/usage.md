@@ -253,7 +253,10 @@ at the returned solution, each relative to the sizes of its own terms:
 These checks fail when the elimination amplifies the solver's error, for
 example for nearly dependent constraints.
 
-If the first step fails, the termination status is `NUMERICAL_ERROR`, the primal
+If SDPA stopped at its iteration limit with feasible iterates (`pdFEAS`) and only
+the gap criteria fail, the termination status is `ITERATION_LIMIT` and the primal
+and dual statuses are `FEASIBLE_POINT`. If the first step fails otherwise, the
+termination status is `NUMERICAL_ERROR`, the primal
 and dual statuses are `UNKNOWN_RESULT_STATUS`, and `RawStatusString` gives the
 status that SDPA reported and the check that failed. The same holds for a
 solution that passes the first step but is not finite in `T` after it is scaled

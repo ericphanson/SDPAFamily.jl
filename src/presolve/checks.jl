@@ -182,6 +182,10 @@ function check_tol(optimizer::Optimizer, data::PresolveData{T,H}) where {T,H}
     return sqrt(max(data.data_tol, H(t[1]), H(t[2])))
 end
 
+# The results of `check_sdpa_result` for a duality gap that is too large.
+const GAP_NOT_SMALL = "the duality gap is not small"
+const GAP_NOT_RESOLVED = "the gap tolerance of SDPA does not resolve the objective value of the model"
+
 # The tolerance of the check of an infeasibility certificate returned by SDPA, see
 # `check_sdpa_result`.
 const CERTIFICATE_TOL = 1e-3
@@ -214,6 +218,10 @@ the scaled optimal value is far below 1 and `1/σ` is large (the scaling could n
 tell that the objective is small), a gap within the tolerance is large compared to
 the objective value of the model; without the presolve SDPA would not have accepted
 it.
+
+If SDPA stopped at the iteration limit with feasible iterates (`pdFEAS`) and a gap
+criterion fails, the result is not wrong, only not optimal: the caller reports it as
+`ITERATION_LIMIT` with feasible points (the status `:pdFEAS_gap`).
 
 SDPA does not return rays. It reports unboundedness when the objective of a feasible
 iterate passes its parameter `lowerBound` or `upperBound` (`±1e5` by default), and
@@ -275,7 +283,7 @@ function check_sdpa_result(optimizer::Optimizer{T}) where {T}
         end
         if MOI.get(optimizer, MOI.TerminationStatus()) == MOI.OPTIMAL
             p, d = dot(c, x), -dot(b, y)
-            abs(p - d) <= γ * max(one(H), (abs(p) + abs(d)) / 2) || return "the duality gap is not small"
+            abs(p - d) <= γ * max(one(H), (abs(p) + abs(d)) / 2) || return GAP_NOT_SMALL
             # The gap in the units of the model. SDPA accepts a gap of `εgap` times
             # `max(1, objective)` of the scaled problem, so the gap can be that large.
             t = solver_tolerances(optimizer)
@@ -285,7 +293,7 @@ function check_sdpa_result(optimizer::Optimizer{T}) where {T}
             shift = optimizer.objsign * H(data.objconstant_delta)
             pm, dm = p / σ + shift, d / σ + shift
             gap / σ <= γ * max(one(H), (abs(pm) + abs(dm)) / 2) ||
-                return "the gap tolerance of SDPA does not resolve the objective value of the model"
+                return GAP_NOT_RESOLVED
         end
         return nothing
     end

@@ -489,6 +489,11 @@ function postsolve!(optimizer::Optimizer{T}) where {T}
     dual_ray = MOI.get(optimizer, MOI.DualStatus()) == MOI.INFEASIBILITY_CERTIFICATE
     has_dual = MOI.get(optimizer, MOI.DualStatus()) in (MOI.FEASIBLE_POINT, MOI.INFEASIBILITY_CERTIFICATE)
     reason = check_sdpa_result(optimizer)
+    if optimizer.phasevalue == :pdFEAS && (reason == GAP_NOT_SMALL || reason == GAP_NOT_RESOLVED)
+        # feasible iterates at the iteration limit whose gap is not small: not optimal
+        optimizer.phasevalue = :pdFEAS_gap
+        reason = nothing
+    end
     unscale_post!(optimizer)
     overflow = "the solution is not finite in the number type of the optimizer"
     if data.mode == :fallback
