@@ -1,7 +1,8 @@
 export read_results!
 
 # `parse(T, str)`, except that a number outside the range of `T` gives an infinity or
-# zero instead of an error (SDPA-GMP prints numbers such as `1e+8366`).
+# zero instead of an error (SDPA-GMP prints numbers such as `1e+8366`). A string that
+# is not a number still throws.
 function parse_number(::Type{T}, str::AbstractString) where {T}
     try
         return parse(T, str)

@@ -166,6 +166,7 @@ const RAW_STATUS = Dict(
     :pUNBD => "The primal problem is expected to be unbounded.",
     :dUNBD => "The dual problem is expected to be unbounded.",
     :pdFEAS_gap => "Both primal problem and the dual problem got feasible, but the iteration has exceeded the maxIteration and stopped, and the duality gap is not small.",
+    :not_finite => "The result of SDPA contains values that are not finite in the number type of the optimizer.",
     :presolve_dINF => "The presolve found that the dual problem is infeasible, and SDPA was not called. The primal solution is a ray that certifies the dual infeasibility.",
     :presolve_pINF => "The presolve found that the equality constraints are inconsistent, and SDPA was not called. The dual solution is a certificate of infeasibility.",
     :presolve_OPT => "The presolve determined all variables, and the constraints are satisfied up to the constraint tolerance `epsilonStar`. SDPA was not called.",
@@ -292,6 +293,8 @@ function MOI.optimize!(dest::Optimizer{T}, src::MOI.ModelLike) where {T}
                 _set_unverified!(dest, "what the presolve removed does not hold at the solution")
             check_rescaled_result!(dest)
         end
+    elseif !dest.no_solve && !_finite_result(dest)
+        dest.phasevalue = :not_finite
     elseif !dest.no_solve && dest.phasevalue == :pdFEAS && !gap_is_small(dest)
         # the same criterion as with the presolve (see `check_sdpa_result`)
         dest.phasevalue = :pdFEAS_gap
@@ -364,7 +367,7 @@ function MOI.get(m::Optimizer, ::MOI.TerminationStatus)
         return MOI.INFEASIBLE
     elseif status == :presolve_OPT
         return MOI.OPTIMAL
-    elseif status == :unverified
+    elseif status == :unverified || status == :not_finite
         return MOI.NUMERICAL_ERROR
     end
 end
@@ -384,7 +387,7 @@ function MOI.get(m::Optimizer, attr::MOI.PrimalStatus)
         return MOI.FEASIBLE_POINT
     elseif status == :presolve_INF || status == :presolve_INF_cert
         return MOI.INFEASIBLE_POINT
-    elseif status == :noINFO || status == :unverified
+    elseif status == :noINFO || status == :unverified || status == :not_finite
         return MOI.UNKNOWN_RESULT_STATUS
     elseif status == :pFEAS
         return MOI.FEASIBLE_POINT
@@ -419,7 +422,7 @@ function MOI.get(m::Optimizer, attr::MOI.DualStatus)
         return MOI.INFEASIBILITY_CERTIFICATE
     elseif status == :presolve_OPT
         return MOI.FEASIBLE_POINT
-    elseif status == :noINFO || status == :unverified
+    elseif status == :noINFO || status == :unverified || status == :not_finite
         return MOI.UNKNOWN_RESULT_STATUS
     elseif status == :pFEAS
         return MOI.UNKNOWN_RESULT_STATUS

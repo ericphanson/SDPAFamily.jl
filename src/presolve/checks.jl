@@ -310,44 +310,59 @@ function check_sdpa_result(optimizer::Optimizer{T}) where {T}
 end
 
 """
-    check_model_result(optimizer, x, yK, yE) -> Union{Nothing,String}
+    model_violations(data::PresolveData, x, yK, yE, γ) -> (primal, dual)
 
-Check the solution in the units of the model, row by row and variable by variable,
-after it has been scaled back: the point `x` with the cone duals `yK` (weighted as in
-`weighted_dual_vector`) and the equality duals `yE`. Return `nothing`, or the failed
-check.
+Check the point `x` and the duals `yK` (cone constraints, weighted as in
+`weighted_dual_vector`) and `yE` (equality constraints) against the model, in the
+units of the model. Return for each of the two `nothing`, or the violated condition.
 
 SDPA's feasibility tolerance is absolute and applies to the scaled problem. A row
 whose terms are below that tolerance in the scaled problem is not enforced by SDPA,
-whatever its size in the model. Example: for `s x1 + x2 == 1`, `0 ≤ x1 ≤ 1`, `x2 ≥ 0`
-with `s = 1e-12`, the first scaling turns the bound `x1 ≤ 1` into such a row, and
-SDPA returns `x1 = 217`, which passes the check on the scaled problem. This check applies SDPA's criterion to the model, with
-the tolerance `γ` of `check_tol` and relative to the terms of each row: for a primal
-point, row `i` of the cone constraints must satisfy
-`(A x + b)_i ≥ -γ max(1, (|A||x| + |b|)_i)` (a PSD block `S + γ max(1, ‖M‖_F) I ⪰ 0`),
-and for a dual point, `|c - A'y|_j ≤ γ max(1, (|c| + |A|'|y|)_j)`. Without the
-presolve, SDPA would not have accepted a point that fails this.
+whatever its size in the model. For `s x1 + x2 == 1`, `0 ≤ x1 ≤ 1`, `x2 ≥ 0` with a
+tiny `s`, the first scaling gives `x1` the unit `1/sqrt(s)`, and the bound `x1 ≤ 1`
+becomes such a row.
+
+The conditions are SDPA's, with the tolerance `γ` and relative to the terms of each row
+(column), where a variable (dual variable) counts with at least the size 1:
+
+* row `i` of the cone constraints: `(A x + b)_i ≥ -γ m_i` with
+  `m = |A| max.(|x|, 1) + |b|` (a PSD block `S` with the entries `M` of `m`:
+  `S + γ ‖M‖_F I ⪰ 0`);
+* row `i` of the equality constraints: `|A_E x + b_E|_i ≤ γ (|A_E| max.(|x|, 1) + |b_E|)_i`;
+* variable `j`: `|c - A'y|_j ≤ γ (|c| + |A|' max.(|y|, 1))_j`.
+
+The floor 1 is an absolute tolerance for a variable that is zero at the solution, in
+the units of that variable. The conditions do not change when a row of the model is
+multiplied by a factor (a column, for the dual condition).
 """
+function model_violations(data::PresolveData{T,H}, x::Vector{H}, yK::Vector{H}, yE::Vector{H}, γ) where {T,H}
+    all(isfinite, x) && all(isfinite, yK) && all(isfinite, yE) || return OVERFLOW, OVERFLOW
+    floor1(v) = max.(abs.(v), one(H))
+    primal = nothing
+    s = data.A * x .+ data.b
+    m = abs.(data.A) * floor1(x) .+ abs.(data.b)
+    r = data.AE * x .+ data.bE
+    rm = abs.(data.AE) * floor1(x) .+ abs.(data.bE)
+    if !in_cone(data.sets, s, m, γ)[1]
+        primal = "a cone constraint of the model is violated at the point by more than the tolerance relative to its terms"
+    elseif !all(abs(r[i]) <= γ * rm[i] for i in eachindex(r))
+        primal = "an equality constraint of the model is violated at the point by more than the tolerance relative to its terms"
+    end
+    r = data.c .- transpose(data.A) * yK .- transpose(data.AE) * yE
+    m = abs.(data.c) .+ transpose(abs.(data.A)) * floor1(yK) .+ transpose(abs.(data.AE)) * floor1(yE)
+    dual = all(abs(r[j]) <= γ * m[j] for j in eachindex(r)) ? nothing :
+           "a dual equation of the model is violated by more than the tolerance relative to its terms"
+    return primal, dual
+end
+
+# Applies `model_violations` to the solution that SDPA reports as feasible. Records in
+# `data.model_feasible` whether the primal point and the dual point satisfy the model.
+# Returns `nothing`, or the violated condition.
 function check_model_result(optimizer::Optimizer, x::Vector{H}, yK::Vector{H}, yE::Vector{H}) where {H}
     data = optimizer.presolve_data
-    γ = check_tol(optimizer, data)
-    if MOI.get(optimizer, MOI.PrimalStatus()) == MOI.FEASIBLE_POINT
-        s, m = _apply(data.A, x)
-        s .+= data.b
-        m .+= abs.(data.b)
-        in_cone(data.sets, s, max.(m, one(H)), γ)[1] ||
-            return "a cone constraint of the model is violated at the point by more than the tolerance relative to its terms"
-        r, rm = _apply(data.AE, x)
-        r .+= data.bE
-        rm .+= abs.(data.bE)
-        all(abs(r[i]) <= γ * max(one(H), rm[i]) for i in eachindex(r)) ||
-            return "an equality constraint of the model is violated at the point by more than the tolerance relative to its terms"
-    end
-    if MOI.get(optimizer, MOI.DualStatus()) == MOI.FEASIBLE_POINT
-        r = data.c .- transpose(data.A) * yK .- transpose(data.AE) * yE
-        m = abs.(data.c) .+ transpose(abs.(data.A)) * abs.(yK) .+ transpose(abs.(data.AE)) * abs.(yE)
-        all(abs(r[j]) <= γ * max(one(H), m[j]) for j in eachindex(r)) ||
-            return "a dual equation of the model is violated by more than the tolerance relative to its terms"
-    end
+    primal, dual = model_violations(data, x, yK, yE, check_tol(optimizer, data))
+    data.model_feasible = (primal === nothing, dual === nothing)
+    MOI.get(optimizer, MOI.PrimalStatus()) == MOI.FEASIBLE_POINT && primal !== nothing && return primal
+    MOI.get(optimizer, MOI.DualStatus()) == MOI.FEASIBLE_POINT && dual !== nothing && return dual
     return nothing
 end
