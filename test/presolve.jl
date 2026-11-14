@@ -78,14 +78,16 @@ vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in te
     end
 
     @testset "find_redundant_columns, $T" for T in (Float64, BigFloat)
+        # Column 6 is a combination of columns 1, 2 and 5 up to rounding to `T`, which
+        # counts as dependent (relative error at most `64 eps(T)`).
         A = sparse(T.(rand(-5:5, 40, 6)))
         A[:, 6] = A[:, 1] / 3 + A[:, 2] * T(7) / 10 - A[:, 5]
         c = transpose(A) * T.(rand(40))
         result = SDPAFamily.find_redundant_columns(A, c)
         @test result.redundant == [6]
         @test result.ray === nothing
-        # a perturbation that is large compared to the tolerance makes the columns independent
-        A[1, 6] += T(1) / 1000
+        # a perturbation far above the rounding errors makes the columns independent
+        A[1, 6] += T(1) / 10^6
         result = SDPAFamily.find_redundant_columns(A, c)
         @test isempty(result.redundant)
     end
@@ -342,6 +344,161 @@ vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in te
             @test dx < 0
             @test MOI.get(model, MOI.ObjectiveValue()) ≈ dx rtol = tol
         end
+    end
+
+    # Regression tests from the second review of the presolve.
+    @testset "second review, variant $var and type $T" for var in variants, T in (Float64, BigFloat)
+        tol = soltol(var, T)
+        f(T, terms, c = 0) = sum(T(a) * x for (a, x) in terms) + T(c)
+        @testset "exactly dependent equality row with a large multiplier" begin
+            # 3x1 + 7x2 == 1, 100x1 + 11x2 + 13x3 == 2, row 3 = L * row 1 + row 2,
+            # x >= 0, x3 <= 10, x3 <= 20, max x3: the solution is x = (0, 1/7, 3/91)
+            L = T == Float64 ? T(10)^5 : T(10)^20
+            model, optimizer = bridged_model(T; variant = var)
+            x = MOI.add_variables(model, 3)
+            MOI.add_constraint(model, f(T, [(3, x[1]), (7, x[2])]), MOI.EqualTo(T(1)))
+            MOI.add_constraint(model, f(T, [(100, x[1]), (11, x[2]), (13, x[3])]), MOI.EqualTo(T(2)))
+            MOI.add_constraint(model, f(T, [(3L + 100, x[1]), (7L + 11, x[2]), (13, x[3])]), MOI.EqualTo(L + 2))
+            MOI.add_constraint(model, MOI.VectorOfVariables(x), MOI.Nonnegatives(3))
+            MOI.add_constraint(model, T(1) * x[3], MOI.LessThan(T(10)))
+            MOI.add_constraint(model, T(1) * x[3], MOI.LessThan(T(20)))
+            MOI.set(model, MOI.ObjectiveSense(), MOI.MAX_SENSE)
+            MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x[3])
+            MOI.optimize!(model)
+            @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
+            @test MOI.get(model, MOI.ObjectiveValue()) ≈ T(3) / 91 atol = tol
+            @test MOI.get(model, MOI.VariablePrimal(), x) ≈ [0, T(1) / 7, T(3) / 91] atol = tol
+        end
+        @testset "zero PSD block at the determined point" begin
+            # (a) X psd, X == 0; (b) X == [1 0; 0 0]; (c) constant zero PSD constraint;
+            # (d) X == Y, Y == 0. All are feasible.
+            for (name, rhs, chain) in (("a", [0, 0, 0], false), ("b", [1, 0, 0], false),
+                                       ("d", [0, 0, 0], true))
+                model, optimizer = bridged_model(T; variant = var)
+                X = MOI.add_variables(model, 3)
+                MOI.add_constraint(model, MOI.VectorOfVariables(X), MOI.PositiveSemidefiniteConeTriangle(2))
+                if chain
+                    Y = MOI.add_variables(model, 3)
+                    for i in 1:3
+                        MOI.add_constraint(model, T(1) * X[i] - T(1) * Y[i], MOI.EqualTo(T(0)))
+                        MOI.add_constraint(model, T(1) * Y[i], MOI.EqualTo(T(0)))
+                    end
+                else
+                    for i in 1:3
+                        MOI.add_constraint(model, T(1) * X[i], MOI.EqualTo(T(rhs[i])))
+                    end
+                end
+                MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+                MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * X[1])
+                MOI.optimize!(model)
+                @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
+                @test optimizer.phasevalue == :presolve_OPT
+                @test MOI.get(model, MOI.ObjectiveValue()) == rhs[1]
+            end
+            model, optimizer = bridged_model(T; variant = var)
+            x = MOI.add_variable(model)
+            MOI.add_constraint(model, MOI.VectorAffineFunction(MOI.VectorAffineTerm{T}[], zeros(T, 3)),
+                               MOI.PositiveSemidefiniteConeTriangle(2))
+            MOI.add_constraint(model, T(1) * x, MOI.EqualTo(T(2)))
+            MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+            MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x)
+            MOI.optimize!(model)
+            @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
+            @test MOI.get(model, MOI.ObjectiveValue()) == 2
+        end
+        @testset "small coefficient after an exact cancellation" begin
+            # x == y, w == y, L x - L y + s w + 1 >= 0, min y: the optimum is -1/s. The
+            # coefficient s of the free variable must not be dropped.
+            L, s = T == Float64 ? (T(1e4), T(1e-4)) : (big"1e40", big"1e-40")
+            model, optimizer = bridged_model(T; variant = var)
+            x, y, w = MOI.add_variables(model, 3)
+            MOI.add_constraint(model, T(1) * x - T(1) * y, MOI.EqualTo(T(0)))
+            MOI.add_constraint(model, T(1) * w - T(1) * y, MOI.EqualTo(T(0)))
+            MOI.add_constraint(model, L * x - L * y + s * w, MOI.GreaterThan(T(-1)))
+            MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+            MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * y)
+            MOI.optimize!(model)
+            # The presolve keeps `s`. The reduced problem `min y : s y + 1 >= 0` needs a
+            # solver precision beyond `1/s`: with BigFloat, only SDPA-GMP has it, and
+            # SDPA-DD reports it as dual infeasible.
+            if T == Float64 || var == :sdpa_gmp
+                @test MOI.get(model, MOI.TerminationStatus()) != MOI.DUAL_INFEASIBLE
+            end
+            if var != :sdpa && MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
+                @test MOI.get(model, MOI.ObjectiveValue()) ≈ -1 / s rtol = 1e-6
+            end
+        end
+    end
+
+    @testset "nothing to reduce, variant $var, sense $sense" for var in (:sdpa_gmp, :sdpa_dd), sense in (MOI.MIN_SENSE, MOI.MAX_SENSE)
+        # no equality constraints and independent columns: the model is passed unchanged
+        T = BigFloat
+        s = sense == MOI.MIN_SENSE ? 1 : -1
+        model, optimizer = bridged_model(T; variant = var)
+        x, y = MOI.add_variables(model, 2)
+        MOI.add_constraint(model, MOI.VectorOfVariables([x, y]), MOI.Nonnegatives(2))
+        MOI.add_constraint(model, T(1) * x + T(2) * y, MOI.GreaterThan(T(2)))
+        MOI.set(model, MOI.ObjectiveSense(), sense)
+        MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(s) * x + T(s) * y)
+        MOI.optimize!(model)
+        data = optimizer.presolve_data
+        @test data.mode == :reduced
+        @test data.elim === nothing
+        @test isempty(data.redundant)
+        @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
+        @test MOI.get(model, MOI.ObjectiveValue()) ≈ s atol = 1e-10
+    end
+
+    @testset "fallback after the solve keeps the objective constant, variant $var" for var in (:sdpa_gmp, :sdpa_dd)
+        # x + y == 3 with objective 2x + y: the substitution adds a constant to the
+        # objective; a fallback after the solve must remove it again.
+        T = BigFloat
+        model, optimizer = bridged_model(T; variant = var)
+        x, y = MOI.add_variables(model, 2)
+        MOI.add_constraint(model, T(1) * x + T(1) * y, MOI.EqualTo(T(3)))
+        MOI.add_constraint(model, MOI.VectorOfVariables([x, y]), MOI.Nonnegatives(2))
+        MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+        MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(2) * x + T(1) * y)
+        MOI.optimize!(model)
+        @test MOI.get(model, MOI.ObjectiveValue()) ≈ 3 atol = 1e-10
+        # the same model through the fallback path, starting from the reduced model
+        data = optimizer.presolve_data
+        @test data.mode == :reduced
+        fb = SDPAFamily.fallback_model!(optimizer, "test")
+        SDPAFamily.run_sdpa!(optimizer, fb, joinpath(optimizer.tempdir, "input.dat-s"),
+                             joinpath(optimizer.tempdir, "output.dat"))
+        SDPAFamily.postsolve!(optimizer)
+        @test data.mode == :fallback
+        @test optimizer.objconstant == 0
+        if MOI.get(optimizer, MOI.TerminationStatus()) == MOI.OPTIMAL
+            @test MOI.get(optimizer, MOI.ObjectiveValue()) ≈ 3 atol = 1e-6
+        end
+    end
+
+    @testset "dense equality constraints, $T" for (T, var, m) in ((Float64, :sdpa, 60), (BigFloat, :sdpa_gmp, 60))
+        # m dense random equality constraints on m + 10 variables, x >= x0 - 1, min sum(x)
+        rng = Random.MersenneTwister(5)
+        n = m + 10
+        A = T.(randn(rng, m, n))
+        x0 = T.(randn(rng, n))
+        model, optimizer = bridged_model(T; variant = var)
+        x = MOI.add_variables(model, n)
+        for i in 1:m
+            MOI.add_constraint(model, MOI.ScalarAffineFunction(MOI.ScalarAffineTerm.(A[i, :], x), zero(T)),
+                               MOI.EqualTo(sum(A[i, :] .* x0)))
+        end
+        for j in 1:n
+            MOI.add_constraint(model, T(1) * x[j], MOI.GreaterThan(x0[j] - 1))
+        end
+        MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+        MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(),
+                MOI.ScalarAffineFunction(MOI.ScalarAffineTerm.(one(T), x), zero(T)))
+        MOI.optimize!(model)
+        @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
+        v = MOI.get(model, MOI.VariablePrimal(), x)
+        residual = abs.(A * v - A * x0) ./ (abs.(A) * abs.(v) + abs.(A) * abs.(x0))
+        @test maximum(residual) <= 1000 * eps(T)
+        @test all(v .>= x0 .- 1 .- soltol(var, T))
     end
 
     @testset "Convex: quantum state discrimination with variant $var" for var in (:sdpa_gmp,)
