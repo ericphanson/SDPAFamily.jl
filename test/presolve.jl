@@ -53,6 +53,8 @@ end
 
 vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in terms) + T(constant)])
 
+include("presolve_kernel.jl")
+
 @testset "Presolve" begin
 
     @testset "find_redundant_columns, exact arithmetic" begin
@@ -570,11 +572,14 @@ vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in te
             @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
             @test MOI.get(model, MOI.ObjectiveValue()) ≈ -1 atol = tol
         end
-        # With the subnormal s = 1e-310, the minimizer 1e310 is not a `Float64` number;
-        # the solve must not fail (the scaling factors are finite). It may fall back,
-        # which the logger of the test suite would count.
-        model, optimizer = Logging.with_logger(() -> caseC(1e-310), Logging.NullLogger())
-        @test MOI.get(model, MOI.TerminationStatus()) isa MOI.TerminationStatusCode
+        # With the subnormal s = 1e-310, the minimizer 1e310 is not a `Float64` number:
+        # the result cannot be returned in `Float64`.
+        if T == Float64
+            model, optimizer = caseC(1e-310)
+            @test optimizer.presolve_data.mode == :reduced # no fallback
+            @test MOI.get(model, MOI.TerminationStatus()) == MOI.NUMERICAL_ERROR
+            @test occursin("not finite", MOI.get(model, MOI.RawStatusString()))
+        end
     end
 
     @testset "constant row with a tiny negative constant" begin
@@ -674,21 +679,136 @@ vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in te
         @test all(v .>= x0 .- 1 .- soltol(var, T))
     end
 
+    # Regression tests from the fifth round (adversarial tests of the redesign).
+    @testset "objective consistent with a free direction up to rounding, $T" for T in (Float64, BigFloat)
+        # x == y, 0 <= z <= 1, min a x - b y + z with a = 0.1 + 0.2 and b = 0.3 (as
+        # `Float64` numbers, a - b = 2^-54). The direction (1, 1, 0) changes no
+        # constraint. With `Float64`, a - b is zero up to the data tolerance relative to
+        # a and b, so the free variable is dropped; this used to give a ray that failed
+        # its validation, and a fallback. With `BigFloat`, the data are exact and the
+        # problem is unbounded.
+        model, optimizer = bridged_model(T; variant = :sdpa_gmp)
+        x, y, z = MOI.add_variables(model, 3)
+        MOI.add_constraint(model, T(1) * x - T(1) * y, MOI.EqualTo(T(0)))
+        MOI.add_constraint(model, T(1) * z, MOI.GreaterThan(T(0)))
+        MOI.add_constraint(model, T(1) * z, MOI.LessThan(T(1)))
+        MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+        MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(),
+                T(0.1 + 0.2) * x - T(0.3) * y + T(1) * z)
+        MOI.optimize!(model)
+        @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
+        if T == Float64
+            @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
+            @test MOI.get(model, MOI.ObjectiveValue()) ≈ 0 atol = 1e-6
+        else
+            @test MOI.get(model, MOI.TerminationStatus()) == MOI.DUAL_INFEASIBLE
+            d = MOI.get(model, MOI.VariablePrimal(), [x, y, z])
+            @test d[1] == d[2] && d[3] == 0 && d[1] < 0
+        end
+    end
+
+    @testset "two parts at different scales, $T and $var" for (T, var) in ((Float64, :sdpa), (BigFloat, :sdpa_gmp))
+        # min -2^-18 x + 2^-39 y with x <= 5 * 2^18 and 2^-10 y >= -3 * 2^30: the optimum
+        # is -5 - 3 * 2^1 = -11 at (5 * 2^18, -3 * 2^40). One factor for the whole
+        # right-hand side made the first part a problem of size 2^-12 in the scaled
+        # problem, below the tolerance of `:sdpa`.
+        model, optimizer = bridged_model(T; variant = var)
+        x, y = MOI.add_variables(model, 2)
+        MOI.add_constraint(model, T(1) * x, MOI.LessThan(T(5 * 2^18)))
+        MOI.add_constraint(model, T(2)^-10 * y, MOI.GreaterThan(-T(3) * T(2)^30))
+        MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+        MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), -T(2)^-18 * x + T(2)^-39 * y)
+        MOI.optimize!(model)
+        @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
+        @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
+        @test MOI.get(model, MOI.ObjectiveValue()) ≈ -11 rtol = 10 * soltol(var, T)
+        @test MOI.get(model, MOI.VariablePrimal(), [x, y]) ≈ [5 * 2^18, -3 * T(2)^40] rtol = 10 * soltol(var, T)
+    end
+
+    @testset "certificates from SDPA with many rows, $T and $var" for (T, var) in ((Float64, :sdpa), (BigFloat, :sdpa_gmp))
+        # The presolve finds no reduction; SDPA reports the infeasibility. Its
+        # certificates are iterates at its objective bound, and must be accepted
+        # whatever the number of rows and variables.
+        n = 120
+        # x_i >= 1 for all i and sum(x) <= n / 2: infeasible
+        model, optimizer = bridged_model(T; variant = var)
+        x = MOI.add_variables(model, n)
+        MOI.add_constraint(model, MOI.Utilities.vectorize([T(1) * xi - T(1) for xi in x]), MOI.Nonnegatives(n))
+        MOI.add_constraint(model, sum(T(1) * xi for xi in x), MOI.LessThan(T(n) / 2))
+        MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+        MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), sum(T(1) * xi for xi in x))
+        MOI.optimize!(model)
+        @test optimizer.presolve_data.mode == :reduced # SDPA was called, no fallback
+        @test MOI.get(model, MOI.TerminationStatus()) == MOI.INFEASIBLE
+        # x_i >= 0 for all i and x_1 >= x_2, min -sum(x): unbounded
+        model, optimizer = bridged_model(T; variant = var)
+        x = MOI.add_variables(model, n)
+        MOI.add_constraint(model, MOI.VectorOfVariables(x), MOI.Nonnegatives(n))
+        MOI.add_constraint(model, T(1) * x[1] - T(1) * x[2], MOI.GreaterThan(T(0)))
+        MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+        MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), -sum(T(1) * xi for xi in x))
+        MOI.optimize!(model)
+        @test optimizer.presolve_data.mode == :reduced
+        @test MOI.get(model, MOI.TerminationStatus()) == MOI.DUAL_INFEASIBLE
+    end
+
+    @testset "gap compared to the objective value of the model, $T" for T in (Float64, BigFloat)
+        # 1e150 x1 + x2 == 1e150, x >= 0, 1 <= x3 <= 5, min x1 + x2 + 1e-150 x3: the
+        # optimum is 1 + 1e-150 at (1, 0, 1), but x2 ranges up to 1e150 on the feasible
+        # set. In the scaled problem the objective is 1e-150; SDPA's result is within
+        # its tolerances there and useless for the model. It is not reported as optimal.
+        var = T == Float64 ? :sdpa : :sdpa_gmp
+        model, optimizer = bridged_model(T; variant = var)
+        x = MOI.add_variables(model, 3)
+        MOI.add_constraint(model, T(1e150) * x[1] + T(1) * x[2], MOI.EqualTo(T(1e150)))
+        MOI.add_constraint(model, MOI.VectorOfVariables(x[1:2]), MOI.Nonnegatives(2))
+        MOI.add_constraint(model, T(1e-150) * x[3], MOI.GreaterThan(T(1e-150)))
+        MOI.add_constraint(model, T(1) * x[3], MOI.LessThan(T(5)))
+        MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+        MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x[1] + T(1) * x[2] + T(1e-150) * x[3])
+        MOI.optimize!(model)
+        @test optimizer.presolve_data.mode == :reduced # no fallback
+        @test MOI.get(model, MOI.TerminationStatus()) == MOI.NUMERICAL_ERROR
+        @test occursin("does not resolve the objective", MOI.get(model, MOI.RawStatusString()))
+    end
+
     include("presolve_random.jl")
     @testset "random badly scaled problems, $T and $var" for (T, var) in ((BigFloat, :sdpa_gmp), (Float64, :sdpa))
+        # Rows scaled by 10^±12 or 10^±6 and variables by 2^±20. The result must be
+        # that of the same problem without the scaling of the variables.
         rng = Random.MersenneTwister(12)
-        # SDPA's gap tolerance is relative to the scaled problem; with rows scaled by
-        # up to 1e12, the gap of the model is larger for `Float64`
-        tol = T == Float64 ? 1e-3 : soltol(var, T)
+        tol = 100 * soltol(var, T)
         for k in 1:20
             p = random_conic_problem(rng, T; scale = true)
+            s = T(2) .^ rand(rng, (-20, 0, 20), length(p.c))
+            objective = map((p, scale_variables(p, s))) do q
+                model, optimizer = bridged_model(T; variant = var)
+                add_random_conic_problem!(model, q, T)
+                MOI.optimize!(model)
+                @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
+                @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
+                pobj, dobj = MOI.get(model, MOI.ObjectiveValue()), MOI.get(model, MOI.DualObjectiveValue())
+                @test abs(pobj - dobj) <= tol * max(1, abs(pobj))
+                pobj
+            end
+            @test objective[1] ≈ objective[2] atol = tol * max(1, abs(objective[1]))
+        end
+    end
+
+    @testset "random infeasible and unbounded problems with scaled variables" begin
+        # The status must be the one the problem was built for.
+        T, var = BigFloat, :sdpa_gmp
+        rng = Random.MersenneTwister(11)
+        for k in 1:30
+            kind = rand(rng, (:infeasible, :unbounded))
+            p = random_conic_problem(rng, T; scale = true, kind = kind)
+            p = scale_variables(p, T(2) .^ rand(rng, (-20, 0, 20), length(p.c)))
             model, optimizer = bridged_model(T; variant = var)
             add_random_conic_problem!(model, p, T)
             MOI.optimize!(model)
             @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
-            @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
-            pobj, dobj = MOI.get(model, MOI.ObjectiveValue()), MOI.get(model, MOI.DualObjectiveValue())
-            @test abs(pobj - dobj) <= tol * max(1, abs(pobj))
+            @test MOI.get(model, MOI.TerminationStatus()) ==
+                  (kind == :infeasible ? MOI.INFEASIBLE : MOI.DUAL_INFEASIBLE)
         end
     end
 
