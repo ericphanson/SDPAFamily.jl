@@ -130,6 +130,7 @@ vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in te
             MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
             MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x + T(1) * y)
             MOI.optimize!(model)
+            @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
             @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
             @test MOI.get(model, MOI.ObjectiveValue()) ≈ 1 atol = tol
             vx = MOI.get(model, MOI.VariablePrimal(), x)
@@ -147,6 +148,7 @@ vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in te
             MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
             MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x - T(1) * y)
             MOI.optimize!(model)
+            @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
             @test optimizer.phasevalue == :presolve_dINF
             @test MOI.get(model, MOI.TerminationStatus()) == MOI.DUAL_INFEASIBLE
             @test MOI.get(model, MOI.PrimalStatus()) == MOI.INFEASIBILITY_CERTIFICATE
@@ -171,6 +173,7 @@ vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in te
             MOI.set(model, MOI.ObjectiveSense(), sense)
             MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(s) * x[1] + T(s) * x[3] + T(5))
             MOI.optimize!(model)
+            @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
             @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
             @test MOI.get(model, MOI.PrimalStatus()) == MOI.FEASIBLE_POINT
             @test MOI.get(model, MOI.DualStatus()) == MOI.FEASIBLE_POINT
@@ -191,6 +194,7 @@ vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in te
             MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
             MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x[1])
             MOI.optimize!(model)
+            @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
             @test optimizer.phasevalue == :presolve_pINF
             @test MOI.get(model, MOI.TerminationStatus()) == MOI.INFEASIBLE
             @test MOI.get(model, MOI.PrimalStatus()) == MOI.NO_SOLUTION
@@ -213,6 +217,7 @@ vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in te
                 MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
                 MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x[1] + T(2) * x[2])
                 MOI.optimize!(model)
+                @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
                 @test MOI.get(model, MOI.TerminationStatus()) == status
                 @test MOI.get(model, MOI.VariablePrimal(), x) ≈ [rhs, 3 - rhs]
                 if status == MOI.OPTIMAL
@@ -250,6 +255,7 @@ vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in te
             MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
             MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * z)
             MOI.optimize!(model)
+            @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
             @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
             @test MOI.get(model, MOI.ObjectiveValue()) ≈ 1 atol = tol
             vx, vy, vz = MOI.get(model, MOI.VariablePrimal(), [x, y, z])
@@ -265,6 +271,7 @@ vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in te
             MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
             MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * y)
             MOI.optimize!(model)
+            @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
             @test MOI.get(model, MOI.TerminationStatus()) == MOI.DUAL_INFEASIBLE
             @test MOI.get(model, MOI.PrimalStatus()) == MOI.INFEASIBILITY_CERTIFICATE
             dx, dy = MOI.get(model, MOI.VariablePrimal(), [x, y])
@@ -283,6 +290,7 @@ vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in te
             MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
             MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), f(T, [(1e-6, x), (100, w)]))
             MOI.optimize!(model)
+            @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
             @test optimizer.phasevalue == :presolve_dINF
             @test MOI.get(model, MOI.TerminationStatus()) == MOI.DUAL_INFEASIBLE
             dx, dy, dw = MOI.get(model, MOI.VariablePrimal(), [x, y, w])
@@ -301,6 +309,7 @@ vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in te
             MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
             MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), f(T, [(1, x), (1, y)]))
             MOI.optimize!(model)
+            @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
             @test optimizer.phasevalue == :presolve_pINF
             @test MOI.get(model, MOI.TerminationStatus()) == MOI.INFEASIBLE
             y1, y2, y3 = MOI.get(model, MOI.ConstraintDual(), [c1, c2, c3])
@@ -318,6 +327,7 @@ vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in te
             MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
             MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x)
             MOI.optimize!(model)
+            @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
             @test MOI.get(model, MOI.TerminationStatus()) == MOI.INFEASIBLE
             @test MOI.get(model, MOI.DualStatus()) == MOI.INFEASIBILITY_CERTIFICATE
             ye = MOI.get(model, MOI.ConstraintDual(), ceq)
@@ -336,6 +346,7 @@ vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in te
             MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
             MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), f(T, [(1, x)], 3))
             MOI.optimize!(model)
+            @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
             @test MOI.get(model, MOI.TerminationStatus()) == MOI.DUAL_INFEASIBLE
             @test MOI.get(model, MOI.PrimalStatus()) == MOI.INFEASIBILITY_CERTIFICATE
             dx, dy = MOI.get(model, MOI.VariablePrimal(), [x, y])
@@ -365,6 +376,7 @@ vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in te
             MOI.set(model, MOI.ObjectiveSense(), MOI.MAX_SENSE)
             MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x[3])
             MOI.optimize!(model)
+            @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
             @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
             @test MOI.get(model, MOI.ObjectiveValue()) ≈ T(3) / 91 atol = tol
             @test MOI.get(model, MOI.VariablePrimal(), x) ≈ [0, T(1) / 7, T(3) / 91] atol = tol
@@ -391,6 +403,7 @@ vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in te
                 MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
                 MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * X[1])
                 MOI.optimize!(model)
+                @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
                 @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
                 @test optimizer.phasevalue == :presolve_OPT
                 @test MOI.get(model, MOI.ObjectiveValue()) == rhs[1]
@@ -403,6 +416,7 @@ vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in te
             MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
             MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x)
             MOI.optimize!(model)
+            @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
             @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
             @test MOI.get(model, MOI.ObjectiveValue()) == 2
         end
@@ -418,16 +432,62 @@ vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in te
             MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
             MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * y)
             MOI.optimize!(model)
-            # The presolve keeps `s`. The reduced problem `min y : s y + 1 >= 0` needs a
-            # solver precision beyond `1/s`: with BigFloat, only SDPA-GMP has it, and
-            # SDPA-DD reports it as dual infeasible.
-            if T == Float64 || var == :sdpa_gmp
-                @test MOI.get(model, MOI.TerminationStatus()) != MOI.DUAL_INFEASIBLE
-            end
-            if var != :sdpa && MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
-                @test MOI.get(model, MOI.ObjectiveValue()) ≈ -1 / s rtol = 1e-6
+            @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
+            # The presolve keeps `s`, and the scaling of the reduced problem
+            # `min y : s y + 1 >= 0` makes it well scaled for all variants except
+            # `:sdpa` with BigFloat data of size 1e±40.
+            if !(var == :sdpa && T == BigFloat)
+                @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
+                @test MOI.get(model, MOI.ObjectiveValue()) ≈ -1 / s rtol = sqrt(tol)
             end
         end
+    end
+
+    @testset "rows and columns dependent up to rounding of the data, $T" for T in (Float64, BigFloat)
+        # 0.1x + 0.3y == 0.4 and 0.3x + 0.9y == 1.3 are dependent up to rounding to
+        # `Float64` and inconsistent; the certificate is validated at the tolerance
+        # of the decision, so the presolve returns it instead of falling back.
+        model, optimizer = bridged_model(T; variant = :sdpa_gmp)
+        x, y = MOI.add_variables(model, 2)
+        c1 = MOI.add_constraint(model, T(0.1) * x + T(0.3) * y, MOI.EqualTo(T(0.4)))
+        c2 = MOI.add_constraint(model, T(0.3) * x + T(0.9) * y, MOI.EqualTo(T(1.3)))
+        MOI.add_constraint(model, MOI.VectorOfVariables([x, y]), MOI.Nonnegatives(2))
+        MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+        MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x)
+        MOI.optimize!(model)
+        @test optimizer.presolve_data.mode == :none
+        @test MOI.get(model, MOI.TerminationStatus()) == MOI.INFEASIBLE
+        @test MOI.get(model, MOI.DualStatus()) == MOI.INFEASIBILITY_CERTIFICATE
+        # columns (0.1, 0.3) and (0.3, 0.9) with costs (1, 1): unbounded
+        model, optimizer = bridged_model(T; variant = :sdpa_gmp)
+        x, y = MOI.add_variables(model, 2)
+        MOI.add_constraint(model, T(0.1) * x + T(0.3) * y, MOI.GreaterThan(T(1)))
+        MOI.add_constraint(model, T(0.3) * x + T(0.9) * y, MOI.GreaterThan(T(1)))
+        MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+        MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x + T(1) * y)
+        MOI.optimize!(model)
+        @test optimizer.presolve_data.mode == :none
+        @test MOI.get(model, MOI.TerminationStatus()) == MOI.DUAL_INFEASIBLE
+    end
+
+    @testset "constant row with a tiny constant, variant $var" for var in variants
+        # A row without coefficients must not be scaled by its constant (this happened
+        # for Convex's `fix!` with a value from a previous solve).
+        T = BigFloat
+        model, optimizer = bridged_model(T; variant = var)
+        x = MOI.add_variables(model, 5)
+        MOI.add_constraint(model, MOI.VectorAffineFunction(MOI.VectorAffineTerm{T}[], [big"3.3e-31"]), MOI.Nonnegatives(1))
+        MOI.add_constraint(model, MOI.VectorOfVariables(x), MOI.Nonnegatives(5))
+        for j in 1:5
+            MOI.add_constraint(model, T(1) * x[j], MOI.GreaterThan(T(1) / 2))
+        end
+        MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+        MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(),
+                MOI.ScalarAffineFunction(MOI.ScalarAffineTerm.(big"0.5" + big"3.3e-31", x), zero(T)))
+        MOI.optimize!(model)
+        @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
+        @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
+        @test MOI.get(model, MOI.ObjectiveValue()) ≈ 1.25 atol = soltol(var, T)
     end
 
     @testset "nothing to reduce, variant $var, sense $sense" for var in (:sdpa_gmp, :sdpa_dd), sense in (MOI.MIN_SENSE, MOI.MAX_SENSE)
@@ -441,6 +501,7 @@ vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in te
         MOI.set(model, MOI.ObjectiveSense(), sense)
         MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(s) * x + T(s) * y)
         MOI.optimize!(model)
+        @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
         data = optimizer.presolve_data
         @test data.mode == :reduced
         @test data.elim === nothing
@@ -460,11 +521,14 @@ vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in te
         MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
         MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(2) * x + T(1) * y)
         MOI.optimize!(model)
+        @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
         @test MOI.get(model, MOI.ObjectiveValue()) ≈ 3 atol = 1e-10
         # the same model through the fallback path, starting from the reduced model
         data = optimizer.presolve_data
         @test data.mode == :reduced
+        count = SDPAFamily.FALLBACK_COUNT[]
         fb = SDPAFamily.fallback_model!(optimizer, "test")
+        SDPAFamily.FALLBACK_COUNT[] = count # an intentional fallback
         SDPAFamily.run_sdpa!(optimizer, fb, joinpath(optimizer.tempdir, "input.dat-s"),
                              joinpath(optimizer.tempdir, "output.dat"))
         SDPAFamily.postsolve!(optimizer)
@@ -494,11 +558,32 @@ vaf(T, terms, constant) = MOI.Utilities.vectorize([sum(T(a) * x for (a, x) in te
         MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(),
                 MOI.ScalarAffineFunction(MOI.ScalarAffineTerm.(one(T), x), zero(T)))
         MOI.optimize!(model)
+        @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
         @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
         v = MOI.get(model, MOI.VariablePrimal(), x)
         residual = abs.(A * v - A * x0) ./ (abs.(A) * abs.(v) + abs.(A) * abs.(x0))
         @test maximum(residual) <= 1000 * eps(T)
         @test all(v .>= x0 .- 1 .- soltol(var, T))
+    end
+
+    include("presolve_scaled_cases.jl")
+    @testset "badly scaled random problem $(case.case)" for case in SCALED_CASES
+        T = BigFloat
+        model, optimizer = bridged_model(T; variant = :sdpa_gmp)
+        x = MOI.add_variables(model, case.n)
+        for (S, terms, constants) in case.constraints
+            f = MOI.VectorAffineFunction(
+                [MOI.VectorAffineTerm(o, MOI.ScalarAffineTerm(a, x[j])) for (o, j, a) in terms], constants)
+            MOI.add_constraint(model, f, S)
+        end
+        MOI.set(model, MOI.ObjectiveSense(), case.sense)
+        MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(),
+                MOI.ScalarAffineFunction([MOI.ScalarAffineTerm(a, x[j]) for (j, a) in case.objective], case.constant))
+        MOI.optimize!(model)
+        @test optimizer.presolve_data.mode in (:reduced, :none) # no fallback
+        @test MOI.get(model, MOI.TerminationStatus()) == MOI.OPTIMAL
+        p, d = MOI.get(model, MOI.ObjectiveValue()), MOI.get(model, MOI.DualObjectiveValue())
+        @test abs(p - d) <= 1e-20 * max(1, abs(p))
     end
 
     @testset "Convex: quantum state discrimination with variant $var" for var in (:sdpa_gmp,)

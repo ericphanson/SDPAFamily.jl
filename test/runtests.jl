@@ -26,4 +26,8 @@ const variants = (:sdpa, :sdpa_dd, :sdpa_qd, :sdpa_gmp)
     @testset "High-precision example" begin
         include("high_precision_test.jl")
     end
+
+    # No solve in the test suite should need the fallback of the presolve.
+    @info "Presolve fallbacks in the test suite: $(SDPAFamily.FALLBACK_COUNT[])"
+    @test SDPAFamily.FALLBACK_COUNT[] == 0
 end
