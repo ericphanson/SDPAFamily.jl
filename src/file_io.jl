@@ -94,8 +94,11 @@ function read_results!(
     xVecstring = remove_brackets!(xVecstring)
     xVecstring = split(xVecstring, ",")
     xVec = parse.(T, xVecstring)
-    optimizer.dualobj = parse(T, objValPrimalstring)
-    optimizer.primalobj = parse(T, objValDualstring)
+    # The variables of the MOI model are SDPA's `xVec`, so SDPA's primal objective
+    # `objValPrimal = c'x` is the primal objective of the MOI model, and
+    # `objValDual = F_0 • Y` is its dual objective.
+    optimizer.primalobj = parse(T, objValPrimalstring)
+    optimizer.dualobj = parse(T, objValDualstring)
     for i in redundant_entries
         splice!(xVec, i:i-1, zero(T))
     end
