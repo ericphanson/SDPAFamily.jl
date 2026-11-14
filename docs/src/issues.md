@@ -35,22 +35,25 @@ parameters. See [Choice of parameters](@ref).
 ## Limitations of the presolve
 
 The presolve described in [Presolve](@ref) takes the data as exact numbers of
-type `T` and decides with tolerances. The following cases follow from this.
+type `T` (or of `Float64`, see there) and decides with tolerances. The
+following limitations remain.
 
-* Constraints that are nearly dependent but not dependent up to rounding to `T`
-  are kept. The elimination then divides by small numbers, and SDPA receives a
-  badly scaled problem. If the mapped-back solution fails the checks, the
-  presolve falls back to the unreduced problem.
+* Constraints that are nearly dependent, but not dependent up to the data
+  tolerance, are kept. The elimination then divides by small numbers. If the
+  mapped-back solution fails the checks, the presolve falls back to the
+  unreduced problem.
 * A number that is genuinely nonzero but smaller than about `τ` times the terms
-  that are combined to compute it (a dynamic range above about `1/τ`, which is
-  `1e33` for `Float64` and `1e125` for `BigFloat` at 256 bits) is treated as zero.
-* The presolve does not rescale the problem. After the substitution, the rows of
-  the cone constraints can have very different scales, and SDPA can then fail on
-  a problem that it solves without the presolve.
+  that are combined to compute it (a dynamic range above about `1/τ`, roughly
+  `1e31` for `Float64` and `1e125` for `BigFloat` at 256 bits) is treated as zero.
+* The fallback passes the whole problem to SDPA without reduction and without
+  scaling, even when only one step of the presolve failed its check; SDPA often
+  does worse on that problem.
+* The eliminations store rows as dictionaries and back-substitute to reduced row
+  echelon form. This is fast for sparse equality constraints, but slow for many
+  dense ones with `BigFloat`: hundreds of dense equality constraints take tens
+  of seconds.
 * The checks do not cover the cone constraints of the solution returned by SDPA;
   that solution is SDPA's own, as without the presolve.
-* The presolve is slower than arithmetic in `T`; see [Presolve](@ref) for a
-  measured example.
 
 In these cases, `presolve = false` passes the problem to SDPA unchanged.
 
