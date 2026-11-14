@@ -283,6 +283,18 @@ function MOI.optimize!(dest::Optimizer{T}, src::MOI.ModelLike) where {T}
             run_sdpa!(dest, model, full_input_path, full_output_path)
             postsolve!(dest)
         end
+        # A result that a check rejected may be due to the scaling: solve once more
+        # with the second scaling.
+        model = rescaled_model!(dest)
+        if model !== nothing
+            run_sdpa!(dest, model, full_input_path, full_output_path)
+            postsolve!(dest) === nothing ||
+                _set_unverified!(dest, "what the presolve removed does not hold at the solution")
+            check_rescaled_result!(dest)
+        end
+    elseif !dest.no_solve && dest.phasevalue == :pdFEAS && !gap_is_small(dest)
+        # the same criterion as with the presolve (see `check_sdpa_result`)
+        dest.phasevalue = :pdFEAS_gap
     end
     dest.solve_time = time() - start_time
     return index_map, false

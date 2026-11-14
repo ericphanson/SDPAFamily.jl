@@ -182,6 +182,16 @@ function check_tol(optimizer::Optimizer, data::PresolveData{T,H}) where {T,H}
     return sqrt(max(data.data_tol, H(t[1]), H(t[2])))
 end
 
+# Whether the objective values reported by SDPA satisfy SDPA's gap criterion with the
+# square root of its tolerances (`1e-4` if they are not known). Used without the
+# presolve for the status `pdFEAS`, where SDPA has not applied the criterion.
+function gap_is_small(optimizer::Optimizer{T}) where {T}
+    t = solver_tolerances(optimizer)
+    γ = t === nothing ? 1e-4 : sqrt(max(t...))
+    p, d = optimizer.primalobj, optimizer.dualobj
+    return abs(p - d) <= γ * max(1, (abs(p) + abs(d)) / 2)
+end
+
 # The results of `check_sdpa_result` for a duality gap that is too large.
 const GAP_NOT_SMALL = "the duality gap is not small"
 const GAP_NOT_RESOLVED = "the gap tolerance of SDPA does not resolve the objective value of the model"
@@ -297,4 +307,47 @@ function check_sdpa_result(optimizer::Optimizer{T}) where {T}
         end
         return nothing
     end
+end
+
+"""
+    check_model_result(optimizer, x, yK, yE) -> Union{Nothing,String}
+
+Checks the solution in the units of the model, row by row and variable by variable,
+after it has been scaled back: the point `x` with the cone duals `yK` (weighted as in
+`weighted_dual_vector`) and the equality duals `yE`. Returns `nothing`, or the failed
+check.
+
+SDPA's feasibility tolerance is absolute and applies to the scaled problem. A row
+whose terms are below that tolerance in the scaled problem is not enforced by SDPA,
+whatever its size in the model. Example: for `s x1 + x2 == 1`, `0 ≤ x1 ≤ 1`, `x2 ≥ 0`
+with `s = 1e-12`, the first scaling turns the bound `x1 ≤ 1` into such a row, and
+SDPA returns `x1 = 217`, which passes the check on the scaled problem. This check applies SDPA's criterion to the model, with
+the tolerance `γ` of `check_tol` and relative to the terms of each row: for a primal
+point, row `i` of the cone constraints must satisfy
+`(A x + b)_i ≥ -γ max(1, (|A||x| + |b|)_i)` (a PSD block `S + γ max(1, ‖M‖_F) I ⪰ 0`),
+and for a dual point, `|c - A'y|_j ≤ γ max(1, (|c| + |A|'|y|)_j)`. Without the
+presolve, SDPA would not have accepted a point that fails this.
+"""
+function check_model_result(optimizer::Optimizer, x::Vector{H}, yK::Vector{H}, yE::Vector{H}) where {H}
+    data = optimizer.presolve_data
+    γ = check_tol(optimizer, data)
+    if MOI.get(optimizer, MOI.PrimalStatus()) == MOI.FEASIBLE_POINT
+        s, m = _apply(data.A, x)
+        s .+= data.b
+        m .+= abs.(data.b)
+        in_cone(data.sets, s, max.(m, one(H)), γ)[1] ||
+            return "a cone constraint of the model is violated at the point by more than the tolerance relative to its terms"
+        r, rm = _apply(data.AE, x)
+        r .+= data.bE
+        rm .+= abs.(data.bE)
+        all(abs(r[i]) <= γ * max(one(H), rm[i]) for i in eachindex(r)) ||
+            return "an equality constraint of the model is violated at the point by more than the tolerance relative to its terms"
+    end
+    if MOI.get(optimizer, MOI.DualStatus()) == MOI.FEASIBLE_POINT
+        r = data.c .- transpose(data.A) * yK .- transpose(data.AE) * yE
+        m = abs.(data.c) .+ transpose(abs.(data.A)) * abs.(yK) .+ transpose(abs.(data.AE)) * abs.(yE)
+        all(abs(r[j]) <= γ * max(one(H), m[j]) for j in eachindex(r)) ||
+            return "a dual equation of the model is violated by more than the tolerance relative to its terms"
+    end
+    return nothing
 end
