@@ -87,7 +87,7 @@ end
 # minus the columns of the pivot variables times their coefficients of `l`. A
 # coefficient that is rounding residue (see `Tolerances`) is dropped. Returns `A`,
 # `b`, `c` of the reduced problem and the constant `c'x` that the substitution adds to
-# the objective.
+# the objective, and the sums `cmag` of the absolute values of the terms of `c`.
 function substitute(A::SparseMatrixCSC{H}, b::Vector{H}, c::Vector{H},
                     elim::EqualityElimination{H}, tol::Tolerances{H}) where {H}
     m, n = size(A)
@@ -107,9 +107,11 @@ function substitute(A::SparseMatrixCSC{H}, b::Vector{H}, c::Vector{H},
     colptr = ones(Int, nfree + 1)
     I, V = Int[], H[]
     cnew = Vector{H}(undef, nfree)
+    cmag = Vector{H}(undef, nfree)
     for (i, j) in enumerate(elim.free)
         _reset!(acc)
         cj = c[j]
+        cm = abs(cj)
         cemax = iszero(cj) || tol.exact ? 0 : _exponent(cj)
         for p in nzrange(A, j)
             iszero(nz[p]) || _add!(acc, rv[p], nz[p])
@@ -117,12 +119,13 @@ function substitute(A::SparseMatrixCSC{H}, b::Vector{H}, c::Vector{H},
         for (q, w) in occurrences[i]
             pv = elim.pivots[q]
             for p in nzrange(A, pv)
-                iszero(nz[p]) || _add!(acc, rv[p], -(nz[p] * w))
+                iszero(nz[p]) || _sub!(acc, rv[p], nz[p] * w)
             end
             if !iszero(c[pv])
                 t = c[pv] * w
                 tol.exact || (cemax = iszero(cj) ? _exponent(t) : max(cemax, _exponent(t)))
                 cj -= t
+                cm += abs(t)
             end
         end
         for r in sort!(acc.pattern)
@@ -132,6 +135,7 @@ function substitute(A::SparseMatrixCSC{H}, b::Vector{H}, c::Vector{H},
         end
         colptr[i+1] = length(I) + 1
         cnew[i] = _is_residue(tol, cj, cemax) ? zero(H) : cj
+        cmag[i] = cm
     end
     Anew = SparseMatrixCSC(m, nfree, colptr, I, V)
     bnew = copy(b)
@@ -143,24 +147,20 @@ function substitute(A::SparseMatrixCSC{H}, b::Vector{H}, c::Vector{H},
         end
         delta += c[pv] * elim.rhs[q]
     end
-    return Anew, bnew, cnew, delta
+    return Anew, bnew, cnew, cmag, delta
 end
 
 """
     Scaling{H}
 
-Power-of-two scaling factors (see [`SDPAFamily.equilibrate`](@ref)). The scaled problem
-has the cone constraints `diag(row) * (A * diag(col) * x̂ + rhs * b) ∈ K`, the equality
-constraints `diag(eqrow) * (A_E * diag(col) * x̂ + rhs * b_E) = 0` and the objective
-`obj * c' * diag(col) * x̂`, with `x = diag(col) * x̂ / rhs`. Since `K` is a cone,
-multiplying `b` by `rhs` and the solution by `rhs` gives an equivalent problem.
+Power-of-two scaling factors (see [`SDPAFamily.scaled_sdpa_model`](@ref)). The scaled
+problem has the cone constraints `diag(row) * (A * diag(col) * x̂ + b) ∈ K` and the
+objective `obj * c' * diag(col) * x̂`, with `x = diag(col) * x̂`.
 """
 struct Scaling{H}
     row::Vector{H}
-    eqrow::Vector{H}
     col::Vector{H}
     obj::H
-    rhs::H
 end
 
 _pow2(::Type{H}, k::Int) where {H} = H(2)^k
@@ -190,49 +190,51 @@ function _row_groups(sets, offset::Int)
 end
 
 """
-    equilibrate(M::SparseMatrixCSC{H}, groups, ngroups; scale_columns = true, iterations = 20)
-        -> (groupfactors, colfactors)
+    equilibrate(M::SparseMatrixCSC, groups, ngroups; iterations = 100) -> (groupexponents, colexponents)
 
 Ruiz equilibration (D. Ruiz, "A scaling algorithm to equilibrate both rows and columns
-norms in matrices", 2001), as used by production conic solvers such as SCS: the row
-groups and the columns of `M` are divided simultaneously by the square roots of their
-largest absolute entries, until all of these are within a factor of 2 of 1. The
-factors are powers of two, so scaling by them is exact. Groups without coefficients are
-not scaled.
+norms in matrices", 2001), the scaling of conic solvers such as SCS, COSMO and
+Clarabel: the row groups and the columns of `M` are divided simultaneously by the
+square roots of their largest absolute entries, until all of these are in [1/2, 2).
+The factors are powers of two, so scaling by them is exact; the function returns their
+exponents. Only the binary exponents of the entries are used. Groups and columns
+without nonzero entries are not scaled.
+
+The scaling depends only on the largest entries, so entries that are small because
+they are rounding errors of the data do not influence it. (Geometric-mean scaling,
+which uses the smallest entries too, gave better scalings for sparse matrices whose
+variables have very different units, and factors of 2^100 and more for matrices with
+such entries.)
 """
-function equilibrate(M::SparseMatrixCSC{H}, groups::Vector{Int}, ngroups::Int;
-                     scale_columns::Bool = true, iterations::Int = 20) where {H}
+function equilibrate(M::SparseMatrixCSC, groups::Vector{Int}, ngroups::Int; iterations::Int = 100)
     n = size(M, 2)
     rv = rowvals(M)
-    nz = nonzeros(M)
-    # the factors are `2^ge` and `2^se`
+    ex = [iszero(v) ? typemin(Int) : _log2(abs(v)) for v in nonzeros(M)]
     ge = zeros(Int, ngroups)
     se = zeros(Int, n)
-    pow2(e) = _pow2(H, e)
+    # half of the exponent, rounded away from zero
+    half(e) = e > 0 ? cld(e, 2) : -cld(-e, 2)
     for _ in 1:iterations
-        g, s = pow2.(ge), pow2.(se)
-        gnorm = zeros(H, ngroups)
-        cnorm = zeros(H, n)
+        gnorm = fill(typemin(Int), ngroups)
+        cnorm = fill(typemin(Int), n)
         for j in 1:n, p in nzrange(M, j)
+            ex[p] == typemin(Int) && continue
             k = groups[rv[p]]
-            v = abs(nz[p]) * g[k] * s[j]
+            v = ex[p] + ge[k] + se[j]
             gnorm[k] = max(gnorm[k], v)
             cnorm[j] = max(cnorm[j], v)
         end
         changed = false
-        for (e, norms) in ((ge, gnorm), (se, cnorm))
-            (e === se && !scale_columns) && continue
-            for k in eachindex(e)
-                x = norms[k]
-                (iszero(x) || (x >= one(H) / 2 && x <= 2)) && continue
-                new = e[k] - round(Int, _log2(x) / 2)
-                changed |= new != e[k]
-                e[k] = new
-            end
+        for (e, norms) in ((ge, gnorm), (se, cnorm)), k in eachindex(e)
+            # the largest entry is in [2^x, 2^(x+1))
+            x = norms[k]
+            (x == typemin(Int) || x == 0 || x == -1) && continue
+            e[k] -= half(x)
+            changed = true
         end
         changed || break
     end
-    return pow2.(ge), pow2.(se)
+    return ge, se
 end
 
 # The rows of the cone constraints `A x + b ∈ sets` that do not depend on `x`: the rows
@@ -267,27 +269,79 @@ function constant_rows(sets, A::SparseMatrixCSC)
     return rows, replacement
 end
 
-# The SDPA model of the problem `minimize c'x` subject to `A x + b ∈ sets`, scaled as
-# conic solvers such as SCS do: `A` is equilibrated, and then `b` and `c` are
-# multiplied by powers of two that bring their largest entries to [1, 2). The constants
-# of the rows `crows` (rows without coefficients that hold) are replaced by
-# `replacement`, which keeps the feasible set and makes the rows strictly feasible;
-# they do not count for the factor of `b`. Returns the model, its `Scaling`, and the
-# scaled data `(A, b, c)` written to the model.
+# The connected component of each row group and each column in the bipartite graph of
+# the nonzero entries of `M` (union-find; the nodes are the groups, then the columns).
+function _components(M::SparseMatrixCSC, groups::Vector{Int}, ngroups::Int)
+    n = size(M, 2)
+    parent = collect(1:(ngroups+n))
+    function root(i)
+        while parent[i] != i
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        end
+        return i
+    end
+    rv = rowvals(M)
+    nz = nonzeros(M)
+    for j in 1:n, p in nzrange(M, j)
+        iszero(nz[p]) && continue
+        a, b = root(groups[rv[p]]), root(ngroups + j)
+        a == b || (parent[a] = b)
+    end
+    return [root(g) for g in 1:ngroups], [root(ngroups + j) for j in 1:n]
+end
+
+"""
+    scaled_sdpa_model(T, pT, A, b, c, sets, crows, replacement) -> (model, scaling, (As, bs, cs))
+
+The SDPA model of the problem `minimize c'x` subject to `A x + b ∈ sets`, scaled as
+conic solvers such as SCS do:
+
+1. `A` is equilibrated ([`SDPAFamily.equilibrate`](@ref)). The rows of a PSD block
+   share one factor, so that the scaling keeps the cone.
+2. The right-hand side is normalized. Multiplying the rows of a connected component of
+   `A` (of the graph whose edges are its nonzero entries) by `t` and its columns by
+   `1/t` leaves `A` unchanged, so the equilibration determines the factors only up to
+   one such `t` per component. It is chosen as the power of two that brings the
+   largest absolute entry of `b` in the component to [1, 2). For a matrix with one
+   component this is one factor for `b`.
+3. `c` is multiplied by the power of two that brings its largest absolute entry to
+   [1, 2).
+
+The constants of the rows `crows` (rows without coefficients that hold) are replaced
+by `replacement`, which keeps the feasible set and makes the rows strictly feasible.
+Returns the model, its `Scaling`, and the scaled data `(As, bs, cs)` written to the
+model.
+"""
 function scaled_sdpa_model(::Type{T}, pT, A::SparseMatrixCSC{H}, b::Vector{H}, c::Vector{H},
                            sets, crows, replacement) where {T,H}
     groups, ng = _row_groups(sets, 0)
-    gf, cf = equilibrate(A, groups, ng)
-    rows = gf[groups]
-    # the power of two that brings the largest absolute entry of `v` to [1, 2)
-    to_unit(v) = (m = maximum(abs, v; init = zero(H)); iszero(m) ? one(H) : _pow2(H, -_log2(m)))
-    β = to_unit(view(rows .* b, setdiff(1:length(b), crows)))
-    σ = to_unit(cf .* c)
-    bs = β .* rows .* b
+    ge, se = equilibrate(A, groups, ng)
+    # the exponent of the largest entry of the equilibrated `b` in each component
+    gcomp, ccomp = _components(A, groups, ng)
+    bmax = Dict{Int,Int}()
+    for i in eachindex(b)
+        iszero(b[i]) && continue
+        k = gcomp[groups[i]]
+        bmax[k] = max(get(bmax, k, typemin(Int)), _log2(abs(b[i])) + ge[groups[i]])
+    end
+    for g in 1:ng
+        ge[g] -= get(bmax, gcomp[g], 0)
+    end
+    for j in eachindex(se)
+        se[j] += get(bmax, ccomp[j], 0)
+    end
+    rows = H[_pow2(H, ge[g]) for g in groups]
+    cols = H[_pow2(H, e) for e in se]
+    cs = cols .* c
+    cmax = maximum(abs, cs; init = zero(H))
+    σ = iszero(cmax) ? one(H) : _pow2(H, -_log2(cmax))
+    bs = rows .* b
     bs[crows] .= H.(replacement)
-    As, cs = _scale(A, rows, cf), σ .* cf .* c
+    As = _scale(A, rows, cols)
+    cs .*= σ
     model = build_sdpa_model(T, pT, As, bs, cs, sets)
-    return model, Scaling{H}(rows, H[], cf, σ, β), (As, bs, cs)
+    return model, Scaling{H}(rows, cols, σ), (As, bs, cs)
 end
 
 _scale(M::SparseMatrixCSC, r, c) = Diagonal(r) * M * Diagonal(c)

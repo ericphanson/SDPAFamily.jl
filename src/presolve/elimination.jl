@@ -107,6 +107,21 @@ Accumulator{H}(n::Int, exact::Bool) where {H} =
     return true
 end
 
+# Subtracts the nonzero term `t` at position `r`; returns `true` if the position is new.
+@inline function _sub!(acc::Accumulator, r::Int, t)
+    e = acc.exact ? 0 : _exponent(t)
+    if acc.marked[r]
+        acc.val[r] -= t
+        e > acc.emax[r] && (acc.emax[r] = e)
+        return false
+    end
+    acc.marked[r] = true
+    push!(acc.pattern, r)
+    acc.val[r] = -t
+    acc.emax[r] = e
+    return true
+end
+
 function _reset!(acc::Accumulator)
     for r in acc.pattern
         acc.marked[r] = false
@@ -172,15 +187,23 @@ terms of the columns of `A` (from a triangular solve), the column is dependent i
 componentwise relative backward error of W. Oettli and W. Prager (1964): some matrix
 whose entries differ from those of `A` by relative perturbations of at most `δ` has
 `w` in its null space. The test does not depend on the scaling of the rows or columns
-of `A`. A dependent column is consistent with `c` if `|c'w| ≤ δ |c|'|w|`; if not, the
-elimination stops and records the certificate `d = ±w` with `c'd < 0`.
+of `A`. A dependent column is consistent with `c` if `|c'w| ≤ δ cmag'|w|`, where
+`cmag ≥ |c|` are the sums of the absolute values of the terms that the entries of `c`
+were computed from (`|c|` by default); if not, the elimination stops and records the
+certificate `d = ±w` with `c'd < 0`.
 
 The pivot of a new basis vector is chosen among its entries whose absolute value is at
 least `1/10` of the largest one: the entry in the row `r` with the smallest
-`pivot_cost[r]` (if given), then the largest entry, then the smallest row.
+`pivot_cost[r]` (if given), then the largest entry, then the smallest row. With
+`pivot_scale`, the absolute values are compared after multiplying row `r` by
+`2^pivot_scale[r]` (implicit scaling: the pivots are those of the scaled matrix, which
+is not formed). The pivot choice affects the conditioning of the factors, not the
+decisions.
 """
 function eliminate(A::SparseMatrixCSC{H}, c::AbstractVector{H}, tol::Tolerances{H};
-                   pivot_cost::Union{Nothing,AbstractVector{Int}} = nothing) where {H}
+                   pivot_cost::Union{Nothing,AbstractVector{Int}} = nothing,
+                   pivot_scale::Union{Nothing,AbstractVector{Int}} = nothing,
+                   cmag::AbstractVector{H} = abs.(c)) where {H}
     m, n = size(A)
     length(c) == n || throw(DimensionMismatch("`c` must have one entry per column of `A`"))
     E = Elimination{H}()
@@ -218,7 +241,9 @@ function eliminate(A::SparseMatrixCSC{H}, c::AbstractVector{H}, tol::Tolerances{
             for i in eachindex(u.idx)
                 r = u.idx[i]
                 r == prow && continue
-                if _add!(acc, r, -(λ * u.val[i]))
+                t = λ * u.val[i]
+                iszero(t) && continue
+                if _sub!(acc, r, t)
                     q2 = coord_to_basis[r]
                     q2 > 0 && push!(todo, q2)
                 end
@@ -244,12 +269,12 @@ function eliminate(A::SparseMatrixCSC{H}, c::AbstractVector{H}, tol::Tolerances{
             w = _combination(E, l, k, tol)
             if _is_dependent(A, w, tol)
                 cd = zero(H)
-                cmag = zero(H)
+                cdmag = zero(H)
                 for (j, wj) in w
                     cd += wj * c[j]
-                    cmag += abs(wj) * abs(c[j])
+                    cdmag += abs(wj) * cmag[j]
                 end
-                if !_counts_as_zero(cd, cmag, tol.data)
+                if !_counts_as_zero(cd, cdmag, tol.data)
                     E.inconsistent = k
                     s = cd > 0 ? -one(H) : one(H)
                     for (j, wj) in w
@@ -267,7 +292,7 @@ function eliminate(A::SparseMatrixCSC{H}, c::AbstractVector{H}, tol::Tolerances{
                 return E
             end
         end
-        prow, pval = _choose_pivot(v, pivot_cost)
+        prow, pval = _choose_pivot(v, pivot_cost, pivot_scale)
         push!(E.vec, k)
         push!(E.coord, prow)
         push!(E.pivot, pval)
@@ -279,20 +304,23 @@ function eliminate(A::SparseMatrixCSC{H}, c::AbstractVector{H}, tol::Tolerances{
     return E
 end
 
-function _choose_pivot(v::Entries{H}, pivot_cost) where {H}
-    maxabs = maximum(abs, v.val)
-    prow, pval = 0, zero(H)
-    for (r, val) in _pairs(v)
-        PIVOT_THRESHOLD * abs(val) >= maxabs || continue
-        if prow == 0
-            prow, pval = r, val
-        elseif pivot_cost !== nothing && pivot_cost[r] != pivot_cost[prow]
-            pivot_cost[r] < pivot_cost[prow] && ((prow, pval) = (r, val))
-        elseif abs(val) > abs(pval) || (abs(val) == abs(pval) && r < prow)
-            prow, pval = r, val
+function _choose_pivot(v::Entries{H}, pivot_cost, pivot_scale) where {H}
+    # the absolute values in the scaled rows
+    mag = pivot_scale === nothing ? abs.(v.val) : [ldexp(abs(x), pivot_scale[r]) for (r, x) in _pairs(v)]
+    maxabs = maximum(mag)
+    best = 0
+    for i in eachindex(mag)
+        PIVOT_THRESHOLD * mag[i] >= maxabs || continue
+        r = v.idx[i]
+        if best == 0
+            best = i
+        elseif pivot_cost !== nothing && pivot_cost[r] != pivot_cost[v.idx[best]]
+            pivot_cost[r] < pivot_cost[v.idx[best]] && (best = i)
+        elseif mag[i] > mag[best] || (mag[i] == mag[best] && r < v.idx[best])
+            best = i
         end
     end
-    return prow, pval
+    return v.idx[best], v.val[best]
 end
 
 # Solves `L' z = l` in place (`z` holds `l` on entry), for the unit lower triangular
@@ -462,11 +490,11 @@ function eliminate_equalities(AE::SparseMatrixCSC{T}, bE::Vector{T};
 end
 
 function _eliminate_equalities(AE::SparseMatrixCSC{H}, bE::Vector{H}, tol::Tolerances{H},
-                               pivot_cost) where {H}
+                               pivot_cost, pivot_scale = nothing) where {H}
     m, n = size(AE)
     # The columns of the transpose are the rows of `AE`; row `k` reads `AE[k, :] x = -bE[k]`.
     AEt = sparse(transpose(AE))
-    E = eliminate(AEt, -bE, tol; pivot_cost = pivot_cost)
+    E = eliminate(AEt, -bE, tol; pivot_cost = pivot_cost, pivot_scale = pivot_scale)
     E.failed && return _failed_elimination(H, n)
     if E.inconsistent != 0
         # `d` satisfies `AE' d ≈ 0` and `-bE' d < 0`; a certificate needs `bE' y < 0`.
@@ -497,7 +525,7 @@ function _eliminate_equalities(AE::SparseMatrixCSC{H}, bE::Vector{H}, tol::Toler
                 _add!(acc, j, u)
             elseif s != q
                 for (l, w) in _pairs(rows[s])
-                    _add!(acc, l, -(u * w))
+                    _sub!(acc, l, u * w)
                 end
                 if !iszero(rhs[s])
                     t = u * rhs[s]

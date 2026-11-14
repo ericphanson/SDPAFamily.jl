@@ -61,20 +61,39 @@ using SparseArrays
 # insufficient (the two ways of computing a vector disagree, or the check fails), the
 # presolve falls back.
 #
-# ## Validation, scaling and fallback
+# ## Scaling
 #
-# Every result that the presolve returns without calling SDPA is validated against the
-# original data at `δ`: certificates of infeasibility (`A'y = 0`, `b'y < 0`), rays
-# (`A_E d = 0`, `A_K d ∈ K`, `c'd < 0`), and the point determined by the equality
-# constraints. Rows without coefficients are checked as constants and replaced by
-# strictly feasible ones. The reduced problem is scaled (Ruiz equilibration of the
-# matrix, then one factor each for the right-hand side and the objective). After SDPA
-# has solved it, the solution is mapped back, and the original equality constraints,
-# the dual residual, and gross conditions on the result (cone constraints, dual
-# equations, certificates, duality gap) are checked. If any check fails, the presolve
-# falls back to passing the problem to SDPA without reduction, with each equality
-# constraint written as two inequalities and the same scaling; a result of the
-# fallback that fails the gross checks gets the status `NUMERICAL_ERROR`.
+# The reduced problem is scaled before it is written for SDPA, as conic solvers such as
+# SCS do (see `scaled_sdpa_model`): Ruiz equilibration of the rows and columns of the
+# matrix, then normalization of the right-hand side and of the objective. All factors
+# are powers of two. SDPA's tolerances are absolute, so they apply to the scaled
+# problem: its feasibility tolerance is relative to the equilibrated rows and
+# columns, and its gap tolerance is relative to `max(|objective|, u)`, where `u` is
+# the value in the model of an objective value of 1 in the scaled problem. Rows
+# without coefficients are constants; they are checked and replaced by strictly
+# feasible constants.
+#
+# ## Validation and fallback
+#
+# * Every result that the presolve returns without calling SDPA is validated against
+#   the data at `δ`: certificates of infeasibility (`A'y = 0`, `b'y < 0`), rays
+#   (`A_E d = 0`, `A_K d ∈ K`, `c'd < 0`), and the point determined by the equality
+#   constraints.
+# * The result of SDPA is checked on the scaled problem that SDPA was given, with the
+#   stopping criteria of SDPA at the square root of its tolerances (see
+#   `check_sdpa_result`); certificates of infeasibility are checked for the bound
+#   they prove.
+# * After the solution is mapped back, what the presolve removed is checked at the
+#   returned solution: the equality constraints (in particular the dependent rows),
+#   and the dual equations of the eliminated and of the dependent variables. Each
+#   must hold up to the rounding to `T` and the tolerance `δ` of the decision.
+#
+# A result of SDPA that fails the check on the scaled problem gets the status
+# `NUMERICAL_ERROR`. If the reduction itself is in doubt (the working precision was not
+# sufficient, a result of the presolve fails its validation, or what the presolve
+# removed does not hold at the solution), the presolve falls back to passing the
+# problem to SDPA without reduction, with each equality constraint written as two
+# inequalities and the same scaling.
 #
 # ## Mapping the solution back
 #
@@ -100,26 +119,10 @@ mutable struct PresolveData{T,H}
     nvars::Int
     pT::Int
     sets::Vector{Any}
-    # the scaling before the elimination; the arrays below are scaled by it, and
-    # `original` holds the unscaled `(A, b, c, AE, bE)` for the fallback
-    pre::Scaling{H}
-    original::NTuple{5,Any}
-    # the scaling of the problem passed to SDPA, and its columns among the variables of
-    # the reduced problem (all variables in `:fallback` mode)
-    post::Union{Nothing,Scaling{H}}
-    keep::Vector{Int}
-    # the rows without coefficients whose constants were replaced (see
-    # `scaled_sdpa_model`), and their values before the scaling `post`
-    const_rows::Vector{Int}
-    const_vals::Vector{H}
-    # the scaled data `(A, b, c)` and the cone sets of the problem written for SDPA
-    sdpa_problem::Any
-    # the reduced problem (scaled by `pre`, before `post`): cone matrix and objective
-    Ared::SparseMatrixCSC{H,Int}
-    cred::Vector{H}
-    # the dependence and consistency tolerance used (see `data_tol`)
+    # the dependence and consistency tolerance used (see `Tolerances`)
     data_tol::H
-    # cone constraints and objective of the scaled model, see `constraint_matrix`
+    # cone constraints `A x + b ∈ sets` and objective `c'x` of the model, see
+    # `constraint_matrix`
     A::SparseMatrixCSC{H,Int}
     b::Vector{H}
     c::Vector{H}
@@ -128,8 +131,20 @@ mutable struct PresolveData{T,H}
     bE::Vector{H}
     eq_rows::Vector{UnitRange{Int}}
     elim::Union{Nothing,EqualityElimination{H}}
-    # variables of the model after the equality elimination that are fixed to zero
+    # variables of the model after the equality elimination that are fixed to zero,
+    # and for each the coefficients `w` of the combination of columns that is zero
     redundant::Vector{Int}
+    dependence::Dict{Int,Dict{Int,H}}
+    # the scaling of the problem passed to SDPA, and its columns among the variables of
+    # the reduced problem (all variables in `:fallback` mode)
+    post::Union{Nothing,Scaling{H}}
+    keep::Vector{Int}
+    # the rows without coefficients whose constants were replaced (see
+    # `scaled_sdpa_model`), and their values before the scaling
+    const_rows::Vector{Int}
+    const_vals::Vector{H}
+    # the scaled data `(A, b, c)` and the cone sets of the problem written for SDPA
+    sdpa_problem::Any
     # `:reduced` (SDPA solves the reduced problem), `:fallback` (SDPA solves the model
     # with each equality constraint as two inequalities), or `:none` (SDPA not called)
     mode::Symbol
@@ -166,30 +181,23 @@ function presolve!(optimizer::Optimizer{T}, model::SDPAModel{T},
         tol = Tolerances(T, pT; data_tol = optimizer.presolve_tol)
         ctol = tol.data
         n = size(A_T, 2)
-        A0, b0, c0, AE0, bE0 = H.(A_T), H.(b_T), H.(c_T), H.(AE_T), H.(bE_T)
-        # Scale the rows of the equality and cone constraints (not the variables) before
-        # the eliminations, so that the size of a combination of rows is meaningful.
-        # Scaling the variables here would let rows that turn out to be redundant
-        # distort the scaling of the reduced problem; the variables are scaled after
-        # the reduction.
-        groups, ng = _row_groups(sets, length(bE0))
-        gf, cf = equilibrate(vcat(AE0, A0), vcat(collect(1:length(bE0)), groups), ng;
-                             scale_columns = false)
-        pre = Scaling{H}(gf[groups], gf[1:length(bE0)], cf, one(H), one(H))
-        data = PresolveData{T,H}(n, pT, sets, pre, (A0, b0, c0, AE0, bE0), nothing, Int[],
-                                 Int[], H[], nothing, spzeros(H, 0, 0), H[], ctol,
-                                 _scale(A0, pre.row, pre.col), pre.row .* b0, pre.col .* c0,
-                                 _scale(AE0, pre.eqrow, pre.col), pre.eqrow .* bE0,
-                                 eq_rows, nothing, Int[], :reduced, 0, "", zero(T), T[], T[],
+        data = PresolveData{T,H}(n, pT, sets, ctol, H.(A_T), H.(b_T), H.(c_T), H.(AE_T), H.(bE_T),
+                                 eq_rows, nothing, Int[], Dict{Int,Dict{Int,H}}(), nothing, Int[],
+                                 Int[], H[], nothing, :reduced, 0, "", zero(T), T[], T[],
                                  :not_called, "")
         optimizer.presolve_data = data
         fallback(reason) = fallback_model!(optimizer, reason)
         A, b, c = data.A, data.b, data.c
+        cmag = abs.(c)
         delta = zero(H)
         if !isempty(data.bE)
             # the number of nonzeros of each variable, to choose pivots with little fill-in
             pivot_cost = [length(nzrange(A, j)) + length(nzrange(data.AE, j)) for j in 1:n]
-            elim = _eliminate_equalities(data.AE, data.bE, tol, pivot_cost)
+            # The pivot variables are chosen in the equilibrated model: a variable is
+            # not preferred or avoided as a pivot because of its unit.
+            groups, ng = _row_groups(sets, length(data.bE))
+            _, colexp = equilibrate(vcat(data.AE, A), vcat(collect(1:length(data.bE)), groups), ng)
+            elim = _eliminate_equalities(data.AE, data.bE, tol, pivot_cost, colexp)
             elim.failed && return fallback("the equality elimination did not pass its check")
             if elim.infeasible !== nothing
                 y = elim.infeasible
@@ -199,20 +207,35 @@ function presolve!(optimizer::Optimizer{T}, model::SDPAModel{T},
                 return nothing
             end
             data.elim = elim
-            A, b, c, delta = substitute(A, b, c, elim, tol)
+            A, b, c, cmag, delta = substitute(A, b, c, elim, tol)
         end
-        result = _find_redundant_columns(A, c, tol)
-        redundant = result.failed ? Int[] : result.redundant
-        if result.ray !== nothing
-            d = data.elim === nothing ? result.ray :
-                expand_solution(data.elim, n, result.ray; homogeneous = true)
+        # Columns that depend on the columns before them. The consistency of the
+        # objective is decided relative to the terms `cmag` of the objective of the model.
+        # The pivot rows are chosen in the equilibrated matrix, and among the candidates
+        # the row with the fewest nonzeros (a variable with a row of its own, such as a
+        # bound or an entry of a matrix variable, then needs no elimination).
+        groups, ng = _row_groups(sets, 0)
+        groupexp, _ = equilibrate(A, groups, ng)
+        rowcount = zeros(Int, size(A, 1))
+        for r in rowvals(A)
+            rowcount[r] += 1
+        end
+        E = eliminate(A, c, tol; cmag = cmag, pivot_scale = groupexp[groups], pivot_cost = rowcount)
+        E.failed && return fallback("the working precision was not sufficient to find the dependent columns")
+        if E.inconsistent != 0
+            ray = zeros(H, size(A, 2))
+            for (j, w) in E.certificate
+                ray[j] = w
+            end
+            d = data.elim === nothing ? ray : expand_solution(data.elim, n, ray; homogeneous = true)
             valid_ray(data, d, ctol) || return fallback("the ray of the presolve did not pass its check")
             set_presolve_result!(optimizer, :presolve_dINF; x = d)
             optimizer.primalobj = _to(T, pT, sum(data.c .* d; init = zero(H)))
             return nothing
         end
-        data.redundant = redundant
-        keep = setdiff(1:size(A, 2), redundant)
+        data.redundant = E.redundant
+        data.dependence = E.dependence
+        keep = setdiff(1:size(A, 2), E.redundant)
         data.objconstant_delta = optimizer.objsign * _to(T, pT, delta)
         optimizer.objconstant += data.objconstant_delta
         if isempty(keep)
@@ -236,8 +259,6 @@ function presolve!(optimizer::Optimizer{T}, model::SDPAModel{T},
         data.post = post
         data.sdpa_problem = (scaled..., sets)
         data.keep = keep
-        data.Ared = Ak
-        data.cred = c[keep]
         return model
     end
 end
@@ -333,21 +354,6 @@ function scale_cone_values!(optimizer::Optimizer{T}, dual, slack, pT;
     return optimizer
 end
 
-# Maps a solution of the scaled model (`data.pre`) to the model.
-function unscale_pre!(optimizer::Optimizer{T}) where {T}
-    data = optimizer.presolve_data
-    with_work_precision(T) do
-        H = eltype(data.b)
-        conv(v) = T[_to(T, data.pT, vi) for vi in v]
-        pre = data.pre
-        optimizer.y = conv(pre.col .* H.(optimizer.y))
-        scale_cone_values!(optimizer, pre.row, one(H) ./ pre.row, data.pT)
-        isempty(data.eq_dual) || (data.eq_dual = conv(pre.eqrow .* H.(data.eq_dual)))
-        isempty(data.eq_primal) || (data.eq_primal = conv(H.(data.eq_primal) ./ pre.eqrow))
-    end
-    return optimizer
-end
-
 # Maps the solution of the problem written for SDPA (`data.post`) to the variables of
 # the reduced problem (or of the model, in `:fallback` mode), and restores the rows
 # whose constants were replaced.
@@ -357,12 +363,12 @@ function unscale_post!(optimizer::Optimizer{T}) where {T}
         H = eltype(data.b)
         post = data.post
         y = H.(optimizer.y)
-        y[data.keep] .*= post.col ./ post.rhs
+        y[data.keep] .*= post.col
         optimizer.y = T[_to(T, data.pT, v) for v in y]
-        scale_cone_values!(optimizer, post.row ./ post.obj, one(H) ./ (post.row .* post.rhs), data.pT;
+        scale_cone_values!(optimizer, post.row ./ post.obj, one(H) ./ post.row, data.pT;
                            rows = data.const_rows, values = data.const_vals)
-        optimizer.primalobj = _to(T, data.pT, H(optimizer.primalobj) / (post.obj * post.rhs))
-        optimizer.dualobj = _to(T, data.pT, H(optimizer.dualobj) / (post.obj * post.rhs))
+        optimizer.primalobj = _to(T, data.pT, H(optimizer.primalobj) / post.obj)
+        optimizer.dualobj = _to(T, data.pT, H(optimizer.dualobj) / post.obj)
     end
     return optimizer
 end
@@ -403,7 +409,7 @@ function set_presolve_result!(optimizer::Optimizer{T}, phase::Symbol;
     end
     # For `:presolve_OPT`, the objective values of the reduced model are zero and
     # `objconstant` holds the objective value.
-    return unscale_pre!(optimizer)
+    return optimizer
 end
 
 # The number of `Nonnegatives` rows of `sets` (they come first, see `constraint_matrix`).
@@ -412,15 +418,13 @@ _nonnegative_rows(sets) = sum((MOI.dimension(S) for S in sets if S isa MOI.Nonne
 # The fallback problem: the cone constraints `A x + b ∈ sets` and the equality
 # constraints `AE x + bE = 0` as one conic problem, with `AE x + bE ≥ 0` and
 # `-AE x - bE ≥ 0` as an extra `Nonnegatives` block after the `Nonnegatives` blocks.
-# Also returns the row factors `row`, `eqrow` in the same order.
-function fallback_problem(sets, A, b, AE, bE, row, eqrow)
+function fallback_problem(sets, A, b, AE, bE)
     nn = _nonnegative_rows(sets)
     psd = (nn+1):length(b)
     setsf = Any[S for S in sets if S isa MOI.Nonnegatives]
     isempty(bE) || push!(setsf, MOI.Nonnegatives(2 * length(bE)))
     append!(setsf, [S for S in sets if !(S isa MOI.Nonnegatives)])
-    return setsf, vcat(A[1:nn, :], AE, -AE, A[psd, :]), vcat(b[1:nn], bE, -bE, b[psd]),
-           vcat(row[1:nn], eqrow, eqrow, row[psd])
+    return setsf, vcat(A[1:nn, :], AE, -AE, A[psd, :]), vcat(b[1:nn], bE, -bE, b[psd])
 end
 
 # Switches to the fallback and returns its model: the model without reduction, with
@@ -440,13 +444,12 @@ function fallback_model!(optimizer::Optimizer{T}, reason::String) where {T}
     data.objconstant_delta = zero(T)
     data.elim = nothing
     data.redundant = Int[]
-    A, b, c, AE, bE = data.original
-    m = length(bE)
+    empty!(data.dependence)
+    m = length(data.bE)
     nnn = count(S -> S isa MOI.Nonnegatives, data.sets)
     data.fallback_block = m == 0 ? 0 : nnn + 1
     return with_work_precision(T) do
-        H = eltype(b)
-        setsf, Af, bf, _ = fallback_problem(data.sets, A, b, AE, bE, ones(H, length(b)), ones(H, m))
+        setsf, Af, bf = fallback_problem(data.sets, data.A, data.b, data.AE, data.bE)
         # replace only the constants that hold exactly; SDPA decides about the others
         crows, replacement = constant_rows(setsf, Af)
         holds = trues(length(crows))
@@ -463,7 +466,7 @@ function fallback_model!(optimizer::Optimizer{T}, reason::String) where {T}
             offset = last(rows)
         end
         crows, replacement = crows[holds], replacement[holds]
-        model, post, scaled = scaled_sdpa_model(T, data.pT, Af, bf, c, setsf, crows, replacement)
+        model, post, scaled = scaled_sdpa_model(T, data.pT, Af, bf, data.c, setsf, crows, replacement)
         data.post = post
         data.sdpa_problem = (scaled..., setsf)
         data.keep = collect(1:data.nvars)
@@ -473,102 +476,141 @@ function fallback_model!(optimizer::Optimizer{T}, reason::String) where {T}
     end
 end
 
-# Maps the solution of the problem solved by SDPA (in `optimizer.y`, with zeros for the
-# redundant variables already inserted) to the model and checks it. In `:reduced`
-# mode, returns `nothing`, or the failed check (then the caller falls back). In
-# `:fallback` mode, a failed check sets the status `:unverified`; returns `nothing`.
+# Checks the result of SDPA on the scaled problem, maps it back to the model (it is in
+# `optimizer.y`, with zeros for the redundant variables already inserted), and checks
+# what the presolve removed. A result of SDPA that fails the check on the scaled
+# problem, or overflows in `T`, gets the status `:unverified`. In `:reduced` mode,
+# returns the failed check of what the presolve removed (then the caller falls back),
+# or `nothing`.
 function postsolve!(optimizer::Optimizer{T}) where {T}
     data = optimizer.presolve_data
-    data === nothing && return nothing
+    (data === nothing || data.post === nothing) && return nothing
     primal_ray = MOI.get(optimizer, MOI.PrimalStatus()) == MOI.INFEASIBILITY_CERTIFICATE
     dual_ray = MOI.get(optimizer, MOI.DualStatus()) == MOI.INFEASIBILITY_CERTIFICATE
-    cert_reason = data.post === nothing ? nothing : check_sdpa_certificate(optimizer)
-    data.post === nothing || unscale_post!(optimizer)
-    reason = cert_reason !== nothing ? cert_reason : with_work_precision(T) do
-        H = eltype(data.b)
-        conv(v) = T[_to(T, data.pT, vi) for vi in v]
-        m = length(data.bE)
-        gtol = check_tol(optimizer, data)
-        unit = data.post === nothing ? one(H) : one(H) / (data.post.obj * data.post.rhs)
-        if data.mode == :fallback
-            _, _, _, AE, bE = data.original
+    has_dual = MOI.get(optimizer, MOI.DualStatus()) in (MOI.FEASIBLE_POINT, MOI.INFEASIBILITY_CERTIFICATE)
+    reason = check_sdpa_result(optimizer)
+    unscale_post!(optimizer)
+    overflow = "the solution is not finite in the number type of the optimizer"
+    if data.mode == :fallback
+        with_work_precision(T) do
+            H = eltype(data.b)
+            conv(v) = T[_to(T, data.pT, vi) for vi in v]
+            m = length(data.bE)
             x = H.(optimizer.y)
-            data.eq_primal = conv(primal_ray ? AE * x : AE * x .+ bE)
+            data.eq_primal = conv(primal_ray ? data.AE * x : data.AE * x .+ data.bE)
             y = weighted_dual_vector(optimizer, optimizer.X, H)
             nn = _nonnegative_rows(data.sets)
             data.eq_dual = conv(y[(nn+1):(nn+m)] .- y[(nn+m+1):(nn+2m)])
-            # check the problem solved by SDPA, with the rows scaled by `data.pre`
-            setsf, Af, bf, rowf = fallback_problem(data.sets, data.A, data.b, data.AE, data.bE,
-                                                   data.pre.row, data.pre.eqrow)
-            return check_result(optimizer, setsf, Af, bf, data.c, spzeros(H, 0, length(x)), H[],
-                                x, y ./ rowf, H[], gtol, unit)
         end
-        if data.elim === nothing
-            x = H.(optimizer.y)
-        else
-            x = expand_solution(data.elim, data.nvars, H.(optimizer.y); homogeneous = primal_ray)
-        end
-        xT = conv(x)
-        # Check the original equality constraints at the returned point. The rows that
-        # were kept hold up to the rounding of `x` to `T`. A row `i` dropped as
-        # dependent holds up to the dependence tolerance times the terms of its
-        # combination `w` with other rows, plus the residuals of those rows.
-        xr = H.(xT)
+        reason === nothing && !_finite_result(optimizer) && (reason = overflow)
+        reason === nothing || _set_unverified!(optimizer, reason)
+        return nothing
+    end
+    return with_work_precision(T) do
+        H = eltype(data.b)
+        conv(v) = T[_to(T, data.pT, vi) for vi in v]
+        elim = data.elim
+        # the values of all variables and of the equality constraints, and the duals of
+        # the equality constraints
+        x = elim === nothing ? H.(optimizer.y) :
+            expand_solution(elim, data.nvars, H.(optimizer.y); homogeneous = primal_ray)
+        optimizer.y = conv(x)
+        xr = H.(optimizer.y)
         r, rm = _apply(data.AE, xr)
         if !primal_ray
             r .+= data.bE
             rm .+= abs.(data.bE)
         end
-        all(isfinite, r) || return "the point is not finite"
-        ptol = 64 * eps_of(T, data.pT)
-        dependence = data.elim === nothing ? Dict{Int,Dict{Int,H}}() : data.elim.dependence
-        for i in eachindex(r)
-            bound = ptol * rm[i]
-            if haskey(dependence, i)
-                for (k, w) in dependence[i]
-                    k == i && continue
-                    bound += abs(w) * (2 * data.data_tol * rm[k] + abs(r[k]))
-                end
-                bound += 2 * data.data_tol * rm[i]
-            end
-            abs(r[i]) <= bound || return "the original equality constraints do not hold at the point"
-        end
-        optimizer.y = xT
         data.eq_primal = conv(r)
         yK = weighted_dual_vector(optimizer, optimizer.X, H)
         g = dual_ray ? -(transpose(data.A) * yK) : data.c - transpose(data.A) * yK
-        yE = data.elim === nothing ? H[] : equality_duals(data.elim, m, g)
-        if data.elim !== nothing && MOI.get(optimizer, MOI.DualStatus()) == MOI.FEASIBLE_POINT
-            # The relative residual of `A' y = c` on the original data must not exceed
-            # that of the reduced problem solved by SDPA by much: the mapping back is
-            # exact up to rounding, and the dropped columns are consistent up to the
-            # dependence tolerance. This catches ill-conditioned eliminations that
-            # amplify the solver's error.
-            relres(res, scale) = maximum(abs, res; init = zero(H)) /
-                                 max(maximum(scale; init = zero(H)), floatmin(Float64))
-            res = g .- transpose(data.AE) * yE
-            scale = abs.(data.c) .+ transpose(abs.(data.A)) * abs.(yK) .+
-                    transpose(abs.(data.AE)) * abs.(yE)
-            res_red = data.cred .- transpose(data.Ared) * yK
-            scale_red = abs.(data.cred) .+ transpose(abs.(data.Ared)) * abs.(yK)
-            relres(res, scale) <= 100 * (relres(res_red, scale_red) + data.data_tol) ||
-                return "the dual residual is larger than that of the reduced problem"
+        gm = transpose(abs.(data.A)) * abs.(yK)
+        dual_ray || (gm .+= abs.(data.c))
+        data.eq_dual = conv(elim === nothing ? H[] : equality_duals(elim, length(data.bE), g))
+        # The result of SDPA for the reduced problem failed its check, or it passed and
+        # overflows in `T`. The reduced problem is equivalent to the model and better
+        # posed than the model with its equality constraints as pairs of
+        # inequalities, so the fallback would not give a more reliable result.
+        if reason === nothing && (!_finite_result(optimizer) || !all(isfinite, data.eq_dual))
+            reason = overflow
         end
-        data.eq_dual = conv(yE)
-        return check_result(optimizer, data.sets, data.A, data.b, data.c, data.AE, data.bE,
-                            xr, yK, yE, gtol, unit)
-    end
-    if data.mode == :fallback
         if reason !== nothing
-            data.sdpa_phase = optimizer.phasevalue
-            data.check_failure = reason
-            optimizer.phasevalue = :unverified
-            if optimizer.verbosity != SILENT
-                @warn "SDPAFamily: the result of SDPA did not pass the check: $reason. The status is `NUMERICAL_ERROR`."
+            _set_unverified!(optimizer, reason)
+            return nothing
+        end
+        # What the presolve removed is checked at the returned solution, relative to
+        # the terms of each row (column), up to `ptol` for the rounding to `T`.
+        ptol = 64 * eps_of(T, data.pT)
+        δ = data.data_tol
+        # 1. The equality constraints at the returned point. The rows that were kept
+        # hold up to the rounding of `x` to `T`. A row `i` dropped as dependent holds up
+        # to the dependence tolerance times the terms of its combination `w` with other
+        # rows, plus the residuals of those rows.
+        _removed_hold(r, rm, elim === nothing ? Dict{Int,Dict{Int,H}}() : elim.dependence, δ, ptol) ||
+            return "the original equality constraints do not hold at the point"
+        # 2. The dual equations `c - A'y_K - A_E'y_E = 0` (for a certificate, without
+        # `c`) of the variables that the presolve removed. Those of the pivot variables
+        # of the equality elimination hold by the construction of `y_E`. That of a
+        # variable `j` dropped as dependent holds up to the tolerance of the decision
+        # and the residuals of the variables in its combination.
+        if has_dual
+            yE = H.(data.eq_dual)
+            res = g .- transpose(data.AE) * yE
+            mag = gm .+ transpose(abs.(data.AE)) * abs.(yE)
+            free = elim === nothing ? collect(1:data.nvars) : elim.free
+            if elim !== nothing
+                all(abs(res[p]) <= ptol * mag[p] for p in elim.pivots) ||
+                    return "the dual equations of the eliminated variables do not hold"
+                # the terms of the dual equation of a free variable in the reduced
+                # problem include those of the pivot variables it replaces
+                mag = copy(mag)
+                for (q, p) in enumerate(elim.pivots), (j, w) in _pairs(elim.rows[q])
+                    mag[j] += abs(w) * mag[p]
+                end
             end
+            dependence = Dict{Int,Dict{Int,H}}(free[k] => Dict{Int,H}(free[l] => wl for (l, wl) in w)
+                                               for (k, w) in data.dependence)
+            _removed_hold(res, mag, dependence, δ, ptol; only = keys(dependence)) ||
+                return "the dual equations of the variables dropped as dependent do not hold"
         end
         return nothing
     end
-    reason === nothing && unscale_pre!(optimizer)
-    return reason
+end
+
+# Sets the status `:unverified` (`NUMERICAL_ERROR`): the result of SDPA is kept, with
+# the status reported by SDPA and the failed check in `MOI.RawStatusString`.
+function _set_unverified!(optimizer::Optimizer, reason::String)
+    data = optimizer.presolve_data
+    data.sdpa_phase = optimizer.phasevalue
+    data.check_failure = reason
+    optimizer.phasevalue = :unverified
+    if optimizer.verbosity != SILENT
+        @warn "SDPAFamily: the result of SDPA did not pass the check: $reason. The status is `NUMERICAL_ERROR`."
+    end
+    return optimizer
+end
+
+# Whether the solution stored in `optimizer` (in the number type `T`) is finite. The
+# scaled solution of SDPA is; the solution of the model can overflow in `T`.
+_finite_result(optimizer::Optimizer) =
+    all(isfinite, optimizer.y) && isfinite(optimizer.primalobj) && isfinite(optimizer.dualobj) &&
+    all(B -> all(isfinite, B), optimizer.X.blocks) && all(B -> all(isfinite, B), optimizer.Z.blocks)
+
+# Whether the residuals `r` (with the sums `rm` of the absolute values of their terms)
+# of the rows `only` are zero up to `ptol`, or, for a row `i` with a dependence `w`
+# (`w[i] = 1`, see `Elimination`), up to the tolerance `δ` of the dependence decision
+# and the residuals of the other rows of `w`.
+function _removed_hold(r::Vector{H}, rm::Vector{H}, dependence, δ, ptol; only = eachindex(r)) where {H}
+    for i in only
+        bound = ptol * rm[i]
+        if haskey(dependence, i)
+            for (k, w) in dependence[i]
+                k == i && continue
+                bound += abs(w) * (2 * δ * rm[k] + abs(r[k]))
+            end
+            bound += 2 * δ * rm[i]
+        end
+        abs(r[i]) <= bound || return false
+    end
+    return true
 end
