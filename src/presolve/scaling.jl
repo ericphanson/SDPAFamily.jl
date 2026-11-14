@@ -192,9 +192,12 @@ end
 """
     equilibrate(M::SparseMatrixCSC, groups, ngroups; iterations = 100) -> (groupexponents, colexponents)
 
-Ruiz equilibration (D. Ruiz, "A scaling algorithm to equilibrate both rows and columns
-norms in matrices", 2001), the scaling of conic solvers such as SCS, COSMO and
-Clarabel: the row groups and the columns of `M` are divided simultaneously by the
+Compute scaling factors for the row groups and the columns of `M` by Ruiz
+equilibration.
+
+In this method (D. Ruiz, "A scaling algorithm to equilibrate both rows and columns
+norms in matrices", 2001; the scaling of conic solvers such as SCS, COSMO and
+Clarabel) the row groups and the columns of `M` are divided simultaneously by the
 square roots of their largest absolute entries, until all of these are in [1/2, 2).
 The factors are powers of two, so scaling by them is exact; the function returns their
 exponents. Only the binary exponents of the entries are used. Groups and columns
@@ -293,8 +296,10 @@ end
 """
     scaled_sdpa_model(T, pT, A, b, c, sets, crows, replacement; border = false) -> (model, scaling, (As, bs, cs))
 
-The SDPA model of the problem `minimize c'x` subject to `A x + b ∈ sets`, scaled as
-conic solvers such as SCS do:
+Build the scaled SDPA model of the problem `minimize c'x` subject to
+`A x + b ∈ sets`.
+
+The first scaling (`border = false`) has three steps, as in conic solvers such as SCS:
 
 1. `A` is equilibrated ([`SDPAFamily.equilibrate`](@ref)). The rows of a PSD block
    share one factor, so that the scaling keeps the cone.
