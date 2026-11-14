@@ -185,7 +185,7 @@ include("presolve/checks.jl")
 """
     presolve!(optimizer::Optimizer{T}, model::MOI.FileFormats.SDPA.Model{T}, AE, bE, eq_rows) -> Union{Nothing,MOI.FileFormats.SDPA.Model{T}}
 
-Applies the presolve described at the top of `src/presolve.jl`. Returns the model to
+Apply the presolve described at the top of `src/presolve.jl`. Return the model to
 pass to SDPA (the reduced model, or the fallback model), or `nothing` if the presolve
 has already determined a validated result; in that case the result is stored in
 `optimizer`.

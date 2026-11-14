@@ -49,7 +49,7 @@ _block_dims(sets) = [S isa MOI.Nonnegatives ? -MOI.dimension(S) : MOI.side_dimen
 """
     is_psd(B::AbstractMatrix) -> Bool
 
-Whether the symmetric matrix `B` is positive semidefinite, by symmetric Gaussian
+Return whether the symmetric matrix `B` is positive semidefinite, by symmetric Gaussian
 elimination with diagonal pivoting. A zero pivot is accepted if the rest of its row is
 zero, so rank-deficient matrices (including the zero matrix) are accepted. Exact for
 `Rational` element types.
@@ -203,8 +203,8 @@ const CERTIFICATE_TOL = 1e-3
 """
     check_sdpa_result(optimizer) -> Union{Nothing,String}
 
-Checks the result of SDPA on the scaled problem `min c'x : A x + b ∈ K` that was
-written for SDPA (`data.sdpa_problem`), before the solution is scaled back. Returns
+Check the result of SDPA on the scaled problem `min c'x : A x + b ∈ K` that was
+written for SDPA (`data.sdpa_problem`), before the solution is scaled back. Return
 `nothing`, or the failed check.
 
 A primal or dual solution that SDPA reports as feasible, and a result that is reported
@@ -312,9 +312,9 @@ end
 """
     check_model_result(optimizer, x, yK, yE) -> Union{Nothing,String}
 
-Checks the solution in the units of the model, row by row and variable by variable,
+Check the solution in the units of the model, row by row and variable by variable,
 after it has been scaled back: the point `x` with the cone duals `yK` (weighted as in
-`weighted_dual_vector`) and the equality duals `yE`. Returns `nothing`, or the failed
+`weighted_dual_vector`) and the equality duals `yE`. Return `nothing`, or the failed
 check.
 
 SDPA's feasibility tolerance is absolute and applies to the scaled problem. A row

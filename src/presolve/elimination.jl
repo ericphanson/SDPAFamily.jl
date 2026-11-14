@@ -171,12 +171,16 @@ Elimination{H}() where {H} =
 const PIVOT_THRESHOLD = 10
 
 """
-    eliminate(A::SparseMatrixCSC{H}, c::AbstractVector{H}, tol::Tolerances{H}; pivot_cost = nothing) -> Elimination{H}
+    eliminate(A::SparseMatrixCSC{H}, c::AbstractVector{H}, tol::Tolerances{H};
+              pivot_cost = nothing, pivot_scale = nothing, cmag = abs.(c)) -> Elimination{H}
 
-Gaussian elimination on the columns of `A` in the number type `H`, column by column
-(a left-looking sparse LU factorization with threshold pivoting, as in J. R. Gilbert
+Factorize the linearly independent columns of `A` and find the columns that depend on
+the columns before them.
+
+The method is Gaussian elimination in the number type `H`, column by column: a
+left-looking sparse LU factorization with threshold pivoting, as in J. R. Gilbert
 and T. Peierls, "Sparse partial pivoting in time proportional to arithmetic
-operations", 1988, with the roles of rows and columns exchanged).
+operations", 1988, with the roles of rows and columns exchanged.
 
 Each column is reduced by the basis vectors found before it. Entries of the result
 that are rounding residue (see [`SDPAFamily.Tolerances`](@ref)) are removed. If nothing
@@ -401,7 +405,7 @@ end
 """
     find_redundant_columns(A::SparseMatrixCSC{T}, c::AbstractVector{T}) -> PresolveResult{T}
 
-Finds the columns of `A` that are linear combinations of earlier columns, using
+Find the columns of `A` that are linear combinations of earlier columns, using
 [`SDPAFamily.eliminate`](@ref). If such a combination is inconsistent with `c`, the
 problem `min c'x : A x + b ∈ K` is dual infeasible and the result contains a ray.
 
@@ -463,9 +467,9 @@ _failed_elimination(::Type{T}, n; infeasible = nothing, failed = true) where {T}
 """
     eliminate_equalities(AE::SparseMatrixCSC{T}, bE::Vector{T}; pivot_cost = nothing) -> EqualityElimination{T}
 
-Solves the system `AE * x + bE = 0` for one variable per linearly independent row, by
+Solve the system `AE * x + bE = 0` for one variable per linearly independent row, by
 Gaussian elimination on the rows of `AE` (see [`SDPAFamily.eliminate`](@ref)) followed
-by back substitution, and checks the result against `AE` and `bE`. The computation is
+by back substitution, and check the result against `AE` and `bE`. The computation is
 done in the working precision and the result is converted to `T`. With `pivot_cost[j]`
 the number of nonzeros of variable `j` in the whole model, the pivots are chosen to
 limit the fill-in of the substitution.
