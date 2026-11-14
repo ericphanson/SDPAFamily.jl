@@ -2,8 +2,6 @@ using Test
 using Convex
 import MathOptInterface as MOI
 using SparseArrays
-const MOIT = MOI.Test
-const MOIB = MOI.Bridges
 
 import SDPAFamily
 using Random
