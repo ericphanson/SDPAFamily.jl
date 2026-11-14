@@ -35,25 +35,37 @@ parameters. See [Choice of parameters](@ref).
 ## Limitations of the presolve
 
 The presolve described in [Presolve](@ref) takes the data as exact numbers of
-type `T` (or of `Float64`, see there) and decides with tolerances. The
-following limitations remain.
+type `T` and decides with tolerances. The following limitations remain.
 
 * Constraints that are nearly dependent, but not dependent up to the data
   tolerance, are kept. The elimination then divides by small numbers. If the
   mapped-back solution fails the checks, the presolve falls back to the
   unreduced problem.
-* A number that is genuinely nonzero but smaller than about `τ` times the terms
-  that are combined to compute it (a dynamic range above about `1/τ`, roughly
+* Data rounded to a coarser type than `T` (such as `Float64` decimals in a
+  `BigFloat` model) satisfy linear relations only up to that rounding; the
+  presolve treats such rows as independent unless `presolve_tol` is set (see
+  [Arithmetic and tolerances](@ref)).
+* A computed number that is genuinely nonzero but smaller than about `τ` times
+  the magnitude of its computation (a dynamic range above about `1/τ`, roughly
   `1e31` for `Float64` and `1e125` for `BigFloat` at 256 bits) is treated as zero.
-* The fallback passes the whole problem to SDPA without reduction and without
-  scaling, even when only one step of the presolve failed its check; SDPA often
-  does worse on that problem.
+* The scaling equilibrates the constraint matrix and multiplies the right-hand
+  side and the objective each by one factor. If the right-hand sides of the
+  equilibrated rows differ by many orders of magnitude, for example an inactive
+  bound `x ≤ 1e150` next to bounds near 1, one factor cannot bring all of them
+  near 1, and the problem can remain too badly scaled for SDPA; the checks then
+  report `NUMERICAL_ERROR` instead of a wrong status.
+* The checks of the solution returned by SDPA are gross. A solution that is
+  close to optimal for a slightly perturbed problem passes them, also when it is
+  far from the solution of the given problem because the problem is
+  ill-conditioned.
+* With `T = Float64`, the working type `Float64x3` has the exponent range of
+  `Float64`; for data below about `1e-290` its lower parts are subnormal and the
+  rounding tolerance does not hold.
+* The fallback drops all reductions, even when only one step of the presolve
+  failed its check.
 * The eliminations store rows as dictionaries and back-substitute to reduced row
-  echelon form. This is fast for sparse equality constraints, but slow for many
-  dense ones with `BigFloat`: hundreds of dense equality constraints take tens
-  of seconds.
-* The checks do not cover the cone constraints of the solution returned by SDPA;
-  that solution is SDPA's own, as without the presolve.
+  echelon form. This is fast for sparse equality constraints; for hundreds of
+  dense equality constraints with `BigFloat` it takes seconds.
 
 In these cases, `presolve = false` passes the problem to SDPA unchanged.
 
@@ -61,9 +73,9 @@ Two properties of the SDPA interface are independent of the presolve:
 
 * The SDPA status `pdFEAS` (both iterates feasible, iteration limit reached) is
   reported as `OPTIMAL`, even when the duality gap is not small.
-* For an `INFEASIBILITY_CERTIFICATE` computed by SDPA, the values are SDPA's last
-  iterate, which need not be a ray (`A^T y = 0`); the certificates that the
-  presolve returns are checked rays.
+* With `presolve = false`, an `INFEASIBILITY_CERTIFICATE` computed by SDPA is
+  SDPA's last iterate, which need not be a ray (`A^T y = 0`). With the presolve,
+  certificates are checked as described in [Checks and fallback](@ref).
 
 ## Choice of parameters
 

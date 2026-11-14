@@ -8,6 +8,10 @@ libs = filter!(lib -> occursin("fortran", lib), dllist())
 
 const variants = (:sdpa, :sdpa_dd, :sdpa_qd, :sdpa_gmp)
 
+include("fallback_counter.jl")
+const FALLBACKS = FallbackCounter()
+
+Logging.with_logger(FALLBACKS) do
 @testset "SDPAFamily" begin
 
     @info "Starting testset `General utilities`"
@@ -28,6 +32,7 @@ const variants = (:sdpa, :sdpa_dd, :sdpa_qd, :sdpa_gmp)
     end
 
     # No solve in the test suite should need the fallback of the presolve.
-    @info "Presolve fallbacks in the test suite: $(SDPAFamily.FALLBACK_COUNT[])"
-    @test SDPAFamily.FALLBACK_COUNT[] == 0
+    @info "Presolve fallbacks in the test suite: $(length(FALLBACKS.reasons))" FALLBACKS.reasons
+    @test isempty(FALLBACKS.reasons)
+end
 end

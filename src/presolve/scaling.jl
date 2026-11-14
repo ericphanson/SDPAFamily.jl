@@ -1,0 +1,299 @@
+# Part of the presolve (see `src/presolve.jl`): the cone data of the SDPA model,
+# the substitution, and the scaling.
+
+const SDPAModel{T} = MOI.FileFormats.SDPA.Model{T}
+const CONE_TYPES = (MOI.Nonnegatives, MOI.PositiveSemidefiniteConeTriangle)
+
+_cone_constraints(model::SDPAModel{T}, S) where {T} =
+    MOI.get(model, MOI.ListOfConstraintIndices{AFF{T},S}())
+
+# The constraint matrix `A` and constant vector `b` of the cone constraints (one row
+# per scalar row, in the order in which `MOI.FileFormats.SDPA` writes the blocks, and
+# one column per variable), the objective vector `c` of the minimization problem that
+# is written to the SDPA file, and the list of cone sets in the same order.
+function constraint_matrix(model::SDPAModel{T}) where {T}
+    n = MOI.get(model, MOI.NumberOfVariables())
+    I, J, V = Int[], Int[], T[]
+    b = T[]
+    sets = Any[]
+    for S in CONE_TYPES
+        for ci in _cone_constraints(model, S)
+            f = MOI.get(model, MOI.ConstraintFunction(), ci)
+            push!(sets, MOI.get(model, MOI.ConstraintSet(), ci))
+            offset = length(b)
+            for t in f.terms
+                push!(I, offset + t.output_index)
+                push!(J, t.scalar_term.variable.value)
+                push!(V, t.scalar_term.coefficient)
+            end
+            append!(b, f.constants)
+        end
+    end
+    A = sparse(I, J, V, length(b), n)
+    c = zeros(T, n)
+    sense = MOI.get(model, MOI.ObjectiveSense())
+    if sense != MOI.FEASIBILITY_SENSE
+        obj = MOI.get(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}())
+        for t in obj.terms
+            c[t.variable.value] += t.coefficient
+        end
+        if sense == MOI.MAX_SENSE
+            c .= .-c
+        end
+    end
+    return A, b, c, sets
+end
+
+# An SDPA model of type `T` with the cone constraints `A x + b ∈ sets` (rows in the order
+# of `constraint_matrix`) and the objective `minimize c'x`. The entries are converted to
+# `T` with `_to(T, pT, ⋅)`. Extra `Nonnegatives` constraints `A2 x + b2 ≥ 0` are added
+# after the `Nonnegatives` constraints of `sets`.
+function build_sdpa_model(::Type{T}, pT, A, b, c, sets; A2 = nothing, b2 = nothing) where {T}
+    n = size(A, 2)
+    model = MOI.FileFormats.SDPA.Model(number_type = T)
+    MOI.add_variables(model, n)
+    At = sparse(transpose(A))
+    offsets = cumsum(vcat(0, [MOI.dimension(S) for S in sets]))
+    function add(Mt, bvec, rows, S)
+        terms = MOI.VectorAffineTerm{T}[]
+        for (o, r) in enumerate(rows)
+            for p in nzrange(Mt, r)
+                v = nonzeros(Mt)[p]
+                iszero(v) && continue
+                push!(terms, MOI.VectorAffineTerm(o, MOI.ScalarAffineTerm(_to(T, pT, v),
+                    MOI.VariableIndex(rowvals(Mt)[p]))))
+            end
+        end
+        MOI.add_constraint(model, MOI.VectorAffineFunction(terms, T[_to(T, pT, bvec[r]) for r in rows]), S)
+    end
+    for (k, S) in enumerate(sets)
+        S isa MOI.Nonnegatives && add(At, b, (offsets[k]+1):offsets[k+1], S)
+    end
+    if A2 !== nothing && !isempty(b2)
+        add(sparse(transpose(A2)), b2, 1:length(b2), MOI.Nonnegatives(length(b2)))
+    end
+    for (k, S) in enumerate(sets)
+        S isa MOI.Nonnegatives || add(At, b, (offsets[k]+1):offsets[k+1], S)
+    end
+    MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+    MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(),
+            MOI.ScalarAffineFunction([MOI.ScalarAffineTerm(_to(T, pT, c[j]), MOI.VariableIndex(j))
+                                      for j in eachindex(c) if !iszero(c[j])], zero(T)))
+    return model
+end
+
+# The cone data after substituting the expressions of `elim` for the eliminated
+# variables. A coefficient is dropped if it counts as zero against the products it was
+# computed from. Returns `A`, `b`, `c` of the reduced problem and the constant `c'x`
+# that the substitution adds to the objective.
+function substitute(A::SparseMatrixCSC{H}, b::Vector{H}, c::Vector{H},
+                    elim::EqualityElimination{H}, tol) where {H}
+    n = size(A, 2)
+    new_index = zeros(Int, n)
+    for (i, j) in enumerate(elim.free)
+        new_index[j] = i
+    end
+    pivot_of = Dict{Int,Int}(p => q for (q, p) in enumerate(elim.pivots))
+    val = Dict{Tuple{Int,Int},H}()
+    mag = Dict{Tuple{Int,Int},H}()
+    bnew = copy(b)
+    rv = rowvals(A)
+    nz = nonzeros(A)
+    for j in 1:n
+        for p in nzrange(A, j)
+            r, α = rv[p], nz[p]
+            if new_index[j] != 0
+                key = (r, new_index[j])
+                val[key] = get(val, key, zero(H)) + α
+                mag[key] = get(mag, key, zero(H)) + abs(α)
+            else
+                q = pivot_of[j]
+                bnew[r] += α * elim.rhs[q]
+                for (l, w) in elim.rows[q]
+                    key = (r, new_index[l])
+                    val[key] = get(val, key, zero(H)) - α * w
+                    mag[key] = get(mag, key, zero(H)) + abs(α) * elim.rows_mag[q][l]
+                end
+            end
+        end
+    end
+    I, J, V = Int[], Int[], H[]
+    for (key, v) in val
+        (iszero(v) || _counts_as_zero(v, mag[key], tol)) && continue
+        push!(I, key[1]); push!(J, key[2]); push!(V, v)
+    end
+    Anew = sparse(I, J, V, size(A, 1), length(elim.free))
+    cnew = c[elim.free]
+    cmag = abs.(cnew)
+    delta = zero(H)
+    for (q, p) in enumerate(elim.pivots)
+        iszero(c[p]) && continue
+        delta += c[p] * elim.rhs[q]
+        for (l, w) in elim.rows[q]
+            cnew[new_index[l]] -= c[p] * w
+            cmag[new_index[l]] += abs(c[p]) * elim.rows_mag[q][l]
+        end
+    end
+    for i in eachindex(cnew)
+        _counts_as_zero(cnew[i], cmag[i], tol) && (cnew[i] = zero(H))
+    end
+    return Anew, bnew, cnew, delta
+end
+
+"""
+    Scaling{H}
+
+Power-of-two scaling factors (see [`SDPAFamily.equilibrate`](@ref)). The scaled problem
+has the cone constraints `diag(row) * (A * diag(col) * x̂ + rhs * b) ∈ K`, the equality
+constraints `diag(eqrow) * (A_E * diag(col) * x̂ + rhs * b_E) = 0` and the objective
+`obj * c' * diag(col) * x̂`, with `x = diag(col) * x̂ / rhs`. Since `K` is a cone,
+multiplying `b` by `rhs` and the solution by `rhs` gives an equivalent problem.
+"""
+struct Scaling{H}
+    row::Vector{H}
+    eqrow::Vector{H}
+    col::Vector{H}
+    obj::H
+    rhs::H
+end
+
+# `exponent` of a positive number (for `MultiFloat`, that of its leading limb)
+_exponent(x::BigFloat) = exponent(x)
+_exponent(x::Rational) = exponent(Float64(x))
+_exponent(x) = exponent(Float64(x))
+_pow2(::Type{H}, k::Int) where {H} = H(2)^k
+
+# the power of two closest to `1 / sqrt(x)` for `x > 0`
+_inv_sqrt_pow2(x::H) where {H} = _pow2(H, -round(Int, _exponent(x) / 2))
+
+# The row group of each cone row: each `Nonnegatives` row is its own group, and the rows
+# of a PSD block share one group, so that the scaling of a block is a congruence
+# `X ↦ ρ X` and keeps the cone.
+function _row_groups(sets, offset::Int)
+    groups = Int[]
+    g = offset
+    for S in sets
+        if S isa MOI.Nonnegatives
+            for _ in 1:MOI.dimension(S)
+                g += 1
+                push!(groups, g)
+            end
+        else
+            g += 1
+            append!(groups, fill(g, MOI.dimension(S)))
+        end
+    end
+    return groups, g
+end
+
+# The largest absolute value of the exponent of a scaling factor: the factors are
+# finite numbers of the working type (`2^1000` is close to the largest `Float64`, and
+# the range of `MultiFloat` is that of `Float64`).
+_max_scale_exponent(::Type{BigFloat}) = 100_000
+_max_scale_exponent(::Type) = 1000
+
+"""
+    equilibrate(M::SparseMatrixCSC{H}, groups, ngroups; scale_columns = true, iterations = 20)
+        -> (groupfactors, colfactors)
+
+Ruiz equilibration (D. Ruiz, "A scaling algorithm to equilibrate both rows and columns
+norms in matrices", 2001), as used by production conic solvers such as SCS: the row
+groups and the columns of `M` are divided simultaneously by the square roots of their
+largest absolute entries, until all of these are within a factor of 2 of 1. The
+factors are powers of two, so scaling by them is exact, and their exponents are at most
+`_max_scale_exponent(H)` in absolute value. Groups without coefficients are not scaled.
+"""
+function equilibrate(M::SparseMatrixCSC{H}, groups::Vector{Int}, ngroups::Int;
+                     scale_columns::Bool = true, iterations::Int = 20) where {H}
+    n = size(M, 2)
+    rv = rowvals(M)
+    nz = nonzeros(M)
+    # the factors are `2^ge` and `2^se`
+    ge = zeros(Int, ngroups)
+    se = zeros(Int, n)
+    emax = _max_scale_exponent(H)
+    pow2(e) = _pow2(H, e)
+    for _ in 1:iterations
+        g, s = pow2.(ge), pow2.(se)
+        gnorm = zeros(H, ngroups)
+        cnorm = zeros(H, n)
+        for j in 1:n, p in nzrange(M, j)
+            k = groups[rv[p]]
+            v = abs(nz[p]) * g[k] * s[j]
+            gnorm[k] = max(gnorm[k], v)
+            cnorm[j] = max(cnorm[j], v)
+        end
+        changed = false
+        for (e, norms) in ((ge, gnorm), (se, cnorm))
+            (e === se && !scale_columns) && continue
+            for k in eachindex(e)
+                x = norms[k]
+                (iszero(x) || !isfinite(x) || (x >= one(H) / 2 && x <= 2)) && continue
+                new = clamp(e[k] - round(Int, _exponent(x) / 2), -emax, emax)
+                changed |= new != e[k]
+                e[k] = new
+            end
+        end
+        changed || break
+    end
+    return pow2.(ge), pow2.(se)
+end
+
+# The rows of the cone constraints `A x + b ∈ sets` that do not depend on `x`: the rows
+# of `Nonnegatives` sets without coefficients, and all rows of PSD blocks without
+# coefficients. Returns the rows and, for each, the value of a strictly feasible
+# replacement constant (1 for `Nonnegatives` rows, the identity matrix for PSD blocks).
+function constant_rows(sets, A::SparseMatrixCSC)
+    has_coefficients = falses(size(A, 1))
+    rv = rowvals(A)
+    nz = nonzeros(A)
+    for p in eachindex(rv)
+        iszero(nz[p]) || (has_coefficients[rv[p]] = true)
+    end
+    rows, replacement = Int[], Int[]
+    offset = 0
+    for S in sets
+        dim = MOI.dimension(S)
+        if S isa MOI.Nonnegatives
+            for i in (offset+1):(offset+dim)
+                has_coefficients[i] || (push!(rows, i); push!(replacement, 1))
+            end
+        elseif !any(view(has_coefficients, (offset+1):(offset+dim)))
+            k = offset
+            for j in 1:MOI.side_dimension(S), i in 1:j
+                k += 1
+                push!(rows, k)
+                push!(replacement, i == j ? 1 : 0)
+            end
+        end
+        offset += dim
+    end
+    return rows, replacement
+end
+
+# The SDPA model of the problem `minimize c'x` subject to `A x + b ∈ sets`, scaled as
+# conic solvers such as SCS do: `A` is equilibrated, and then `b` and `c` are
+# multiplied by powers of two that bring their largest entries to [1, 2). The constants
+# of the rows `crows` (rows without coefficients that hold) are replaced by
+# `replacement`, which keeps the feasible set and makes the rows strictly feasible;
+# they do not count for the factor of `b`. Returns the model, its `Scaling`, and the
+# scaled data `(A, b, c)` written to the model.
+function scaled_sdpa_model(::Type{T}, pT, A::SparseMatrixCSC{H}, b::Vector{H}, c::Vector{H},
+                           sets, crows, replacement) where {T,H}
+    groups, ng = _row_groups(sets, 0)
+    gf, cf = equilibrate(A, groups, ng)
+    rows = gf[groups]
+    # the power of two that brings the largest absolute entry of `v` to [1, 2)
+    emax = _max_scale_exponent(H)
+    to_unit(v) = (m = maximum(abs, v; init = zero(H));
+                  iszero(m) || !isfinite(m) ? one(H) : _pow2(H, clamp(-_exponent(m), -emax, emax)))
+    β = to_unit(view(rows .* b, setdiff(1:length(b), crows)))
+    σ = to_unit(cf .* c)
+    bs = β .* rows .* b
+    bs[crows] .= H.(replacement)
+    As, cs = _scale(A, rows, cf), σ .* cf .* c
+    model = build_sdpa_model(T, pT, As, bs, cs, sets)
+    return model, Scaling{H}(rows, H[], cf, σ, β), (As, bs, cs)
+end
+
+_scale(M::SparseMatrixCSC, r, c) = Diagonal(r) * M * Diagonal(c)
