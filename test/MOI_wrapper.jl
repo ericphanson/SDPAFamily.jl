@@ -88,9 +88,9 @@ function MOI_tests(var, ::Type{T}; presolve::Bool = true) where {T}
                 r"test_conic_SecondOrderCone_negative_post_bound_3$",
                 r"test_conic_SecondOrderCone_no_initial_bound$",
                 r"test_linear_transform$",
-                r"test_linear_FEASIBILITY_SENSE$", # fails for BigFloat
             ],
         )
+        T == BigFloat && push!(exclude, r"test_linear_FEASIBILITY_SENSE$")
     end
 
     MOI.Test.runtests(
