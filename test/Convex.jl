@@ -46,29 +46,6 @@ for T in (Float64, Double64, BigFloat), var in (:sdpa_qd, :sdpa_gmp)
     push!(get!(variant_excludes, (var, T), Regex[]), r"sdp_quantum_channel_capacity")
 end
 
-# The tests of these problems compute `log` of a `Double64` matrix with DoubleFloats,
-# which calls `eigen` for a general matrix. On Julia 1.6 that has no method for
-# `Double64` (`MethodError` in `eigen!`); on Julia 1.10 and later it works. The versions
-# in between were not tried.
-if VERSION < v"1.10"
-    append!(type_excludes[Double64], [r"sdp_trace_logm_real", r"sdp_trace_logm_cplx"])
-end
-
-# failures on CI with Julia 1.0; couldn't locally reproduce locally
-if VERSION < v"1.3"
-    for T in (Float64, Double64, BigFloat)
-        for variant in variants
-            variant_excludes[(variant, T)] = Regex[r"socp_quad_form_atom"]
-        end
-    end
-
-    for T in (Float64, Double64, BigFloat)
-        variant_excludes[(:sdpa, T)] = Regex[r"lp_pos_atom"]
-    end
-end
-
-
-
 # Some problems need a different choice of parameters to pass the tests
 const params_options = Dict(
                     (:sdpa_gmp, Float64) => Dict(
