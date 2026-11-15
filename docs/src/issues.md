@@ -58,7 +58,8 @@ where a result can be misleading.
   `OPTIMAL` can violate a small bound by a large factor of that bound. This
   remains the case for a small range that follows only from a matrix constraint,
   for variables that inequalities force to zero (`x >= 0` together with
-  `x <= 0`, directly or through other constraints), for a variable whose bounds
+  `x <= 0`, directly or through other constraints) and variables whose bounds
+  depend on them, for a variable whose bounds
   differ by many orders of magnitude, such as `1e-9 <= x <= 1e9` (the smaller
   bound is resolved relative to the larger one), and for entries of very
   different sizes in one matrix constraint, which is rescaled by a single
