@@ -56,12 +56,13 @@ where a result can be misleading.
   `x1 >= 0` and `x2 >= 0`). Otherwise values are accurate to SDPA's absolute
   tolerance only: the status can be `NUMERICAL_ERROR`, or a result reported as
   `OPTIMAL` can violate a small bound by a large factor of that bound. This
-  remains the case for a small range that follows only from a matrix constraint
-  or from a long chain of constraints, for a variable whose bounds differ by many
-  orders of magnitude, such as `1e-9 <= x <= 1e9` (the smaller bound is resolved
-  relative to the larger one), and for entries of very different sizes in one
-  matrix constraint, which is rescaled by a single factor. `presolve = false`
-  does not rescale at all.
+  remains the case for a small range that follows only from a matrix constraint,
+  for variables that inequalities force to zero (`x >= 0` together with
+  `x <= 0`, directly or through other constraints), for a variable whose bounds
+  differ by many orders of magnitude, such as `1e-9 <= x <= 1e9` (the smaller
+  bound is resolved relative to the larger one), and for entries of very
+  different sizes in one matrix constraint, which is rescaled by a single
+  factor. `presolve = false` does not rescale at all.
 * If the constraints of a model contradict each other by less than SDPA's
   tolerance, relative to the sizes of the terms in those constraints, the model
   is reported as `OPTIMAL`.
