@@ -72,7 +72,7 @@ where a result can be misleading.
   presolve rescales the objective, so this depends on the rescaled problem. An
   example is the chain `x[1] >= 1`, `x[i+1] >= 2 x[i]` for 20 variables with
   objective `sum(x)`, whose optimal value is about `1e6`: with `:sdpa_dd` it is
-  solved with the presolve and reported as `INFEASIBLE` with `presolve = false`.
+  solved with the presolve and reported as `INFEASIBLE_OR_UNBOUNDED` with `presolve = false`.
   If a model is affected, set larger bounds, for example
   `params = (lowerBound = -1e10, upperBound = 1e10)`.
 * A constraint that follows from others only approximately, with an error above
