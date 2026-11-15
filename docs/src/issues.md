@@ -49,19 +49,32 @@ where a result can be misleading.
   `:sdpa_gmp`. With factors of `1e±30` a few statuses were wrong for all
   variants. Choose units so that variables and constraints have comparable
   sizes.
+* A variable that is small in the units of the model, such as `0 <= x <= 1e-9`,
+  is solved relative to its bounds if the presolve finds them. It finds bounds
+  written as constraints on one variable, and bounds that follow from a linear
+  inequality and the bounds of its other variables (`x1 + x2 <= 1e-9` with
+  `x1 >= 0` and `x2 >= 0`). Otherwise values are accurate to SDPA's absolute
+  tolerance only: the status can be `NUMERICAL_ERROR`, or a result reported as
+  `OPTIMAL` can violate a small bound by a large factor of that bound. This
+  remains the case for a small range that follows only from a matrix constraint
+  or from a long chain of constraints, for a variable whose bounds differ by many
+  orders of magnitude, such as `1e-9 <= x <= 1e9` (the smaller bound is resolved
+  relative to the larger one), and for entries of very different sizes in one
+  matrix constraint, which is rescaled by a single factor. `presolve = false`
+  does not rescale at all.
 * If the constraints of a model contradict each other by less than SDPA's
   tolerance, relative to the sizes of the terms in those constraints, the model
   is reported as `OPTIMAL`.
 * If the optimal value is very large compared to the data, a feasible and
   bounded model can be reported as `INFEASIBLE` or `DUAL_INFEASIBLE`. SDPA
-  reports a problem as unbounded when an objective value of the rescaled
-  problem passes its parameters `lowerBound` or `upperBound`, which are `-1e5`
-  and `1e5` by default. An example is the chain `x[1] >= 1`,
-  `x[i+1] >= 2 x[i]` for 20 variables with objective `sum(x)`, whose optimal
-  value is about `1e6`: `:sdpa_dd` reports it as `INFEASIBLE`. With larger
-  bounds, `params = (lowerBound = -1e10, upperBound = 1e10)`, it is solved.
-  With `presolve = false` this example is reported as `INFEASIBLE_OR_UNBOUNDED`
-  with either choice of bounds.
+  reports a problem as unbounded when an objective value passes its parameters
+  `lowerBound` or `upperBound`, which are `-1e5` and `1e5` by default. The
+  presolve rescales the objective, so this depends on the rescaled problem. An
+  example is the chain `x[1] >= 1`, `x[i+1] >= 2 x[i]` for 20 variables with
+  objective `sum(x)`, whose optimal value is about `1e6`: with `:sdpa_dd` it is
+  solved with the presolve and reported as `INFEASIBLE` with `presolve = false`.
+  If a model is affected, set larger bounds, for example
+  `params = (lowerBound = -1e10, upperBound = 1e10)`.
 * A constraint that follows from others only approximately, with an error above
   `presolve_tol`, is kept. The reduced problem is then ill-conditioned, and the
   result can fail the checks. If the data were rounded to a coarser type than
