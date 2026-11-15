@@ -332,10 +332,12 @@ The conditions are relative to the terms of each row (column), with the toleranc
 
 A row that is active at a point where its variables are near zero (`x ≥ 0` at
 `x = -1e-9`) has a residual as large as its terms. For such rows there is an absolute
-tolerance in the units of the variables: `xunit[j]` is the smaller of 1 and the size
-that an entry 1 of variable `j` in the scaled problem has in the model (`yunit[i]`
-likewise for the duals), so the tolerance of a variable is never looser than SDPA's
-in the scaled problem, nor than SDPA's in the model. For given units, the conditions
+tolerance in the units of the variables: `xunit[j]` is the smallest of 1, the size
+that an entry 1 of variable `j` in the scaled problem has in the model, and the
+largest magnitude that the bounds of the variable allow (`yunit[i]` is the smaller of
+the first two for the duals). The tolerance of a variable is then never looser than
+SDPA's in the scaled problem, nor than SDPA's in the model, and it is relative to
+the range of a variable that is bounded. For given units, the conditions
 do not change when a row of the model is multiplied by a factor (a column, for the
 dual condition).
 """
@@ -364,7 +366,8 @@ end
 # The units `xunit`, `yunit` of `model_violations`: the sizes in the model of an entry
 # 1 of each variable and of each cone dual in the scaled problem, at most 1. A variable
 # that the equality constraints express by others has the unit of that expression; a
-# variable fixed to zero has the unit zero.
+# variable fixed to zero has the unit zero. A variable of the model with bounds has at
+# most the unit that they give (see `magnitude_ranges`).
 function model_units(data::PresolveData{T,H}) where {T,H}
     post = data.post
     cap(v) = min.(v, one(H))
@@ -386,6 +389,10 @@ function model_units(data::PresolveData{T,H}) where {T,H}
             end
             xunit[p] = min(u, one(H))
         end
+    end
+    _, hi = magnitude_ranges(data.sets, data.A, data.b)
+    for j in eachindex(xunit)
+        hi[j] == typemax(Int) || (xunit[j] = min(xunit[j], _pow2(H, hi[j])))
     end
     return xunit, cap(post.row ./ post.obj)
 end

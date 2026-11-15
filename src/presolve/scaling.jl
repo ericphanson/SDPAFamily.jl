@@ -294,12 +294,115 @@ function _components(M::SparseMatrixCSC, groups::Vector{Int}, ngroups::Int)
 end
 
 """
+    variable_bounds(sets, A::SparseMatrixCSC, b) -> (lower, upper)
+
+Return bounds of the variables that follow from single rows of `A x + b ∈ sets`
+(`nothing` where there is none).
+
+The rows used are the `Nonnegatives` rows and the diagonal entries of the PSD blocks,
+which are nonnegative in the cone. A row with one coefficient is a bound of its
+variable. A row with several coefficients gives a bound for a variable if the other
+terms of the row are bounded above by the bounds found so far (the implied bounds of
+linear programming presolve; Andersen and Andersen, "Presolving in linear
+programming", 1995). The rows with several coefficients are visited in order, three
+times; bounds that need a longer chain of rows are not found.
+"""
+function variable_bounds(sets, A::SparseMatrixCSC{H}, b::Vector{H}) where {H}
+    m, n = size(A)
+    isbound = falses(m)
+    offset = 0
+    for S in sets
+        if S isa MOI.Nonnegatives
+            isbound[(offset+1):(offset+MOI.dimension(S))] .= true
+        else
+            for j in 1:MOI.side_dimension(S)
+                isbound[offset+div(j * (j + 1), 2)] = true
+            end
+        end
+        offset += MOI.dimension(S)
+    end
+    lower = Vector{Union{Nothing,H}}(nothing, n)
+    upper = Vector{Union{Nothing,H}}(nothing, n)
+    # `a x_j ≥ v`
+    function tighten!(j, a, v)
+        if a > 0
+            lower[j] = lower[j] === nothing ? v / a : max(lower[j], v / a)
+        else
+            upper[j] = upper[j] === nothing ? v / a : min(upper[j], v / a)
+        end
+    end
+    At = sparse(transpose(A))
+    cols = rowvals(At)
+    vals = nonzeros(At)
+    for pass in 1:4, i in 1:m
+        isbound[i] || continue
+        terms = [p for p in nzrange(At, i) if !iszero(vals[p])]
+        (pass == 1) == (length(terms) == 1) || continue
+        # the largest values of the terms; `unbounded` is the term without one
+        total = zero(H)
+        unbounded = 0
+        for p in terms
+            bound = vals[p] > 0 ? upper[cols[p]] : lower[cols[p]]
+            if bound === nothing
+                unbounded = unbounded == 0 ? p : -1
+            else
+                total += vals[p] * bound
+            end
+        end
+        unbounded == -1 && continue
+        for p in terms
+            if unbounded == p
+                tighten!(cols[p], vals[p], -b[i] - total)
+            elseif unbounded == 0
+                bound = vals[p] > 0 ? upper[cols[p]] : lower[cols[p]]
+                tighten!(cols[p], vals[p], -b[i] - (total - vals[p] * bound))
+            end
+        end
+    end
+    return lower, upper
+end
+
+"""
+    magnitude_ranges(sets, A::SparseMatrixCSC, b) -> (lo, hi)
+
+Return, as binary exponents, the range `2^lo[j] ≤ |x_j| ≤ 2^hi[j]` that the bounds of
+variable `j` give for its magnitude (`typemin(Int)` and `typemax(Int)` where they
+give none).
+
+With the bounds `l ≤ x_j ≤ u` of [`SDPAFamily.variable_bounds`](@ref), a variable is
+at most as large as the larger of `|l|` and `|u|`, and a variable with `l > 0` or
+`u < 0` is at least as large as that bound. A sign constraint (`x_j ≥ 0`) alone gives
+no range.
+"""
+function magnitude_ranges(sets, A::SparseMatrixCSC{H}, b::Vector{H}) where {H}
+    lower, upper = variable_bounds(sets, A, b)
+    n = size(A, 2)
+    lo = fill(typemin(Int), n)
+    hi = fill(typemax(Int), n)
+    for j in 1:n
+        l, u = lower[j], upper[j]
+        if l !== nothing && u !== nothing
+            l > u && continue
+            M = max(abs(l), abs(u))
+            iszero(M) || (hi[j] = _log2(M) + 1)
+        end
+        if l !== nothing && l > 0
+            lo[j] = _log2(l)
+        elseif u !== nothing && u < 0
+            lo[j] = _log2(-u)
+        end
+    end
+    return lo, hi
+end
+
+"""
     scaled_sdpa_model(T, pT, A, b, c, sets, crows, replacement; border = false) -> (model, scaling, (As, bs, cs))
 
 Build the scaled SDPA model of the problem `minimize c'x` subject to
 `A x + b ∈ sets`.
 
-The first scaling (`border = false`) has three steps, as in conic solvers such as SCS:
+The first scaling (`border = false`) has four steps. The first three are those of
+conic solvers such as SCS:
 
 1. `A` is equilibrated ([`SDPAFamily.equilibrate`](@ref)). The rows of a PSD block
    share one factor, so that the scaling keeps the cone.
@@ -309,21 +412,36 @@ The first scaling (`border = false`) has three steps, as in conic solvers such a
    one such `t` per component. It is chosen as the power of two that brings the
    largest absolute entry of `b` in the component to [1, 2). For a matrix with one
    component this is one factor for `b`.
-3. `c` is multiplied by the power of two that brings its largest absolute entry to
+3. The factor of each variable is moved into the range that its bounds give for its
+   magnitude ([`SDPAFamily.magnitude_ranges`](@ref)), and the rows of the variables
+   that this changes are normalized again, by the largest of their scaled
+   coefficients and constants. This is the scaling of a variable by its typical
+   value (Gill, Murray and Wright, "Practical Optimization", 1981, section 8.7),
+   with the bounds as the source of that value.
+4. `c` is multiplied by the power of two that brings its largest absolute entry to
    [1, 2).
 
-Equilibrating `A` alone does not see which rows are bounds with a right-hand side
-that matters: in `-x + 1 ≥ 0`, `-s x + 1 ≥ 0` with a tiny `s`, both coefficients
-become 1 and one of the right-hand sides becomes tiny. With `border = true`, the
-second scaling of the presolve, the matrix bordered by `b` and `c`,
+Steps 1 and 2 do not see which magnitudes matter: in `x ≥ 0`, `U - x ≥ 0`,
+`1 - s x ≥ 0` with small `U` and `s`, every choice of the unit of `x` between `U` and
+`1/s` leaves the matrix equilibrated, and step 2 selects `1/s`, where the bound `U`
+becomes `s U` and can lie below SDPA's tolerance. Step 3 selects `U`. A bound that
+is loose (larger than the unit from steps 1 and 2) changes nothing.
+
+The objective takes no part in steps 1 to 3. If a variable with a large unit has a
+cost and is near zero at the optimum, the optimal value is small compared to the
+terms of the scaled objective, and SDPA's gap tolerance does not resolve it. With
+`border = true`, the second scaling of the presolve, the matrix bordered by `b` and
+`c`,
 
     [A   b]
     [c'  0],
 
-is equilibrated instead (the data matrix of the homogeneous embedding), so that each
-row is scaled by the larger of its coefficients and its right-hand side. This scaling
-fails where the first one works (for `x - R ≥ 0`, `x ≥ 0` it gives a solution of size
-`sqrt(R)`), so it is used when the result of the first one fails its checks.
+is equilibrated instead (the data matrix of the homogeneous embedding), followed by
+step 3. Each row is then scaled by the larger of its coefficients and its right-hand
+side, and each variable by the larger of its coefficients and its cost. This
+scaling fails where the first one works (for `x1 + x2 - R ≥ 0`, `x ≥ 0` it gives a
+solution of size `sqrt(R)`), so it is used when the result of the first one fails
+its checks.
 
 The constants of the rows `crows` (rows without coefficients that hold) are replaced
 by `replacement`, which keeps the feasible set and makes the rows strictly feasible;
@@ -334,6 +452,7 @@ function scaled_sdpa_model(::Type{T}, pT, A::SparseMatrixCSC{H}, b::Vector{H}, c
                            sets, crows, replacement; border::Bool = false) where {T,H}
     n = size(A, 2)
     groups, ng = _row_groups(sets, 0)
+    lo, hi = magnitude_ranges(sets, A, b)
     if border
         bb = copy(b)
         bb[crows] .= zero(H)
@@ -342,9 +461,11 @@ function scaled_sdpa_model(::Type{T}, pT, A::SparseMatrixCSC{H}, b::Vector{H}, c
         # the factor `2^β` of the column of `b` is moved into the rows and columns:
         # `x = diag(col) x̂ / 2^β`
         β = se[n+1]
-        rows = H[_pow2(H, ge[g] + β) for g in groups]
-        cols = H[_pow2(H, e - β) for e in se[1:n]]
         σ = _pow2(H, ge[ng+1] + β)
+        ge = ge[1:ng] .+ β
+        se = se[1:n] .- β
+        _clamp_columns!(ge, se, lo, hi, A, b, groups, crows)
+        cols = H[_pow2(H, e) for e in se]
     else
         ge, se = equilibrate(A, groups, ng)
         # the exponent of the largest entry of the equilibrated `b` in each component
@@ -361,17 +482,53 @@ function scaled_sdpa_model(::Type{T}, pT, A::SparseMatrixCSC{H}, b::Vector{H}, c
         for j in eachindex(se)
             se[j] += get(bmax, ccomp[j], 0)
         end
-        rows = H[_pow2(H, ge[g]) for g in groups]
+        _clamp_columns!(ge, se, lo, hi, A, b, groups, crows)
         cols = H[_pow2(H, e) for e in se]
         cmax = maximum(abs, cols .* c; init = zero(H))
         σ = iszero(cmax) ? one(H) : _pow2(H, -_log2(cmax))
     end
+    rows = H[_pow2(H, ge[g]) for g in groups]
     bs = rows .* b
     bs[crows] .= H.(replacement)
     As = _scale(A, rows, cols)
     cs = σ .* cols .* c
     model = build_sdpa_model(T, pT, As, bs, cs, sets)
     return model, Scaling{H}(rows, cols, σ), (As, bs, cs)
+end
+
+# Moves the column exponents `se` into the ranges `lo`, `hi` (see `magnitude_ranges`),
+# and normalizes the row groups of the changed columns again: the largest absolute
+# value among the scaled coefficients and constants of the group is brought to [1, 2).
+function _clamp_columns!(ge::Vector{Int}, se::Vector{Int}, lo::Vector{Int}, hi::Vector{Int},
+                         A::SparseMatrixCSC, b::Vector, groups::Vector{Int}, crows)
+    rv = rowvals(A)
+    nz = nonzeros(A)
+    changed = falses(length(ge))
+    for j in eachindex(se)
+        e = clamp(se[j], lo[j], hi[j])
+        e == se[j] && continue
+        se[j] = e
+        for p in nzrange(A, j)
+            iszero(nz[p]) || (changed[groups[rv[p]]] = true)
+        end
+    end
+    any(changed) || return nothing
+    gmax = fill(typemin(Int), length(ge))
+    for j in eachindex(se), p in nzrange(A, j)
+        iszero(nz[p]) && continue
+        g = groups[rv[p]]
+        gmax[g] = max(gmax[g], _log2(abs(nz[p])) + se[j])
+    end
+    constant = trues(length(b))
+    constant[crows] .= false
+    for i in eachindex(b)
+        (constant[i] && !iszero(b[i])) || continue
+        gmax[groups[i]] = max(gmax[groups[i]], _log2(abs(b[i])))
+    end
+    for g in eachindex(ge)
+        changed[g] && gmax[g] != typemin(Int) && (ge[g] = -gmax[g])
+    end
+    return nothing
 end
 
 _scale(M::SparseMatrixCSC, r, c) = Diagonal(r) * M * Diagonal(c)

@@ -143,4 +143,67 @@ end
         @test abs.(cs) == [1, 1]
         @test scaling.row .* (A * (scaling.col .* [1, 1])) == As * [1, 1]
     end
+
+    @testset "bounds and magnitude ranges of the variables" begin
+        H = BigFloat
+        none, all = typemin(Int), typemax(Int)
+        # Rows `a x_j + b ≥ 0`, one variable per case:
+        # free | x ≥ 0 | x ≤ 5 | x ≥ 3 | x ≤ -3 | 0 ≤ x ≤ 2^-30 | 2^-30 ≤ x ≤ 2^30 |
+        # -8 ≤ x ≤ 1 | 4 ≤ x ≤ 4 | 0 ≤ x ≤ 0 | 2 ≤ x ≤ 1 (contradictory) |
+        # x ≤ 6 and x ≤ 2 and x ≥ 0 | 2^-40 x ≥ 0 and 2^-40 (1 - x) ≥ 0
+        t = H(2)^-40
+        rows = [(2, 1, 0), (3, -1, 5), (4, 1, -3), (5, -1, -3), (6, 1, 0), (6, -1, H(2)^-30),
+                (7, 1, -H(2)^-30), (7, -1, H(2)^30), (8, 1, 8), (8, -1, 1), (9, 1, -4), (9, -1, 4),
+                (10, 1, 0), (10, -1, 0), (11, 1, -2), (11, -1, 1), (12, -1, 6), (12, -1, 2), (12, 1, 0),
+                (13, t, 0), (13, -t, t)]
+        A = sparse(1:length(rows), [r[1] for r in rows], H[r[2] for r in rows], length(rows), 13)
+        b = H[r[3] for r in rows]
+        sets = Any[MOI.Nonnegatives(length(rows))]
+        lower, upper = SDPAFamily.variable_bounds(sets, A, b)
+        @test lower == [nothing, 0, nothing, 3, nothing, 0, H(2)^-30, -8, 4, 0, 2, 0, 0]
+        @test upper == [nothing, nothing, 5, nothing, -3, H(2)^-30, H(2)^30, 1, 4, 0, 1, 2, 1]
+        lo, hi = SDPAFamily.magnitude_ranges(sets, A, b)
+        @test lo == [none, none, none, 1, 1, none, -30, none, 2, none, none, none, none]
+        @test hi == [all, all, all, all, all, -29, 31, 4, 3, all, all, 2, 1]
+
+        # Bounds implied by rows with several variables: x1, x2 ≥ 0 and x1 + 2 x2 ≤ 8
+        # give x1 ≤ 8 and x2 ≤ 4; then x3 ≥ x1 + x2 - 20 gives x3 ≥ -20, and x3 ≤ x1
+        # gives x3 ≤ 8. x4 + x5 ≥ 1 gives nothing.
+        A = sparse(H[1 0 0 0 0; 0 1 0 0 0; -1 -2 0 0 0; -1 -1 1 0 0; 1 0 -1 0 0; 0 0 0 1 1])
+        b = H[0, 0, 8, 20, 0, -1]
+        lower, upper = SDPAFamily.variable_bounds(Any[MOI.Nonnegatives(6)], A, b)
+        @test lower == [0, 0, -20, nothing, nothing]
+        @test upper == [8, 4, 8, nothing, nothing]
+
+        # The diagonal entries of a PSD block are nonnegative: [x1 x2; x2 1 - x1] ⪰ 0
+        # gives 0 ≤ x1 ≤ 1 and nothing for x2.
+        A = sparse(H[1 0; 0 1; -1 0])
+        b = H[0, 0, 1]
+        lower, upper = SDPAFamily.variable_bounds(Any[MOI.PositiveSemidefiniteConeTriangle(2)], A, b)
+        @test lower == [0, nothing]
+        @test upper == [1, nothing]
+    end
+
+    @testset "scaling with the ranges of the variables" begin
+        H = BigFloat
+        scale(A, b, c) = SDPAFamily.scaled_sdpa_model(H, 256, sparse(H.(A)), H.(b), H.(c),
+                                                      Any[MOI.Nonnegatives(length(b))], Int[], Int[])
+        # 0 ≤ x ≤ 2^-30 next to 1 - 2^-10 x ≥ 0: equilibration and the right-hand side
+        # 1 give x the unit 2^10. The range gives the unit 2^-29, and the bound row is
+        # normalized again.
+        s, U = big(2.0)^-10, big(2.0)^-30
+        _, scaling, (As, bs, cs) = scale([1; -1; -s;;], [0, U, 1], [-1])
+        @test scaling.col == [2U]
+        @test As[1:2, 1] == [1, -1]
+        @test bs == [0, 1 / 2, 1]
+        @test abs.(cs) == [1]
+        # Of the two bounds x ≤ 2^30 and x ≤ 3, the smaller one gives the range, although
+        # the right-hand side of the other is the largest.
+        _, scaling, _ = scale([1; -1; -1;;], [0, big(2.0)^30, 3], [-1])
+        @test scaling.col == [4]
+        # A variable that is at least 2^40 has at least that unit: x1 ≥ 2^40 next to
+        # 2^50 - x2 ≥ 0 and x1 - x2 ≥ 0.
+        _, scaling, _ = scale([1 0; 0 -1; 1 -1], [-big(2.0)^40, big(2.0)^50, 0], [1, 1])
+        @test scaling.col[1] >= big(2.0)^40
+    end
 end

@@ -789,8 +789,7 @@ include("presolve_kernel.jl")
         # Equilibrating the reduced matrix alone balances the coefficient s of
         # x2 = 1 - s x1 >= 0 against the bounds of x1, and the right-hand side of
         # x1 <= 1 falls below SDPA's tolerance in the scaled problem for small s. SDPA
-        # then returns x1 far above 1. The check of the model rows rejects that point,
-        # and the second scaling gives the solution.
+        # then returns x1 far above 1. The bounds of x1 give it the unit 1.
         for s in ss
             model, optimizer = bridged_model(T; variant = var)
             x = MOI.add_variables(model, 2)
@@ -882,11 +881,10 @@ include("presolve_kernel.jl")
         end
     end
 
-    @testset "bound far from the scale that both scalings give, variant $var" for var in (:sdpa, :sdpa_gmp)
+    @testset "bound far from the scale of the other constraints, variant $var" for var in (:sdpa, :sdpa_gmp)
         # The same model with 0 <= x1 <= 1e190 and s = 1e-200 (optimum at x1 = 1e190,
-        # objective 1 - 2e-10). Both scalings give x1 a unit far below 1e190. The first
-        # result violates the bound and is rejected; with the second, SDPA reports
-        # that the problem is unbounded, which is not accepted after feasible iterates.
+        # objective 1 - 2e-10). Equilibration gives x1 a unit far below 1e190; the
+        # bounds of x1 give the unit.
         T = Float64
         model, optimizer = bridged_model(T; variant = var)
         x = MOI.add_variables(model, 2)
@@ -897,19 +895,94 @@ include("presolve_kernel.jl")
         MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
         MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x[2] - T(1e-200) * x[1])
         MOI.optimize!(model)
-        # no claim; in particular not optimal with x1 outside its bounds, and not unbounded
-        @test no_claim(MOI.get(model, MOI.TerminationStatus()))
-        var == :sdpa_gmp && @test MOI.get(model, MOI.TerminationStatus()) == MOI.NUMERICAL_ERROR
+        status = MOI.get(model, MOI.TerminationStatus())
+        @test status == MOI.OPTIMAL || (var == :sdpa && no_claim(status))
+        if status == MOI.OPTIMAL
+            @test -1e188 <= MOI.get(model, MOI.VariablePrimal(), x[1]) <= 1.01e190
+            @test MOI.get(model, MOI.ObjectiveValue()) ≈ 1 - 2e-10 atol = 10 * soltol(var, T)
+        end
     end
 
-    @testset "optimum beyond SDPA's objective bounds" begin
+    @testset "variable with a range below the tolerance, $T and $var, U = $U" for
+            (T, var) in ((Float64, :sdpa), (Float64, :sdpa_gmp), (BigFloat, :sdpa_gmp)),
+            (s, U) in ((1.0, 1e-9), (1e-3, 1e-9), (1e-12, 1e-6))
+        # s x1 + x2 == 1, 0 <= x1 <= U, x2 >= 0, min x2 - s x1, with the bounds of x1
+        # written with coefficients 1 and 1e-10: the optimum is at x1 = U. The bounds
+        # give x1 the unit U; with a unit near 1, U is below SDPA's tolerance.
+        for t in (1.0, 1e-10)
+            model, optimizer = bridged_model(T; variant = var)
+            x = MOI.add_variables(model, 2)
+            MOI.add_constraint(model, T(s) * x[1] + T(1) * x[2], MOI.EqualTo(T(1)))
+            MOI.add_constraint(model, T(t) * x[1], MOI.GreaterThan(T(0)))
+            MOI.add_constraint(model, -T(t) * x[1], MOI.GreaterThan(-T(t) * T(U)))
+            MOI.add_constraint(model, T(1) * x[2], MOI.GreaterThan(T(0)))
+            MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+            MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x[2] - T(s) * x[1])
+            MOI.optimize!(model)
+            status = MOI.get(model, MOI.TerminationStatus())
+            @test status == MOI.OPTIMAL || (var == :sdpa && no_claim(status))
+            if status == MOI.OPTIMAL
+                @test -1e-2 * U <= MOI.get(model, MOI.VariablePrimal(), x[1]) <= (1 + 1e-2) * U
+            end
+        end
+    end
+
+    @testset "small range implied by a row with two variables, $T and $var" for
+            (T, var) in ((Float64, :sdpa), (Float64, :sdpa_gmp), (BigFloat, :sdpa_gmp))
+        # x1, x2 >= 0, x1 + x2 <= 1e-9, 1 <= x3 <= 2, x1 + x3 <= 3, max x1 + x2 + x3
+        U = T(1e-9)
+        model, optimizer = bridged_model(T; variant = var)
+        x = MOI.add_variables(model, 3)
+        MOI.add_constraint(model, MOI.VectorOfVariables(x[1:2]), MOI.Nonnegatives(2))
+        MOI.add_constraint(model, T(1) * x[1] + T(1) * x[2], MOI.LessThan(U))
+        MOI.add_constraint(model, T(1) * x[3], MOI.GreaterThan(T(1)))
+        MOI.add_constraint(model, T(1) * x[3], MOI.LessThan(T(2)))
+        MOI.add_constraint(model, T(1) * x[1] + T(1) * x[3], MOI.LessThan(T(3)))
+        MOI.set(model, MOI.ObjectiveSense(), MOI.MAX_SENSE)
+        MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x[1] + T(1) * x[2] + T(1) * x[3])
+        MOI.optimize!(model)
+        status = MOI.get(model, MOI.TerminationStatus())
+        @test status == MOI.OPTIMAL || (var == :sdpa && no_claim(status))
+        if status == MOI.OPTIMAL
+            v = MOI.get(model, MOI.VariablePrimal(), x)
+            @test v[1] >= -1e-2 * U && v[2] >= -1e-2 * U && v[1] + v[2] <= (1 + 1e-2) * U
+            @test v[3] ≈ 2 atol = 10 * soltol(var, T)
+        end
+    end
+
+    @testset "bounded variable that the equality constraints eliminate or keep, $T and $var" for
+            (T, var) in ((Float64, :sdpa), (Float64, :sdpa_gmp), (BigFloat, :sdpa_gmp))
+        # x1 == 2 x2, 0 <= x1 <= 1e-9, 1 <= x3 <= 2, x2 + x3 <= 4, max x1 + x3: whichever
+        # of x1, x2 remains has a range from the bounds of x1.
+        U = T(1e-9)
+        model, optimizer = bridged_model(T; variant = var)
+        x = MOI.add_variables(model, 3)
+        MOI.add_constraint(model, T(1) * x[1] - T(2) * x[2], MOI.EqualTo(T(0)))
+        MOI.add_constraint(model, T(1) * x[1], MOI.GreaterThan(T(0)))
+        MOI.add_constraint(model, T(1) * x[1], MOI.LessThan(U))
+        MOI.add_constraint(model, T(1) * x[3], MOI.GreaterThan(T(1)))
+        MOI.add_constraint(model, T(1) * x[3], MOI.LessThan(T(2)))
+        MOI.add_constraint(model, T(1) * x[2] + T(1) * x[3], MOI.LessThan(T(4)))
+        MOI.set(model, MOI.ObjectiveSense(), MOI.MAX_SENSE)
+        MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x[1] + T(1) * x[3])
+        MOI.optimize!(model)
+        status = MOI.get(model, MOI.TerminationStatus())
+        @test status == MOI.OPTIMAL || (var == :sdpa && no_claim(status))
+        if status == MOI.OPTIMAL
+            v = MOI.get(model, MOI.VariablePrimal(), x)
+            @test -1e-2 * U <= v[1] <= (1 + 1e-2) * U
+            @test v[1] ≈ 2 * v[2] atol = 1e-2 * U
+        end
+    end
+
+    @testset "optimum beyond SDPA's objective bounds in the units of the model" begin
         # x1 >= 1, x_{i+1} >= 2 x_i, z == x1, min sum(x): the optimum is 2^n - 1. SDPA
         # reports unboundedness when an objective value passes its parameters
-        # `lowerBound`/`upperBound` (±1e5 by default), so with the defaults `:sdpa_dd`
-        # reports this feasible problem as infeasible for n = 20. With larger bounds
-        # it is solved.
+        # `lowerBound`/`upperBound` (±1e5 by default). The constraints give each x_i a
+        # lower bound, the scaling gives it that unit, and the objective of the scaled
+        # problem stays within the bounds.
         T, n = BigFloat, 20
-        model, optimizer = bridged_model(T; variant = :sdpa_dd, params = (lowerBound = -1e10, upperBound = 1e10))
+        model, optimizer = bridged_model(T; variant = :sdpa_dd)
         x = MOI.add_variables(model, n)
         z = MOI.add_variable(model)
         MOI.add_constraint(model, T(1) * z - T(1) * x[1], MOI.EqualTo(T(0)))
