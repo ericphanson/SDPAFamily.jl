@@ -65,20 +65,29 @@ using SparseArrays
 #
 # ## Scaling
 #
-# The reduced problem is scaled before it is written for SDPA, as conic solvers such as
-# SCS do (see `scaled_sdpa_model`): Ruiz equilibration of the rows and columns of the
-# matrix, then normalization of the right-hand side and of the objective. All factors
-# are powers of two. SDPA's tolerances are absolute, so they apply to the scaled
-# problem: its feasibility tolerance is relative to the equilibrated rows and
-# columns, and its gap tolerance is relative to `max(|objective|, u)`, where `u` is
-# the value in the model of an objective value of 1 in the scaled problem. Rows
-# without coefficients are constants; they are checked and replaced by strictly
-# feasible constants.
+# The reduced problem is scaled before it is written for SDPA (see
+# `scaled_sdpa_model`). All factors are powers of two. The steps are those of conic
+# solvers such as SCS, Ruiz equilibration of the rows and columns of the matrix and
+# normalization of the right-hand side and of the objective, and one more between
+# them: a variable with bounds gets a unit within the range that the bounds allow
+# for its magnitude. The bounds are the rows with one variable, and those that follow
+# from one row with several variables and the bounds of the others (the implied
+# bounds of linear programming presolve). Equilibration alone leaves the unit of such
+# a variable undetermined over a wide range, and its bounds can fall below SDPA's
+# tolerance.
 #
-# Equilibration alone does not determine which magnitudes matter, so there is a
-# second scaling, which equilibrates the matrix bordered by the right-hand side and
-# the objective. It is used if the result with the first scaling is rejected by a
-# check (see `rescaled_model!`).
+# SDPA's tolerances are absolute, so they apply to the scaled problem: its
+# feasibility tolerance is relative to the equilibrated rows and columns, and its
+# gap tolerance is relative to `max(|objective|, u)`, where `u` is the value in the
+# model of an objective value of 1 in the scaled problem. Rows without coefficients
+# are constants; they are checked and replaced by strictly feasible constants.
+#
+# The objective takes no part in the units of the variables. If the optimal value is
+# small compared to the terms of the scaled objective, SDPA's gap tolerance does not
+# resolve it. For that case there is a second scaling, which equilibrates the matrix
+# bordered by the right-hand side and the objective. It is used if the result with
+# the first scaling is rejected by a check (see `rescaled_model!`), as linear
+# programming solvers solve again when the unscaled solution violates a tolerance.
 #
 # ## Validation and fallback
 #
@@ -217,9 +226,12 @@ function presolve!(optimizer::Optimizer{T}, model::SDPAModel{T},
             # the number of nonzeros of each variable, to choose pivots with little fill-in
             pivot_cost = [length(nzrange(A, j)) + length(nzrange(data.AE, j)) for j in 1:n]
             # The pivot variables are chosen in the equilibrated model: a variable is
-            # not preferred or avoided as a pivot because of its unit.
+            # not preferred or avoided as a pivot because of its unit. The ranges that
+            # the bounds give are applied as in `scaled_sdpa_model`, so that a variable
+            # with a small range is not computed from larger ones by cancellation.
             groups, ng = _row_groups(sets, length(data.bE))
             _, colexp = equilibrate(vcat(data.AE, A), vcat(collect(1:length(data.bE)), groups), ng)
+            colexp .= clamp.(colexp, magnitude_ranges(sets, A, b)...)
             elim = _eliminate_equalities(data.AE, data.bE, tol, pivot_cost, colexp)
             elim.failed && return fallback("the equality elimination did not pass its check")
             if elim.infeasible !== nothing
