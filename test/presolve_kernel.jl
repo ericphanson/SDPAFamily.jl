@@ -146,25 +146,32 @@ end
 
     @testset "bounds and magnitude ranges of the variables" begin
         H = BigFloat
-        none, all = typemin(Int), typemax(Int)
+        nolo, nohi = typemin(Int), typemax(Int)
         # Rows `a x_j + b ≥ 0`, one variable per case:
         # free | x ≥ 0 | x ≤ 5 | x ≥ 3 | x ≤ -3 | 0 ≤ x ≤ 2^-30 | 2^-30 ≤ x ≤ 2^30 |
-        # -8 ≤ x ≤ 1 | 4 ≤ x ≤ 4 | 0 ≤ x ≤ 0 | 2 ≤ x ≤ 1 (contradictory) |
+        # -8 ≤ x ≤ 1 | 4 ≤ x ≤ 4 | 0 ≤ x ≤ 0 | 1 ≤ x ≤ 2 |
         # x ≤ 6 and x ≤ 2 and x ≥ 0 | 2^-40 x ≥ 0 and 2^-40 (1 - x) ≥ 0
         t = H(2)^-40
         rows = [(2, 1, 0), (3, -1, 5), (4, 1, -3), (5, -1, -3), (6, 1, 0), (6, -1, H(2)^-30),
                 (7, 1, -H(2)^-30), (7, -1, H(2)^30), (8, 1, 8), (8, -1, 1), (9, 1, -4), (9, -1, 4),
-                (10, 1, 0), (10, -1, 0), (11, 1, -2), (11, -1, 1), (12, -1, 6), (12, -1, 2), (12, 1, 0),
+                (10, 1, 0), (10, -1, 0), (11, 1, -1), (11, -1, 2), (12, -1, 6), (12, -1, 2), (12, 1, 0),
                 (13, t, 0), (13, -t, t)]
         A = sparse(1:length(rows), [r[1] for r in rows], H[r[2] for r in rows], length(rows), 13)
         b = H[r[3] for r in rows]
         sets = Any[MOI.Nonnegatives(length(rows))]
+        # A bound is moved outward by a bound on its rounding error, so it is not
+        # compared exactly, and a bound that is a power of two is in the binade below.
+        same(x, y) = (x === nothing) == (y === nothing) && (x === nothing || isapprox(x, y; atol = 1e-60, rtol = 1e-60))
         lower, upper = SDPAFamily.variable_bounds(sets, A, b)
-        @test lower == [nothing, 0, nothing, 3, nothing, 0, H(2)^-30, -8, 4, 0, 2, 0, 0]
-        @test upper == [nothing, nothing, 5, nothing, -3, H(2)^-30, H(2)^30, 1, 4, 0, 1, 2, 1]
+        @test all(same.(lower, [nothing, 0, nothing, 3, nothing, 0, H(2)^-30, -8, 4, 0, 1, 0, 0]))
+        @test all(same.(upper, [nothing, nothing, 5, nothing, -3, H(2)^-30, H(2)^30, 1, 4, 0, 2, 2, 1]))
+        @test lower[9] <= 4 <= upper[9] && lower[10] == 0 == upper[10]
         lo, hi = SDPAFamily.magnitude_ranges(sets, A, b)
-        @test lo == [none, none, none, 1, 1, none, -30, none, 2, none, none, none, none]
-        @test hi == [all, all, all, all, all, -29, 31, 4, 3, all, all, 2, 1]
+        @test lo == [nolo, nolo, nolo, 1, 1, nolo, -31, nolo, 1, nolo, -1, nolo, nolo]
+        @test hi == [nohi, nohi, nohi, nohi, nohi, -29, 31, 4, 3, nohi, 2, 2, 1]
+        # contradictory bounds of one variable (2 ≤ x1 ≤ 1): no ranges at all
+        lo, hi = SDPAFamily.magnitude_ranges(Any[MOI.Nonnegatives(4)], sparse(H[1 0; -1 0; 0 1; 0 -1]), H[-2, 1, 0, 3])
+        @test lo == [nolo, nolo] && hi == [nohi, nohi]
 
         # Bounds implied by rows with several variables: x1, x2 ≥ 0 and x1 + 2 x2 ≤ 8
         # give x1 ≤ 8 and x2 ≤ 4; then x3 ≥ x1 + x2 - 20 gives x3 ≥ -20, and x3 ≤ x1
@@ -172,16 +179,59 @@ end
         A = sparse(H[1 0 0 0 0; 0 1 0 0 0; -1 -2 0 0 0; -1 -1 1 0 0; 1 0 -1 0 0; 0 0 0 1 1])
         b = H[0, 0, 8, 20, 0, -1]
         lower, upper = SDPAFamily.variable_bounds(Any[MOI.Nonnegatives(6)], A, b)
-        @test lower == [0, 0, -20, nothing, nothing]
-        @test upper == [8, 4, 8, nothing, nothing]
+        @test all(same.(lower, [0, 0, -20, nothing, nothing]))
+        @test all(same.(upper, [8, 4, 8, nothing, nothing]))
+
+        # The bounds do not depend on the order of the rows: the chain x5 ≤ 2^-30,
+        # x_i ≤ x_{i+1}, x ≥ 0, with the rows of the chain from the first to the last
+        # and from the last to the first.
+        chain = vcat([[j == i ? -1 : j == i + 1 ? 1 : 0 for j in 1:5] for i in 1:4], [[0, 0, 0, 0, -1]])
+        for rows in (chain, reverse(chain))
+            A = sparse(H.(vcat(permutedims.(rows)..., Matrix(I, 5, 5))))
+            b = H[iszero(r[1:4]) ? H(2)^-30 : 0 for r in rows]
+            lower, upper = SDPAFamily.variable_bounds(Any[MOI.Nonnegatives(10)], A, vcat(b, zeros(H, 5)))
+            @test all(l -> -1e-60 <= l <= 0, lower)
+            @test all(u -> H(2)^-30 <= u <= H(2)^-29, upper)
+        end
+        # A cycle whose bounds improve forever stops at the limit on the row visits:
+        # x1 ≤ x2 / 2, x2 ≤ x1 / 2, 0 ≤ x ≤ 1.
+        A = sparse(H[1 0; 0 1; -1 0; 0 -1; -2 1; 1 -2])
+        lower, upper = SDPAFamily.variable_bounds(Any[MOI.Nonnegatives(6)], A, H[0, 0, 1, 1, 0, 0])
+        @test all(l -> -1e-60 <= l <= 0, lower) && all(u -> 0 <= u <= 1, upper)
+
+        # Every bound holds at a feasible point x0, also when it is tight there:
+        # random rows with A x0 + b in the cone, half of them active at x0.
+        rng = Random.MersenneTwister(8)
+        for T in (BigFloat, Rational{BigInt})
+            valid = true
+            for _ in 1:300
+                n = rand(rng, 1:6)
+                gen() = T(rand(rng, -7:7)) * T(2)^rand(rng, -30:30)
+                x0 = [rand(rng) < 0.3 ? zero(T) : gen() for _ in 1:n]
+                m = rand(rng, 1:10)
+                A = [rand(rng) < 0.5 ? zero(T) : gen() for _ in 1:m, _ in 1:n]
+                b = -A * x0 .+ [rand(rng) < 0.5 ? zero(T) : abs(gen()) for _ in 1:m]
+                sets = Any[MOI.Nonnegatives(m)]
+                lower, upper = SDPAFamily.variable_bounds(sets, sparse(A), b)
+                lo, hi = SDPAFamily.magnitude_ranges(sets, sparse(A), b)
+                valid &= all(lower[j] === nothing || lower[j] <= x0[j] for j in 1:n)
+                valid &= all(upper[j] === nothing || upper[j] >= x0[j] for j in 1:n)
+                valid &= all(lo[j] == nolo || abs(x0[j]) >= T(2)^lo[j] for j in 1:n)
+                valid &= all(hi[j] == nohi || abs(x0[j]) <= T(2)^hi[j] for j in 1:n)
+            end
+            @test valid
+        end
+        # the exponent of a rational number is exact
+        @test SDPAFamily._log2.([1 // 1, 3 // 2, 2 // 1, 1 // 2, 3 // 4, 1 // 3, 7 // 8, 9 // 8, 1023 // 1024]) ==
+              [0, 0, 1, -1, -1, -2, -1, 0, -1]
 
         # The diagonal entries of a PSD block are nonnegative: [x1 x2; x2 1 - x1] ⪰ 0
         # gives 0 ≤ x1 ≤ 1 and nothing for x2.
         A = sparse(H[1 0; 0 1; -1 0])
         b = H[0, 0, 1]
         lower, upper = SDPAFamily.variable_bounds(Any[MOI.PositiveSemidefiniteConeTriangle(2)], A, b)
-        @test lower == [0, nothing]
-        @test upper == [1, nothing]
+        @test all(same.(lower, [0, nothing]))
+        @test all(same.(upper, [1, nothing]))
     end
 
     @testset "scaling with the ranges of the variables" begin

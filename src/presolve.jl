@@ -71,8 +71,8 @@ using SparseArrays
 # normalization of the right-hand side and of the objective, and one more between
 # them: a variable with bounds gets a unit within the range that the bounds allow
 # for its magnitude. The bounds are the rows with one variable, and those that follow
-# from one row with several variables and the bounds of the others (the implied
-# bounds of linear programming presolve). Equilibration alone leaves the unit of such
+# from a row with several variables and the bounds of the others (the bound
+# propagation of linear programming presolve). Equilibration alone leaves the unit of such
 # a variable undetermined over a wide range, and its bounds can fall below SDPA's
 # tolerance.
 #

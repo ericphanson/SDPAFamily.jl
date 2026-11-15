@@ -950,6 +950,33 @@ include("presolve_kernel.jl")
         end
     end
 
+    @testset "small range implied by a chain of rows, $T and $var, reversed $rev" for
+            (T, var) in ((Float64, :sdpa), (Float64, :sdpa_gmp), (BigFloat, :sdpa_gmp)), rev in (false, true)
+        # x1 <= x2 <= x3 <= x4 <= x5 <= 1e-9, x >= 0, 1 <= y <= 2, x1 + y <= 3,
+        # max x1 + y: all x_i are at most 1e-9, in whatever order the rows are given.
+        U = T(1e-9)
+        model, optimizer = bridged_model(T; variant = var)
+        x = MOI.add_variables(model, 5)
+        y = MOI.add_variable(model)
+        chain = Any[() -> MOI.add_constraint(model, T(1) * x[i+1] - T(1) * x[i], MOI.GreaterThan(T(0))) for i in 1:4]
+        push!(chain, () -> MOI.add_constraint(model, T(1) * x[5], MOI.LessThan(U)))
+        foreach(add -> add(), rev ? reverse(chain) : chain)
+        MOI.add_constraint(model, MOI.VectorOfVariables(x), MOI.Nonnegatives(5))
+        MOI.add_constraint(model, T(1) * y, MOI.GreaterThan(T(1)))
+        MOI.add_constraint(model, T(1) * y, MOI.LessThan(T(2)))
+        MOI.add_constraint(model, T(1) * x[1] + T(1) * y, MOI.LessThan(T(3)))
+        MOI.set(model, MOI.ObjectiveSense(), MOI.MAX_SENSE)
+        MOI.set(model, MOI.ObjectiveFunction{MOI.ScalarAffineFunction{T}}(), T(1) * x[1] + T(1) * y)
+        MOI.optimize!(model)
+        status = MOI.get(model, MOI.TerminationStatus())
+        @test status == MOI.OPTIMAL || (var == :sdpa && no_claim(status))
+        if status == MOI.OPTIMAL
+            v = MOI.get(model, MOI.VariablePrimal(), x)
+            @test all(-1e-2 * U .<= v .<= (1 + 1e-2) * U)
+            @test all(v[i+1] - v[i] >= -1e-2 * U for i in 1:4)
+        end
+    end
+
     @testset "bounded variable that the equality constraints eliminate or keep, $T and $var" for
             (T, var) in ((Float64, :sdpa), (Float64, :sdpa_gmp), (BigFloat, :sdpa_gmp))
         # x1 == 2 x2, 0 <= x1 <= 1e-9, 1 <= x3 <= 2, x2 + x3 <= 4, max x1 + x3: whichever
