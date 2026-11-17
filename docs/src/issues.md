@@ -35,25 +35,18 @@ parameters. See [Choice of parameters](@ref).
 ## Presolve
 
 The usefulness of our `presolve` routine is demonstrated in [Using
-presolve](@ref). However, our `presolve` subroutine simply uses naïve Gaussian
-elimination and has its limitations. At its core, the `reduce!` method takes in
-a sparse matrix where each row is a linearized constraint matrix and apply
-Gaussian elimination with pivoting to identify the linear independence. This
-process is not numerically stable, and we cannot guarantee that all linear
-dependent entries will be identified.
+presolve](@ref). However, our `presolve` subroutine uses Gaussian
+elimination and has its limitations. At its core, it applies
+Gaussian elimination with pivoting, in extended precision, to the equality
+constraints and to the remaining constraint matrix to identify linear
+dependence. Constraints which are only approximately dependent, for example
+because the problem data were rounded, are not removed unless `presolve_tol` is
+set (see [Usage](@ref)).
 
-This is demonstrated in the following example. We explicitly construct a matrix
-with linearly dependent rows. However, due to its numerical instability, we can
-only identify a subset of them.
-
-```@repl convex
-M = sprand(100, 20000, 0.03);
-λ = rand();
-M[1, :] = λ*M[3, :] + (1-λ)*M[7, :];
-rows = Set(rowvals(SDPAFamily.reduce!(M)[:, 1:end-1]));
-redundant = collect(setdiff!(Set(1:10), rows));
-@test length(redundant) >= 1
-```
+The solvers' tolerances are absolute and apply to a rescaled problem. So a
+quantity that is tiny compared to the rest of the problem, such as a bound
+`x <= 1e-9` that we cannot relate to the scale of `x`, may be violated in a
+solution reported as optimal when the solution is represented in `Float64`.
 
 ## Choice of parameters
 
@@ -86,14 +79,13 @@ end
 Due to the above reasons, we have modified the default settings for the
 following tests from `Convex.jl`'s `Problem Depot'.
 
-| Solver      | Underflow                                         | Need to use `params = SDPAFamily.UNSTABLE_BUT_FAST`                          | Presolve disabled due to long runtime                  |
-| :---------- | :------------------------------------------------ | :----------------------------------------------------------- | :----------------------------------------------------- |
-| `:sdpa_dd`  | `affine_Partial_transpose`                        | `affine_Partial_transpose` `lp_pos_atom` `lp_neg_atom` `sdp_matrix_frac_atom` `lp_dotsort_atom` | `affine_Partial_transpose` `lp_min_atom` `lp_max_atom` |
-| `:sdpa_qd`  | `affine_Partial_transpose` `affine_Diagonal_atom` | `affine_Partial_transpose` `affine_Diagonal_atom`            | `affine_Partial_transpose` `lp_min_atom` `lp_max_atom` |
-| `:sdpa_gmp` | `affine_Partial_transpose`                        | `affine_Partial_transpose`                                   | `affine_Partial_transpose` `lp_min_atom` `lp_max_atom` |
+| Solver      | Underflow                                         | Need to use `params = SDPAFamily.UNSTABLE_BUT_FAST`                          |
+| :---------- | :------------------------------------------------ | :----------------------------------------------------------- |
+| `:sdpa_dd`  | `affine_Partial_transpose`                        | `affine_Partial_transpose` `lp_pos_atom` `lp_neg_atom` `sdp_matrix_frac_atom` `lp_dotsort_atom` |
+| `:sdpa_qd`  | `affine_Partial_transpose` `affine_Diagonal_atom` | `affine_Partial_transpose` `affine_Diagonal_atom`            |
+| `:sdpa_gmp` | `affine_Partial_transpose`                        | `affine_Partial_transpose`                                   |
 
-In addition, we have excluded `lp_dotsort_atom` and `lp_pos_atom` when testing
-`:sdpa` due to imprecise solutions using default parameters. We have also
+In addition, we have
 excluded all second-order cone problems when using `BigFloat` or `Double64`
 numeric types, due to
 [MathOptInterface.jl#876](https://github.com/JuliaOpt/MathOptInterface.jl/issues/876),
@@ -110,7 +102,7 @@ following troubleshoot steps.
 1. Set `silent=false` and look for warnings and error messages. If necessary,
    check the output file. Its path is printed by the solver output and can also
    be retrieved via `Optimizer.tempdir`.
-2. Set `presolve=true` to remove redundant constraints. Typically, redundant
+2. Make sure `presolve=true` (the default) to remove redundant constraints. Typically, redundant
    constraints are indicated by a premature `cholesky miss` error as shown
    above.
 3. Use `BigFloat` (the default) or `Double64` (from the

@@ -110,22 +110,8 @@ evaluate(E₁)
 evaluate(E₂)
 ```
 
-Note that this is an example where the presolve routine is essential to getting
-good results:
-
-```@repl 1
-for variant in (:sdpa, :sdpa_dd, :sdpa_qd, :sdpa_gmp)
-    solve!(problem, () -> SDPAFamily.Optimizer(silent = true, presolve = false, variant = variant))
-    error = abs(problem.optval - p_guess)
-    print("$variant solved the problem with an absolute error of ")
-    @printf("%.2e.\n", error)
-end
-```
-
-We can see that without the presolve routine, we have only recovered the true
-solution up to errors of size $\sim 10^{-1}$ for `:sdpa` variant. All other
-variants have failed to produce a result due to redundant constraints and
-returned with default value 0.
+See [Using presolve](@ref) for an example where the presolve routine is
+essential to getting good results.
 
 This problem is revisited at very high precision in [Changing parameters & solving at very high precision](@ref).
 
@@ -228,7 +214,7 @@ function relaxed_pop(r::Int, T)
 end
 
 p1 = relaxed_pop(5, Float64);
-solve!(p1, () -> SCS.Optimizer(max_iters = 10000, verbose = 0));
+solve!(p1, Convex.MOI.OptimizerWithAttributes(SCS.Optimizer, "max_iters" => 10000, "verbose" => 0));
 p2 = relaxed_pop(5, BigFloat);
 solve!(p2, () -> SDPAFamily.Optimizer(presolve = true, verbose = SDPAFamily.SILENT,
             params = ( epsilonStar = 1e-90,

@@ -1,5 +1,16 @@
 export read_results!
 
+# `parse(T, str)`, except that a number outside the range of `T` gives an infinity or
+# zero instead of an error (SDPA-GMP prints numbers such as `1e+8366`). A string that
+# is not a number still throws.
+function parse_number(::Type{T}, str::AbstractString) where {T}
+    try
+        return parse(T, str)
+    catch
+        return T(parse(BigFloat, str))
+    end
+end
+
 """
     read_results!(optimizer::Optimizer{T}, filepath::String, redundant_entries::Vector)
 
@@ -68,9 +79,9 @@ function read_results!(
             while !startswith(line, "}")
                 xMatstring = remove_brackets!(line)
                 if endswith(xMatstring, ",")
-                    append!(xMatvec, parse.(T, split(xMatstring[1:end-1], ",")))
+                    append!(xMatvec, parse_number.(T, split(xMatstring[1:end-1], ",")))
                 else
-                    append!(xMatvec, parse.(T, split(xMatstring, ",")))
+                    append!(xMatvec, parse_number.(T, split(xMatstring, ",")))
                 end
                 line = getnextline(io)
             end
@@ -80,9 +91,9 @@ function read_results!(
             while !startswith(line, "}")
                 yMatstring = remove_brackets!(line)
                 if endswith(yMatstring, ",")
-                    append!(yMatvec, parse.(T, split(yMatstring[1:end-1], ",")))
+                    append!(yMatvec, parse_number.(T, split(yMatstring[1:end-1], ",")))
                 else
-                    append!(yMatvec, parse.(T, split(yMatstring, ",")))
+                    append!(yMatvec, parse_number.(T, split(yMatstring, ",")))
                 end
                 line = getnextline(io)
             end
@@ -93,9 +104,12 @@ function read_results!(
     #end
     xVecstring = remove_brackets!(xVecstring)
     xVecstring = split(xVecstring, ",")
-    xVec = parse.(T, xVecstring)
-    optimizer.dualobj = parse(T, objValPrimalstring)
-    optimizer.primalobj = parse(T, objValDualstring)
+    xVec = parse_number.(T, xVecstring)
+    # The variables of the MOI model are SDPA's `xVec`, so SDPA's primal objective
+    # `objValPrimal = c'x` is the primal objective of the MOI model, and
+    # `objValDual = F_0 • Y` is its dual objective.
+    optimizer.primalobj = parse_number(T, objValPrimalstring)
+    optimizer.dualobj = parse_number(T, objValDualstring)
     for i in redundant_entries
         splice!(xVec, i:i-1, zero(T))
     end
@@ -140,76 +154,4 @@ function read_results!(
     optimizer.X = yMatbm
     optimizer.Z = xMatbm
 
-end
-
-"""
-    inputElement(optimizer::Optimizer, constr_number::Int, blk::Int, i::Int, j::Int, value::T) where T
-
-Stores the constraint data in `optimizer.elemdata` as a vector of tuples. Each tuple corresponds to one line in the SDPA-formatted input file.
-"""
-function inputElement(
-    optimizer::Optimizer,
-    constr_number::Int,
-    blk::Int,
-    i::Int,
-    j::Int,
-    value::T
-) where T
-    push!(optimizer.elemdata, (constr_number, blk, i, j, value))
-end
-
-"""
-    initializeSolve(optimizer::Optimizer)
-
-Writes problem data into an SDPA-formatted file named `input.dat-s`. `presolve.jl` routine is applied as indicated by `optimizer.presolve`.
-
-Returns a vector of indices for redundant constraints, which are omitted from the input file.
-"""
-function initializeSolve(optimizer::Optimizer)
-    if !optimizer.presolve
-        filename = joinpath(optimizer.tempdir, "input.dat-s")
-        file = open(filename, "w") do io
-            nconstrs = length(optimizer.b)
-            nblocks = length(optimizer.blockdims)
-            println(io, nconstrs)
-            println(io, nblocks)
-            writedlm(io, optimizer.blockdims', " ")
-            writedlm(io, optimizer.b', " ")
-            for line in optimizer.elemdata
-                for i in line
-                    print(io, i)
-                    print(io, " ")
-                end
-                println(io)
-            end
-        end
-        return []
-    else
-        redundant_F = presolve(optimizer)
-        if optimizer.phasevalue != :pFEAS_dINF
-            reduced = joinpath(optimizer.tempdir, "input.dat-s")
-            file = open(reduced, "w") do io
-                nconstrs = length(optimizer.b) - length(redundant_F)
-                nblocks = length(optimizer.blockdims)
-                println(io, nconstrs)
-                println(io, nblocks)
-                writedlm(io, optimizer.blockdims', " ")
-                cVec = deleteat!(copy(optimizer.b), redundant_F)
-                writedlm(io, cVec', " ")
-                for entry in optimizer.elemdata
-                    constr_index, blk, i, j, value = entry
-                    if !in(constr_index, redundant_F)
-                        constr_index = constr_index -
-                                       count(x -> x < constr_index, redundant_F)
-                        for i in (constr_index, blk, i, j, value)
-                            print(io, i)
-                            print(io, " ")
-                        end
-                        println(io)
-                    end
-                end
-            end
-        end
-        return redundant_F
-    end
 end

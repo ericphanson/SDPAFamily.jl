@@ -12,12 +12,19 @@ The main object of interest supplied by this package is
   `silent=true`), `SDPAFamily.WARN` (which is the default), or
   `SDPAFamily.VERBOSE`, which prints all output from the binary as well as
   additional warnings.
-* `presolve`: whether or not to run a presolve routine to remove linearly
-  dependent constraints. See below for more details. Defaults to `false`. Note,
+* `presolve`: whether or not to run a presolve routine to eliminate equality
+  constraints and remove linearly dependent constraints. See below for more
+  details. Defaults to `true`. Note,
   `presolve=true` is required to pass many of the tests for this package;
   linearly independent constraints are an assumption of the SDPA-family, but
   constraints generated from high level modelling languages often do have linear
   dependence between them.
+* `presolve_tol`: how exactly a constraint must be a combination of others for
+  the presolve to treat it as redundant, relative to the sizes of the
+  coefficients. Defaults to `64 * eps(T)`; smaller values have no effect. The
+  problem data are taken as exact numbers of type `T`, so if e.g. `Float64` data
+  are used in a `BigFloat` model, `presolve_tol = 64 * eps(Float64)` may be
+  needed for redundant constraints to be detected.
 * `binary_path`: a string representing a path to the SDPA-GMP binary to use. The
   default is chosen at `build` time. To change the default binaries, see [Custom
   binary](@ref).
@@ -57,50 +64,58 @@ parametrised by the same number type, i.e. `Float64` in this case.
 ## Using presolve
 
 SDPA-GMP will emit `cholesky miss condition :: not positive definite` error when
-the problem data contain linearly dependent constraints. Set `presolve=true` to
-use a presolve routine which tries to detect such constraints by Gaussian
-elimination. The redundant constraints are omitted from the problem formulation
+the problem data contain linearly dependent constraints. By default
+(`presolve=true`), we use a presolve routine which detects such constraints by
+Gaussian elimination, and which also uses the equality constraints to eliminate
+variables. The redundant constraints are omitted from the problem formulation
 and the corresponding redundant decision variables are set to 0 in the final
 result. The time taken to perform the presolve step depends on the size of the
-problem. This process is numerically unstable, so is disabled by default. It
-does help quite a lot with some problems, however.
+problem. The elimination is done in extended precision, and the solution
+returned by the solver is checked against the original problem.
 
-```@setup convexquantum
-using SDPAFamily, Test, Convex
-ρ₁ = Complex{BigFloat}[1 0; 0 0]
-ρ₂ = (1//2)*Complex{BigFloat}[1 -im; im 1]
-E₁ = ComplexVariable(2, 2);
-E₂ = ComplexVariable(2, 2);
-problem = maximize( real((1//2)*tr(ρ₁*E₁) + (1//2)*tr(ρ₂*E₂)),
-                    [E₁ ⪰ 0, E₂ ⪰ 0, E₁ + E₂ == Diagonal(ones(2))];
-                    numeric_type = BigFloat );
-opt = () -> SDPAFamily.Optimizer(presolve = true, variant = :sdpa_gmp, silent = true);
+If that check fails, the termination status is `NUMERICAL_ERROR`; this usually
+means the problem is badly scaled, since the tolerances of the SDPA solvers are
+absolute. If the solver stops at its iteration limit with feasible points whose
+objective values do not agree, the status is `ITERATION_LIMIT`. If the presolve
+cannot confirm its own reduction, it emits a warning and passes the problem to
+the solver without the reduction, as with `presolve=false`.
+
+```@setup presolve
+using SDPAFamily, Test, Convex, LinearAlgebra
 ```
 
-We demonstrate `presolve` using the problem defined in [Optimal guessing
-probability for a pair of quantum states](@ref). When `presolve` is disabled,
+We demonstrate `presolve` using a small problem in which a matrix variable `A`
+only enters through its symmetric part `A + A'`. The optimal value is 1. When
+`presolve` is disabled,
 SDPA solvers will terminate prematurely due to linear dependence in the input
 constraints. Note, however, that this does not necessarily happen. Empirically,
 for our test cases, solvers' intolerance to redundant constraints increases from
 `:sdpa` to `:sdpa_gmp`.
 
-```@repl convexquantum
+```@repl presolve
+A = Variable(2, 2);
+problem = minimize(tr(A), [A + A' ⪰ Diagonal(ones(2))]; numeric_type = BigFloat);
 solve!(problem, () -> SDPAFamily.Optimizer(presolve = false))
 ```
 
-Applying presolve helps by removing 8 redundant constraints from the final input
+Applying presolve helps by removing the redundant variable from the final input
 file.
 
-```@repl convexquantum
+```@repl presolve
 solve!(problem, () -> SDPAFamily.Optimizer(presolve = true))
-@test problem.optval ≈ 1//2 + 1/(2*sqrt(big(2))) atol=1e-30
+@test problem.optval ≈ 1 atol=1e-30
 ```
 
 We see we have recovered the true answer to a tolerance of $10^{-30}$.
 
 ## Changing parameters & solving at very high precision
 
-Continuing the above example, we can also increase the precision by changing the default parameters:
+```@setup convexquantum
+using SDPAFamily, Test, Convex
+```
+
+Returning to the problem defined in [Optimal guessing probability for a pair of
+quantum states](@ref), we can also increase the precision by changing the default parameters:
 
 ```@repl convexquantum
 opt = () -> SDPAFamily.Optimizer(

@@ -27,7 +27,6 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.6'
           # BinaryProvider cannot be installed on Julia 1.11 and later.
           - '1.10'
         os:
