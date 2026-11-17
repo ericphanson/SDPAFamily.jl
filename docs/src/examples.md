@@ -12,7 +12,7 @@ using SDPAFamily, LinearAlgebra
 using Convex
 y = Semidefinite(3)
 p = maximize(eigmin(y), tr(y) <= 5; numeric_type = BigFloat)
-solve!(p, () -> SDPAFamily.Optimizer())
+solve!(p, () -> SDPAFamily.Optimizer(presolve=true))
 p.optval
 ```
 
@@ -90,7 +90,7 @@ problem = maximize( real((1//2)*tr(ρ₁*E₁) + (1//2)*tr(ρ₂*E₂)),
                     numeric_type = BigFloat );
 p_guess = 1//2 + 1/(2*sqrt(big(2)))
 for variant in (:sdpa, :sdpa_dd, :sdpa_qd, :sdpa_gmp)
-    solve!(problem, () -> SDPAFamily.Optimizer(silent = true, variant = variant))
+    solve!(problem, () -> SDPAFamily.Optimizer(silent = true, presolve = true, variant = variant))
     error = abs(problem.optval - p_guess)
     print("$variant solved the problem with an absolute error of ")
     @printf("%.2e.\n", error)
@@ -110,10 +110,9 @@ evaluate(E₁)
 evaluate(E₂)
 ```
 
-In this problem, the presolve eliminates the variables that the equality
-constraint `E₁ + E₂ == Diagonal(ones(2))` determines. With the current versions
-of Convex.jl and MathOptInterface, the problem is also solved accurately without
-the presolve:
+With earlier versions of Convex.jl and MathOptInterface, this was an example
+where the presolve routine was essential to getting good results. With current
+versions, the problem is also solved without it:
 
 ```@repl 1
 for variant in (:sdpa, :sdpa_dd, :sdpa_qd, :sdpa_gmp)
@@ -123,9 +122,6 @@ for variant in (:sdpa, :sdpa_dd, :sdpa_qd, :sdpa_gmp)
     @printf("%.2e.\n", error)
 end
 ```
-
-See [Presolve](@ref) for an example in which the solvers fail without the
-presolve.
 
 This problem is revisited at very high precision in [Changing parameters & solving at very high precision](@ref).
 
@@ -228,14 +224,9 @@ function relaxed_pop(r::Int, T)
 end
 
 p1 = relaxed_pop(5, Float64);
-solve!(p1, () -> begin
-    scs = SCS.Optimizer()
-    SDPAFamily.MOI.set(scs, SDPAFamily.MOI.RawOptimizerAttribute("max_iters"), 10000)
-    SDPAFamily.MOI.set(scs, SDPAFamily.MOI.Silent(), true)
-    scs
-end);
+solve!(p1, Convex.MOI.OptimizerWithAttributes(SCS.Optimizer, "max_iters" => 10000, "verbose" => 0));
 p2 = relaxed_pop(5, BigFloat);
-solve!(p2, () -> SDPAFamily.Optimizer(verbose = SDPAFamily.SILENT,
+solve!(p2, () -> SDPAFamily.Optimizer(presolve = true, verbose = SDPAFamily.SILENT,
             params = ( epsilonStar = 1e-90,
                        epsilonDash = 1e-90,
                        precision = 5000,
