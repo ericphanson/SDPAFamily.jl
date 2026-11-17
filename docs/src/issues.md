@@ -32,64 +32,21 @@ We try to automatically detect underflows and warn against them; in this case,
 the warning is issued. Sometimes this can be avoided by choosing a better set of
 parameters. See [Choice of parameters](@ref).
 
-## Limitations of the presolve
+## Presolve
 
-The [Presolve](@ref) checks every result against the model and reports
-`NUMERICAL_ERROR` when a check fails. The cases below are where that happens, or
-where a result can be misleading.
+The usefulness of our `presolve` routine is demonstrated in [Using
+presolve](@ref). However, our `presolve` subroutine uses Gaussian
+elimination and has its limitations. At its core, it applies
+Gaussian elimination with pivoting, in extended precision, to the equality
+constraints and to the remaining constraint matrix to identify linear
+dependence. Constraints which are only approximately dependent, for example
+because the problem data were rounded, are not removed unless `presolve_tol` is
+set (see [Usage](@ref)).
 
-* If the variables or constraints of a model are in very different units, the
-  result can be `NUMERICAL_ERROR`. SDPA's tolerances are absolute. The presolve
-  rescales the problem so that coefficients are near 1, but it cannot always
-  tell which of two very different magnitudes in one constraint matters. In
-  tests with random problems whose variables were scaled by factors between
-  `1e-6` and `1e6` and whose constraints were scaled by factors between `1e-12`
-  and `1e12`, about 2% of the feasible problems ended this way with
-  `variant = :sdpa` (tolerance `1e-7`) and none with `:sdpa_dd`, `:sdpa_qd` and
-  `:sdpa_gmp`. With factors of `1e±30` a few statuses were wrong for all
-  variants. Choose units so that variables and constraints have comparable
-  sizes.
-* A variable that is small in the units of the model, such as `0 <= x <= 1e-9`,
-  is solved relative to its bounds if the presolve finds them. It finds bounds
-  written as constraints on one variable, and bounds that follow from a linear
-  inequality and the bounds of its other variables (`x1 + x2 <= 1e-9` with
-  `x1 >= 0` and `x2 >= 0`). Otherwise values are accurate to SDPA's absolute
-  tolerance only: the status can be `NUMERICAL_ERROR`, or a result reported as
-  `OPTIMAL` can violate a small bound by a large factor of that bound. This
-  remains the case for a small range that follows only from a matrix constraint,
-  for variables that inequalities force to zero (`x >= 0` together with
-  `x <= 0`, directly or through other constraints) and variables whose bounds
-  depend on them, for a variable whose bounds
-  differ by many orders of magnitude, such as `1e-9 <= x <= 1e9` (the smaller
-  bound is resolved relative to the larger one), and for entries of very
-  different sizes in one matrix constraint, which is rescaled by a single
-  factor. `presolve = false` does not rescale at all.
-* If the constraints of a model contradict each other by less than SDPA's
-  tolerance, relative to the sizes of the terms in those constraints, the model
-  is reported as `OPTIMAL`.
-* If the optimal value is very large compared to the data, a feasible and
-  bounded model can be reported as `INFEASIBLE` or `DUAL_INFEASIBLE`. SDPA
-  reports a problem as unbounded when an objective value passes its parameters
-  `lowerBound` or `upperBound`, which are `-1e5` and `1e5` by default. The
-  presolve rescales the objective, so this depends on the rescaled problem. An
-  example is the chain `x[1] >= 1`, `x[i+1] >= 2 x[i]` for 20 variables with
-  objective `sum(x)`, whose optimal value is about `1e6`: with `:sdpa_dd` it is
-  solved with the presolve and reported as `INFEASIBLE_OR_UNBOUNDED` with `presolve = false`.
-  If a model is affected, set larger bounds, for example
-  `params = (lowerBound = -1e10, upperBound = 1e10)`.
-* A constraint that follows from others only approximately, with an error above
-  `presolve_tol`, is kept. The reduced problem is then ill-conditioned, and the
-  result can fail the checks. If the data were rounded to a coarser type than
-  `T`, set `presolve_tol` (see [Options](@ref)).
-* A coefficient that is a rounding error of the data, such as `1e-17` where the
-  model means zero, is a coefficient like any other.
-* If a value of the solution is larger than the largest number of type `T`
-  (about `1.8e308` for `Float64`), the status is `NUMERICAL_ERROR`.
-* The time of the presolve grows with the cube of the number of dense equality
-  constraints (see [Cost](@ref)).
-
-With `presolve = false`, the model is passed to SDPA unchanged. An
-`INFEASIBILITY_CERTIFICATE` is then SDPA's last iterate and is not checked.
+The solvers' tolerances are absolute and apply to a rescaled problem. So a
+quantity that is tiny compared to the rest of the problem, such as a bound
+`x <= 1e-9` that we cannot relate to the scale of `x`, may be violated in a
+solution reported as optimal when the solution is represented in `Float64`.
 
 ## Choice of parameters
 
@@ -128,8 +85,7 @@ following tests from `Convex.jl`'s `Problem Depot'.
 | `:sdpa_qd`  | `affine_Partial_transpose` `affine_Diagonal_atom` | `affine_Partial_transpose` `affine_Diagonal_atom`            |
 | `:sdpa_gmp` | `affine_Partial_transpose`                        | `affine_Partial_transpose`                                   |
 
-In addition, we have excluded `lp_dotsort_atom` and `lp_pos_atom` when testing
-`:sdpa` due to imprecise solutions using default parameters. We have also
+In addition, we have
 excluded all second-order cone problems when using `BigFloat` or `Double64`
 numeric types, due to
 [MathOptInterface.jl#876](https://github.com/JuliaOpt/MathOptInterface.jl/issues/876),
@@ -146,10 +102,9 @@ following troubleshoot steps.
 1. Set `silent=false` and look for warnings and error messages. If necessary,
    check the output file. Its path is printed by the solver output and can also
    be retrieved via `Optimizer.tempdir`.
-2. Check that `presolve=true` (the default) is set. Linearly dependent
-   constraints typically show up as `cholesky miss condition` warnings. With
-   `verbose = SDPAFamily.VERBOSE`, the optimizer prints how many variables the
-   presolve eliminated or fixed.
+2. Make sure `presolve=true` (the default) to remove redundant constraints. Typically, redundant
+   constraints are indicated by a premature `cholesky miss` error as shown
+   above.
 3. Use `BigFloat` (the default) or `Double64` (from the
    [DoubleFloats](https://github.com/JuliaMath/DoubleFloats.jl) package)
    precision instead of `Float64` (e.g. `SDPAFamily.Optimizer{Double64}(...)`).
