@@ -110,18 +110,8 @@ evaluate(E₁)
 evaluate(E₂)
 ```
 
-With earlier versions of Convex.jl and MathOptInterface, this was an example
-where the presolve routine was essential to getting good results. With current
-versions, the problem is also solved without it:
-
-```@repl 1
-for variant in (:sdpa, :sdpa_dd, :sdpa_qd, :sdpa_gmp)
-    solve!(problem, () -> SDPAFamily.Optimizer(silent = true, presolve = false, variant = variant))
-    error = abs(problem.optval - p_guess)
-    print("$variant solved the problem with an absolute error of ")
-    @printf("%.2e.\n", error)
-end
-```
+See [Using presolve](@ref) for an example where the presolve routine is
+essential to getting good results.
 
 This problem is revisited at very high precision in [Changing parameters & solving at very high precision](@ref).
 

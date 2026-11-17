@@ -80,44 +80,42 @@ objective values do not agree, the status is `ITERATION_LIMIT`. If the presolve
 cannot confirm its own reduction, it emits a warning and passes the problem to
 the solver without the reduction, as with `presolve=false`.
 
-```@setup convexquantum
-using SDPAFamily, Test, Convex
-ρ₁ = Complex{BigFloat}[1 0; 0 0]
-ρ₂ = (1//2)*Complex{BigFloat}[1 -im; im 1]
-E₁ = ComplexVariable(2, 2);
-E₂ = ComplexVariable(2, 2);
-problem = maximize( real((1//2)*tr(ρ₁*E₁) + (1//2)*tr(ρ₂*E₂)),
-                    [E₁ ⪰ 0, E₂ ⪰ 0, E₁ + E₂ == Diagonal(ones(2))];
-                    numeric_type = BigFloat );
-opt = () -> SDPAFamily.Optimizer(presolve = true, variant = :sdpa_gmp, silent = true);
+```@setup presolve
+using SDPAFamily, Test, Convex, LinearAlgebra
 ```
 
-We demonstrate `presolve` using the problem defined in [Optimal guessing
-probability for a pair of quantum states](@ref). When `presolve` is disabled,
-SDPA solvers can terminate prematurely due to linear dependence in the input
-constraints. Note, however, that this does not necessarily happen; with current
-versions of Convex.jl and MathOptInterface, this problem is solved without the
-presolve too. Empirically,
+We demonstrate `presolve` using a small problem in which a matrix variable `A`
+only enters through its symmetric part `A + A'`. The optimal value is 1. When
+`presolve` is disabled,
+SDPA solvers will terminate prematurely due to linear dependence in the input
+constraints. Note, however, that this does not necessarily happen. Empirically,
 for our test cases, solvers' intolerance to redundant constraints increases from
 `:sdpa` to `:sdpa_gmp`.
 
-```@repl convexquantum
+```@repl presolve
+A = Variable(2, 2);
+problem = minimize(tr(A), [A + A' ⪰ Diagonal(ones(2))]; numeric_type = BigFloat);
 solve!(problem, () -> SDPAFamily.Optimizer(presolve = false))
 ```
 
-Applying presolve helps by removing 8 redundant constraints from the final input
+Applying presolve helps by removing the redundant variable from the final input
 file.
 
-```@repl convexquantum
+```@repl presolve
 solve!(problem, () -> SDPAFamily.Optimizer(presolve = true))
-@test problem.optval ≈ 1//2 + 1/(2*sqrt(big(2))) atol=1e-30
+@test problem.optval ≈ 1 atol=1e-30
 ```
 
 We see we have recovered the true answer to a tolerance of $10^{-30}$.
 
 ## Changing parameters & solving at very high precision
 
-Continuing the above example, we can also increase the precision by changing the default parameters:
+```@setup convexquantum
+using SDPAFamily, Test, Convex
+```
+
+Returning to the problem defined in [Optimal guessing probability for a pair of
+quantum states](@ref), we can also increase the precision by changing the default parameters:
 
 ```@repl convexquantum
 opt = () -> SDPAFamily.Optimizer(
