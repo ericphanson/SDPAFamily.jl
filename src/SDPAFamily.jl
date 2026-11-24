@@ -1,4 +1,5 @@
 module SDPAFamily
+using SDPA_jll: SDPA_jll
 using SDPA_GMP_jll: SDPA_GMP_jll
 using LinearAlgebra # for diag()
 using DelimitedFiles # for writing SDPA input file
@@ -57,6 +58,7 @@ The command (with library paths set in its environment) for the executable shipp
 """
 function jll_command(variant::Symbol)
     jll = variant == :sdpa_gmp ? SDPA_GMP_jll :
+          variant == :sdpa     ? SDPA_jll     :
           throw(ArgumentError("unknown variant $variant"))
     if !jll.is_available()
         error("""No prebuilt `$variant` executable is available for this platform
