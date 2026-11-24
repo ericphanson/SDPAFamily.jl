@@ -67,4 +67,4 @@ jobs:
         run: |
           using TestEnv
           TestEnv.activate()
-          include(joinpath("test", "windows_trial.jl"))
+          include(joinpath(pwd(), "test", "windows_trial.jl"))  # `include` resolves relative paths against the script file
