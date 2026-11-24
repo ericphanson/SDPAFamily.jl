@@ -3,13 +3,13 @@ using Test, Downloads, LinearAlgebra
 using Convex, SDPAFamily
 using SDPAFamily: SDPA_GMP_jll
 
-const variants = (:sdpa_gmp,)
-
 @testset "Windows trial" begin
-    @testset "sdpa_gmp.exe solves example1.dat-s" begin
+    # Upstream's example1.dat-s has LF line endings; also try it with CRLF.
+    @testset "sdpa_gmp.exe solves example1.dat-s with $eol line endings" for eol in ("LF", "CRLF")
         dir = mktempdir()
         input = Downloads.download("https://raw.githubusercontent.com/nakatamaho/sdpa-gmp/ca110db5ea1cc46e811b70dfea9cbb25db74448d/example1.dat-s",
                                    joinpath(dir, "example1.dat-s"))
+        eol == "CRLF" && write(input, replace(read(input, String), "\n" => "\r\n"))
         output = joinpath(dir, "example1.out")
         base = SDPA_GMP_jll.sdpa_gmp()
         run(Cmd(`$base -ds $input -o $output -pt 0`; env = base.env))
@@ -32,7 +32,4 @@ const variants = (:sdpa_gmp,)
         solve!(p, () -> SDPAFamily.Optimizer{BigFloat}(variant = :sdpa_gmp, silent = true))
         @test p.optval ≈ big"3.0" atol = 1e-5
     end
-
-    include("MOI_wrapper.jl")
-    include("Convex.jl")
 end

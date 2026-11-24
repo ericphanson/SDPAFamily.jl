@@ -1,4 +1,4 @@
-# Trial: build SDPA_GMP_jll for Windows from the open Yggdrasil PR and run it natively.
+# Trial: build SDPA_GMP_jll for Windows from the Yggdrasil PR branch plus fixes (eph/sdpa-gmp-windows) and run it natively.
 name: Windows trial
 on:
   push:
@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: ericphanson/Yggdrasil
-          ref: afe664ca472b1b242adfd1434a562aede97661a6
+          ref: 8e1afcf7310e16f4a65cb7af8e065adcf17b1c93
           path: ygg
           sparse-checkout: |
             .ci
@@ -68,3 +68,9 @@ jobs:
           using TestEnv
           TestEnv.activate()
           include(joinpath(pwd(), "test", "windows_trial.jl"))  # `include` resolves relative paths against the script file
+      - name: Run test/windows_trial_long.jl
+        shell: julia --color=yes --project=. {0}
+        run: |
+          using TestEnv
+          TestEnv.activate()
+          include(joinpath(pwd(), "test", "windows_trial_long.jl"))
