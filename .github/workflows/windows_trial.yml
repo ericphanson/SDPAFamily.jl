@@ -1,0 +1,70 @@
+# Trial: build SDPA_GMP_jll for Windows from the open Yggdrasil PR and run it natively.
+name: Windows trial
+on:
+  push:
+    branches: [eph/windows-jll-trial]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ericphanson/Yggdrasil
+          ref: afe664ca472b1b242adfd1434a562aede97661a6
+          path: ygg
+          sparse-checkout: |
+            .ci
+            S/SDPA_GMP
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.13'
+      - run: julia --project=ygg -e 'using Pkg; Pkg.instantiate()'
+      - name: Build and deploy SDPA_GMP_jll to ~/.julia/dev
+        working-directory: ygg/S/SDPA_GMP
+        env:
+          BINARYBUILDER_RUNNER: privileged
+          BINARYBUILDER_USE_SQUASHFS: true
+        run: julia --project=../.. build_tarballs.jl --verbose --deploy=local x86_64-w64-mingw32-cxx11
+      - run: |
+          mkdir out
+          cp -r ~/.julia/dev/SDPA_GMP_jll out/
+          cp ygg/S/SDPA_GMP/products/SDPA_GMP.v*.tar.gz out/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SDPA_GMP_jll
+          path: out
+
+  test:
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: SDPA_GMP_jll
+          path: ${{ runner.temp }}/jll
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.10'
+      - name: Point the JLL at the downloaded tarball, develop it, add TestEnv
+        shell: julia --color=yes --project=. {0}
+        run: |
+          dir = raw"${{ runner.temp }}\jll"
+          tarball = only(filter(startswith("SDPA_GMP.v"), readdir(dir; join = false)))
+          url = "file:///" * replace(joinpath(dir, tarball), "\\" => "/")
+          toml = joinpath(dir, "SDPA_GMP_jll", "Artifacts.toml")
+          write(toml, replace(read(toml, String), r"url = \"file://[^\"]*\"" => "url = \"$url\""))
+          using Pkg
+          Pkg.develop(path = joinpath(dir, "SDPA_GMP_jll"))
+          Pkg.instantiate()
+          Pkg.activate()  # the default environment, which stays on LOAD_PATH
+          Pkg.add("TestEnv")
+      - name: Run test/windows_trial.jl
+        shell: julia --color=yes --project=. {0}
+        run: |
+          using TestEnv
+          TestEnv.activate()
+          include(joinpath("test", "windows_trial.jl"))

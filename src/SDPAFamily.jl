@@ -1,8 +1,6 @@
 module SDPAFamily
 using SDPA_jll: SDPA_jll
 using SDPA_GMP_jll: SDPA_GMP_jll
-using SDPA_DD_jll: SDPA_DD_jll
-using SDPA_QD_jll: SDPA_QD_jll
 using LinearAlgebra # for diag()
 using DelimitedFiles # for writing SDPA input file
 import MathOptInterface as MOI
@@ -60,8 +58,6 @@ The command (with library paths set in its environment) for the executable shipp
 """
 function jll_command(variant::Symbol)
     jll = variant == :sdpa_gmp ? SDPA_GMP_jll :
-          variant == :sdpa_dd  ? SDPA_DD_jll  :
-          variant == :sdpa_qd  ? SDPA_QD_jll  :
           variant == :sdpa     ? SDPA_jll     :
           throw(ArgumentError("unknown variant $variant"))
     if !jll.is_available()
